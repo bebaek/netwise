@@ -60,11 +60,19 @@ curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
-Run backend tests locally:
+Run backend tests and migrations locally:
 
 ```bash
 cd /Users/burm/code/netwise/backend
+uv run alembic upgrade head
 uv run --extra dev pytest -q
+```
+
+Create future migrations after model changes:
+
+```bash
+cd /Users/burm/code/netwise/backend
+uv run alembic revision --autogenerate -m "describe change"
 ```
 
 ## Planned frontend stack
