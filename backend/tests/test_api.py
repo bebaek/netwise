@@ -191,3 +191,61 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     taxes_response = client.get(f"/annual-tax-records?household_id={household_id}")
     assert taxes_response.status_code == 200
     assert len(taxes_response.json()) == 1
+
+
+def test_net_worth_history_uses_mortgage_profile_when_no_liability_snapshot(client: TestClient):
+    household = client.post("/households", json={"name": "Home"}).json()
+    household_id = household["id"]
+
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "House",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "real_estate",
+            "currency": "USD",
+        },
+    ).json()
+    mortgage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Mortgage",
+            "account_kind": "liability",
+            "category": "mortgage",
+            "liquidity_class": "liability",
+            "currency": "USD",
+        },
+    ).json()
+
+    assert client.post(
+        f"/accounts/{home['id']}/snapshots",
+        json={"as_of_date": "2020-02-01", "balance": "400000.00"},
+    ).status_code == 201
+
+    assert client.post(
+        "/mortgages",
+        json={
+            "liability_account_id": mortgage["id"],
+            "property_account_id": home["id"],
+            "original_principal": "300000.00",
+            "interest_rate": "0.000000",
+            "term_months": 300,
+            "start_date": "2020-01-01",
+            "rate_type": "fixed",
+        },
+    ).status_code == 201
+
+    response = client.get(f"/dashboard/{household_id}/net-worth/history")
+
+    assert response.status_code == 200
+    assert response.json()["points"] == [
+        {
+            "as_of_date": "2020-02-01",
+            "assets_total": "400000.00",
+            "liabilities_total": "299000.00",
+            "net_worth": "101000.00",
+        }
+    ]

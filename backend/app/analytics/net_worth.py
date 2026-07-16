@@ -5,7 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountKind, BalanceSnapshot
+from app.analytics.mortgage import estimate_mortgage_balance
+from app.db.models import Account, AccountKind, BalanceSnapshot, MortgageProfile
 
 
 def latest_account_balances(db: Session, household_id: UUID) -> list[dict]:
@@ -23,7 +24,8 @@ def latest_account_balances(db: Session, household_id: UUID) -> list[dict]:
             .order_by(BalanceSnapshot.as_of_date.desc(), BalanceSnapshot.created_at.desc())
             .limit(1)
         ).first()
-        balance = snapshot.balance if snapshot else None
+        balance = snapshot.balance if snapshot else _estimated_balance_from_profile(db, account)
+
         signed_balance = signed_account_balance(account.account_kind, balance)
         rows.append(
             {
@@ -124,4 +126,27 @@ def _latest_balance_on_or_before(
         .order_by(BalanceSnapshot.as_of_date.desc(), BalanceSnapshot.created_at.desc())
         .limit(1)
     ).first()
-    return snapshot.balance if snapshot else None
+    if snapshot:
+        return snapshot.balance
+
+    account = db.get(Account, account_id)
+    if account is None:
+        return None
+    return _estimated_balance_from_profile(db, account, as_of_date=as_of_date)
+
+
+def _estimated_balance_from_profile(
+    db: Session,
+    account: Account,
+    as_of_date: date | None = None,
+) -> Decimal | None:
+    if account.account_kind != AccountKind.liability:
+        return None
+
+    mortgage_profile = db.scalars(
+        select(MortgageProfile).where(MortgageProfile.liability_account_id == account.id).limit(1)
+    ).first()
+    if mortgage_profile is None:
+        return None
+
+    return estimate_mortgage_balance(mortgage_profile, as_of_date or date.today())
