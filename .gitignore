@@ -31,3 +31,8 @@ coverage/
 htmlcov/
 exports/
 backups/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3

@@ -43,6 +43,30 @@ Planned deployment options:
 - Pydantic
 - Redis-backed workers when asynchronous jobs are needed
 
+## Current development quickstart
+
+The current skeleton starts a FastAPI backend and PostgreSQL database:
+
+```bash
+cd /Users/burm/code/netwise
+cp .env.example .env
+docker compose up --build
+```
+
+Health checks:
+
+```bash
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
+```
+
+Run backend tests locally:
+
+```bash
+cd /Users/burm/code/netwise/backend
+uv run --extra dev pytest -q
+```
+
 ## Planned frontend stack
 
 - React or Next.js
