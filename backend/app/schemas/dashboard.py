@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -20,3 +21,15 @@ class NetWorthRead(BaseModel):
     assets_total: Decimal
     liabilities_total: Decimal
     accounts: list[AccountBalanceRead]
+
+
+class NetWorthHistoryPointRead(BaseModel):
+    as_of_date: date
+    net_worth: Decimal
+    assets_total: Decimal
+    liabilities_total: Decimal
+
+
+class NetWorthHistoryRead(BaseModel):
+    household_id: UUID
+    points: list[NetWorthHistoryPointRead]

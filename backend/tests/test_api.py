@@ -52,6 +52,34 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     assert payload["net_worth"] == "250000.00"
     assert len(payload["accounts"]) == 2
 
+    assert client.post(
+        f"/accounts/{home['id']}/snapshots",
+        json={"as_of_date": "2026-02-01", "balance": "710000.00"},
+    ).status_code == 201
+    assert client.post(
+        f"/accounts/{mortgage['id']}/snapshots",
+        json={"as_of_date": "2026-02-01", "balance": "448000.00"},
+    ).status_code == 201
+
+    history_response = client.get(f"/dashboard/{household_id}/net-worth/history")
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert history["household_id"] == household_id
+    assert history["points"] == [
+        {
+            "as_of_date": "2026-01-01",
+            "assets_total": "700000.00",
+            "liabilities_total": "450000.00",
+            "net_worth": "250000.00",
+        },
+        {
+            "as_of_date": "2026-02-01",
+            "assets_total": "710000.00",
+            "liabilities_total": "448000.00",
+            "net_worth": "262000.00",
+        },
+    ]
+
     event_response = client.post(
         f"/accounts/{home['id']}/events",
         json={
