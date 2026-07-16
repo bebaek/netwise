@@ -4,9 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, BalanceSnapshot, Household
+from app.db.models import Account, AccountEvent, BalanceSnapshot, Household
 from app.db.session import get_db
-from app.schemas.account import AccountCreate, AccountRead, BalanceSnapshotCreate, BalanceSnapshotRead
+from app.schemas.account import (
+    AccountCreate,
+    AccountEventCreate,
+    AccountEventRead,
+    AccountRead,
+    BalanceSnapshotCreate,
+    BalanceSnapshotRead,
+)
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -76,5 +83,43 @@ def list_snapshots(account_id: UUID, db: Session = Depends(get_db)) -> list[Bala
             select(BalanceSnapshot)
             .where(BalanceSnapshot.account_id == account_id)
             .order_by(BalanceSnapshot.as_of_date.desc())
+        ).all()
+    )
+
+
+@router.post(
+    "/{account_id}/events",
+    response_model=AccountEventRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_event(
+    account_id: UUID,
+    payload: AccountEventCreate,
+    db: Session = Depends(get_db),
+) -> AccountEvent:
+    account = db.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    event = AccountEvent(
+        household_id=account.household_id,
+        account_id=account.id,
+        **payload.model_dump(),
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.get("/{account_id}/events", response_model=list[AccountEventRead])
+def list_events(account_id: UUID, db: Session = Depends(get_db)) -> list[AccountEvent]:
+    if db.get(Account, account_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return list(
+        db.scalars(
+            select(AccountEvent)
+            .where(AccountEvent.account_id == account_id)
+            .order_by(AccountEvent.event_date.desc(), AccountEvent.created_at.desc())
         ).all()
     )

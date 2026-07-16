@@ -22,6 +22,26 @@ class SnapshotSource(StrEnum):
     plugin_browser_automation = "plugin_browser_automation"
 
 
+class AccountEventType(StrEnum):
+    contribution = "contribution"
+    withdrawal = "withdrawal"
+    transfer = "transfer"
+    large_purchase = "large_purchase"
+    asset_sale = "asset_sale"
+    gift = "gift"
+    inheritance = "inheritance"
+    tax_payment = "tax_payment"
+    account_added = "account_added"
+    account_removed = "account_removed"
+    manual_projection_adjustment = "manual_projection_adjustment"
+
+
+class ProjectionBehavior(StrEnum):
+    historical_only = "historical_only"
+    projection_only = "projection_only"
+    historical_and_projection = "historical_and_projection"
+
+
 def now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -60,6 +80,9 @@ class Account(Base):
     snapshots: Mapped[list["BalanceSnapshot"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
     )
+    events: Mapped[list["AccountEvent"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("ix_accounts_household_id", "household_id"),)
 
@@ -83,4 +106,32 @@ class BalanceSnapshot(Base):
         UniqueConstraint("account_id", "as_of_date", name="uq_balance_snapshots_account_date"),
         Index("ix_balance_snapshots_household_date", "household_id", "as_of_date"),
         Index("ix_balance_snapshots_account_date", "account_id", "as_of_date"),
+    )
+
+
+class AccountEvent(Base):
+    __tablename__ = "account_events"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    projection_behavior: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=ProjectionBehavior.historical_only
+    )
+    scenario_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    account: Mapped[Account] = relationship(back_populates="events")
+
+    __table_args__ = (
+        Index("ix_account_events_household_date", "household_id", "event_date"),
+        Index("ix_account_events_account_date", "account_id", "event_date"),
     )
