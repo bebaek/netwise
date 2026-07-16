@@ -148,3 +148,46 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     mortgages_response = client.get(f"/mortgages?household_id={household_id}")
     assert mortgages_response.status_code == 200
     assert len(mortgages_response.json()) == 1
+
+    income_response = client.post(
+        "/income-sources",
+        json={
+            "household_id": household_id,
+            "name": "Salary",
+            "income_type": "salary",
+            "amount": "120000.00",
+            "currency": "USD",
+            "frequency": "annually",
+            "start_date": "2026-01-01",
+            "growth_rate": "0.030000",
+        },
+    )
+    assert income_response.status_code == 201
+    income_payload = income_response.json()
+    assert income_payload["household_id"] == household_id
+    assert income_payload["amount"] == "120000.00"
+
+    incomes_response = client.get(f"/income-sources?household_id={household_id}")
+    assert incomes_response.status_code == 200
+    assert len(incomes_response.json()) == 1
+
+    tax_response = client.post(
+        "/annual-tax-records",
+        json={
+            "household_id": household_id,
+            "tax_year": 2026,
+            "gross_income": "120000.00",
+            "total_taxes_paid": "30000.00",
+            "refund_or_amount_due": "1000.00",
+            "notes": "Initial estimate",
+        },
+    )
+    assert tax_response.status_code == 201
+    tax_payload = tax_response.json()
+    assert tax_payload["household_id"] == household_id
+    assert tax_payload["total_taxes_paid"] == "30000.00"
+    assert tax_payload["effective_tax_rate"] == "0.25"
+
+    taxes_response = client.get(f"/annual-tax-records?household_id={household_id}")
+    assert taxes_response.status_code == 200
+    assert len(taxes_response.json()) == 1

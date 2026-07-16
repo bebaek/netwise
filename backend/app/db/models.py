@@ -42,6 +42,15 @@ class ProjectionBehavior(StrEnum):
     historical_and_projection = "historical_and_projection"
 
 
+class IncomeFrequency(StrEnum):
+    weekly = "weekly"
+    biweekly = "biweekly"
+    semimonthly = "semimonthly"
+    monthly = "monthly"
+    quarterly = "quarterly"
+    annually = "annually"
+
+
 def now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -57,6 +66,12 @@ class Household(Base):
     )
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="household")
+    income_sources: Mapped[list["IncomeSource"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    annual_tax_records: Mapped[list["AnnualTaxRecord"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class Account(Base):
@@ -200,4 +215,56 @@ class MortgageProfile(Base):
         UniqueConstraint("liability_account_id", name="uq_mortgage_profiles_liability_account"),
         Index("ix_mortgage_profiles_household_id", "household_id"),
         Index("ix_mortgage_profiles_property_account_id", "property_account_id"),
+    )
+
+
+class IncomeSource(Base):
+    __tablename__ = "income_sources"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    income_type: Mapped[str] = mapped_column(String(80), nullable=False, default="other")
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="income_sources")
+
+    __table_args__ = (Index("ix_income_sources_household_id", "household_id"),)
+
+
+class AnnualTaxRecord(Base):
+    __tablename__ = "annual_tax_records"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    tax_year: Mapped[int] = mapped_column(nullable=False)
+    gross_income: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    total_taxes_paid: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    refund_or_amount_due: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="annual_tax_records")
+
+    @property
+    def effective_tax_rate(self) -> Decimal | None:
+        if self.gross_income is None or self.gross_income == Decimal("0.00"):
+            return None
+        return self.total_taxes_paid / self.gross_income
+
+    __table_args__ = (
+        UniqueConstraint("household_id", "tax_year", name="uq_annual_tax_records_household_year"),
+        Index("ix_annual_tax_records_household_id", "household_id"),
     )

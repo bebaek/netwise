@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routes import accounts, dashboard, health, households, real_estate
+from app.api.routes import accounts, dashboard, health, households, planning, real_estate
 
 
 def create_app() -> FastAPI:
@@ -11,6 +11,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(dashboard.router)
     app.include_router(real_estate.router)
+    app.include_router(planning.router)
     return app
 
 
