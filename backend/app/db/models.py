@@ -83,6 +83,14 @@ class Account(Base):
     events: Mapped[list["AccountEvent"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
     )
+    real_estate_property: Mapped["RealEstateProperty | None"] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+    mortgage_profile: Mapped["MortgageProfile | None"] = relationship(
+        back_populates="liability_account",
+        cascade="all, delete-orphan",
+        foreign_keys="MortgageProfile.liability_account_id",
+    )
 
     __table_args__ = (Index("ix_accounts_household_id", "household_id"),)
 
@@ -134,4 +142,62 @@ class AccountEvent(Base):
     __table_args__ = (
         Index("ix_account_events_household_date", "household_id", "event_date"),
         Index("ix_account_events_account_date", "account_id", "event_date"),
+    )
+
+
+class RealEstateProperty(Base):
+    __tablename__ = "real_estate_properties"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    property_type: Mapped[str] = mapped_column(String(64), nullable=False, default="residence")
+    purchase_date: Mapped[date | None] = mapped_column(Date)
+    purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    down_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    property_tax_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    maintenance_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    hoa_monthly: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    account: Mapped[Account] = relationship(back_populates="real_estate_property")
+
+    __table_args__ = (
+        UniqueConstraint("account_id", name="uq_real_estate_properties_account"),
+        Index("ix_real_estate_properties_household_id", "household_id"),
+    )
+
+
+class MortgageProfile(Base):
+    __tablename__ = "mortgage_profiles"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    liability_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    property_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
+    original_principal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    interest_rate: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    term_months: Mapped[int] = mapped_column(nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    monthly_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    rate_type: Mapped[str] = mapped_column(String(32), nullable=False, default="fixed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    liability_account: Mapped[Account] = relationship(
+        back_populates="mortgage_profile", foreign_keys=[liability_account_id]
+    )
+    property_account: Mapped[Account | None] = relationship(foreign_keys=[property_account_id])
+
+    __table_args__ = (
+        UniqueConstraint("liability_account_id", name="uq_mortgage_profiles_liability_account"),
+        Index("ix_mortgage_profiles_household_id", "household_id"),
+        Index("ix_mortgage_profiles_property_account_id", "property_account_id"),
     )

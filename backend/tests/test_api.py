@@ -72,3 +72,51 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     events_response = client.get(f"/accounts/{home['id']}/events")
     assert events_response.status_code == 200
     assert len(events_response.json()) == 1
+
+    property_response = client.post(
+        "/real-estate/properties",
+        json={
+            "account_id": home["id"],
+            "property_type": "primary_residence",
+            "purchase_date": "2020-01-01",
+            "purchase_price": "600000.00",
+            "down_payment": "120000.00",
+            "expected_appreciation_rate": "0.030000",
+            "property_tax_annual": "8000.00",
+            "insurance_annual": "1500.00",
+            "maintenance_rate": "0.010000",
+            "hoa_monthly": "0.00",
+        },
+    )
+    assert property_response.status_code == 201
+    property_payload = property_response.json()
+    assert property_payload["household_id"] == household_id
+    assert property_payload["account_id"] == home["id"]
+    assert property_payload["purchase_price"] == "600000.00"
+
+    mortgage_response = client.post(
+        "/mortgages",
+        json={
+            "liability_account_id": mortgage["id"],
+            "property_account_id": home["id"],
+            "original_principal": "480000.00",
+            "interest_rate": "0.045000",
+            "term_months": 360,
+            "start_date": "2020-01-01",
+            "monthly_payment": "2432.00",
+            "rate_type": "fixed",
+        },
+    )
+    assert mortgage_response.status_code == 201
+    mortgage_payload = mortgage_response.json()
+    assert mortgage_payload["household_id"] == household_id
+    assert mortgage_payload["liability_account_id"] == mortgage["id"]
+    assert mortgage_payload["property_account_id"] == home["id"]
+
+    properties_response = client.get(f"/real-estate/properties?household_id={household_id}")
+    assert properties_response.status_code == 200
+    assert len(properties_response.json()) == 1
+
+    mortgages_response = client.get(f"/mortgages?household_id={household_id}")
+    assert mortgages_response.status_code == 200
+    assert len(mortgages_response.json()) == 1
