@@ -102,7 +102,25 @@ These guides should not store user credentials.
 
 ## Real estate modeling
 
-Real estate should be modeled as an asset with optional linked mortgage liability.
+Real estate should be modeled as a property asset with an optional linked mortgage liability.
+
+Current net worth should compute real estate equity from current valuation and debt:
+
+```text
+real estate equity = latest property valuation - latest or computed mortgage balance
+```
+
+Property value should be stored as dated valuation snapshots. Valuation snapshots should include source and confidence because real estate value is approximate.
+
+Valuation sources:
+
+- Manual estimate
+- Purchase price
+- Appraisal
+- Tax assessment
+- Comparable sales
+- Plugin estimate
+- Model estimate
 
 Property assumptions:
 
@@ -124,6 +142,8 @@ Mortgage assumptions:
 - Term
 - Start date
 - Monthly payment
+
+For current status, use the latest mortgage balance snapshot when available. If no recent mortgage balance snapshot exists, compute an estimated balance from the mortgage amortization profile.
 
 Projection should compute future property value, mortgage balance, and equity separately.
 
@@ -190,6 +210,31 @@ Estimated living expense = gross income - taxes paid + estimated investment grow
 Tax should be shown separately from living expense.
 
 Users should be able to add adjustment entries for unusual events such as home purchase, car purchase, inheritance, gifts, account additions, account removals, or major one-time spending.
+
+## Account events and adjustments
+
+The precursor CLI uses dated `value_changes` to alter projected asset values. Netwise should model this explicitly as account events.
+
+Account events are separate from balance snapshots:
+
+- A balance snapshot says what an account was worth on a date.
+- An account event explains or plans a change to an account.
+
+Event examples:
+
+- Contribution
+- Withdrawal
+- Transfer
+- Large purchase
+- Asset sale
+- Gift
+- Inheritance
+- Tax payment
+- Account added
+- Account removed
+- Manual projection adjustment
+
+Historical events improve expense estimation by explaining net worth changes. Future events improve projection scenarios by representing planned contributions, withdrawals, sales, or purchases.
 
 ## Projection scenarios
 

@@ -82,12 +82,13 @@ Core entities:
 User
 Household
 HouseholdMembership
-AssetAccount
-LiabilityAccount
+Account
 BalanceSnapshot
+AccountEvent
+RealEstateProperty
+MortgageProfile
 IncomeSource
 AnnualTaxRecord
-Adjustment
 ProjectionScenario
 ProjectionResult
 InstitutionGuide
@@ -150,6 +151,8 @@ balance
 currency
 source
 confidence_level
+metadata_json
+created_by_user_id
 created_at
 ```
 
@@ -157,7 +160,32 @@ Recommended constraints:
 
 - Unique account snapshot per account and date.
 - Balance stored as decimal/numeric.
+- Liability balances stored as positive values and subtracted according to `account_kind`.
 - Index by household/date and account/date.
+
+For real estate asset accounts, snapshots represent property valuation snapshots. `source`, `confidence_level`, and `metadata_json` should capture whether the value came from manual estimate, appraisal, purchase price, tax assessment, comparable sales, plugin estimate, or model estimate.
+
+### AccountEvent
+
+Account events are dated changes or explanatory adjustments separate from balance snapshots.
+
+```text
+id
+household_id
+account_id
+event_date
+amount
+currency
+event_type
+description
+projection_behavior
+scenario_id
+created_by_user_id
+created_at
+updated_at
+```
+
+`projection_behavior` controls whether the event is historical-only, projection-only, or both. `scenario_id` is nullable for baseline events and set for scenario-specific events.
 
 ### AnnualTaxRecord
 
@@ -211,13 +239,15 @@ Inputs:
 - Latest balances
 - Historical snapshots
 - Account categories
-- Yield assumptions
+- Account-level yield assumptions
+- Category-level yield defaults
+- Real estate valuation snapshots
 - Real estate assumptions
 - Mortgage assumptions
 - Income sources
 - Annual tax summaries
 - Expense assumptions
-- Adjustments
+- Account events and adjustments
 
 Outputs:
 

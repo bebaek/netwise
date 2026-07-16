@@ -53,6 +53,7 @@ Planned deployment options:
 - [Product Design](docs/product-design.md)
 - [Technical Design](docs/technical-design.md)
 - [Self-Hosted Operations](docs/self-hosted-operations.md)
+- [Lessons from `fintrack`](docs/fintrack-lessons.md)
 
 ## License
 
