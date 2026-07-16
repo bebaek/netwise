@@ -192,6 +192,22 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     assert taxes_response.status_code == 200
     assert len(taxes_response.json()) == 1
 
+    expense_response = client.get(f"/dashboard/{household_id}/expense-estimates/2026")
+    assert expense_response.status_code == 200
+    assert expense_response.json() == {
+        "household_id": household_id,
+        "tax_year": 2026,
+        "period_start": "2026-01-01",
+        "period_end": "2026-02-01",
+        "gross_income": "120000.00",
+        "taxes_paid": "30000.00",
+        "net_worth_start": "250000.00",
+        "net_worth_end": "262000.00",
+        "net_worth_change": "12000.00",
+        "adjustment_total": "10000.00",
+        "estimated_living_expense": "68000.00",
+    }
+
 
 def test_net_worth_history_uses_mortgage_profile_when_no_liability_snapshot(client: TestClient):
     household = client.post("/households", json={"name": "Home"}).json()
