@@ -1,0 +1,59 @@
+# Netwise
+
+Netwise is a privacy-conscious personal finance planning app focused on balance snapshots, asset categorization, expense estimation, and long-term projections without transaction tracking.
+
+This repository contains the open-source, self-host-oriented application.
+
+## Core idea
+
+Netwise helps a household answer:
+
+- What is our current financial status?
+- How are our assets distributed across liquidity and retirement categories?
+- How has our net worth changed over time?
+- What are our estimated living expenses without classifying every transaction?
+- Where are our assets likely to be in future scenarios?
+
+## Product principles
+
+- Balance snapshots over transaction feeds.
+- Manual-first data entry with guided institution navigation.
+- Optional automation through clearly isolated plugins later.
+- Household-oriented multi-user support.
+- Data portability and transparent assumptions.
+- Simple deterministic projections first; advanced time-series analysis later.
+
+## Intended deployment
+
+The project should be easy to run for an individual, couple, family, or small trusted group using container-based deployment.
+
+Planned deployment options:
+
+- Local development with Docker Compose.
+- Small production deployment with Docker Compose.
+- Advanced deployment with Kubernetes and Helm.
+
+## Planned backend stack
+
+- Python
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- Alembic
+- Pydantic
+- Redis-backed workers when asynchronous jobs are needed
+
+## Planned frontend stack
+
+- React or Next.js
+- Charting for net worth history, category breakdowns, and projections
+
+## Documentation
+
+- [Product Design](docs/product-design.md)
+- [Technical Design](docs/technical-design.md)
+- [Self-Hosted Operations](docs/self-hosted-operations.md)
+
+## License
+
+License is not chosen yet. This repository is intended to be open source.

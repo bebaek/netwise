@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node/frontend
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated data
+coverage/
+htmlcov/
+exports/
+backups/
