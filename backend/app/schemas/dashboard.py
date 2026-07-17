@@ -30,6 +30,20 @@ class NetWorthHistoryPointRead(BaseModel):
     liabilities_total: Decimal
 
 
+class HistoricalTrendPointRead(BaseModel):
+    as_of_date: date
+    net_worth: Decimal
+    assets_total: Decimal
+    liabilities_total: Decimal
+    estimated: bool
+    method: str | None = None
+
+
+class HistoricalTrendRead(BaseModel):
+    household_id: UUID
+    points: list[HistoricalTrendPointRead]
+
+
 class NetWorthHistoryRead(BaseModel):
     household_id: UUID
     points: list[NetWorthHistoryPointRead]

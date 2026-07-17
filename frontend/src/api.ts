@@ -39,6 +39,8 @@ export type NetWorthHistory = {
     net_worth: string;
     assets_total: string;
     liabilities_total: string;
+    estimated?: boolean;
+    method?: string | null;
   }>;
 };
 
@@ -232,6 +234,15 @@ export function createAccountEvent(
 
 export function getNetWorth(householdId: string): Promise<NetWorth> {
   return request<NetWorth>(`/dashboard/${householdId}/net-worth`);
+}
+
+export function getHistoricalTrend(
+  householdId: string,
+  interpolate = false,
+): Promise<NetWorthHistory> {
+  return request<NetWorthHistory>(
+    `/dashboard/${householdId}/historical-trend?interpolate=${interpolate ? 'true' : 'false'}`,
+  );
 }
 
 export function getNetWorthHistory(householdId: string): Promise<NetWorthHistory> {

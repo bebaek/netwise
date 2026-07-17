@@ -20,8 +20,8 @@ import {
   createRealEstateProperty,
   createSnapshot,
   getAnnualExpenseEstimate,
+  getHistoricalTrend,
   getNetWorth,
-  getNetWorthHistory,
   getNetWorthProjection,
   listAccounts,
   listAccountEvents,
@@ -51,6 +51,49 @@ function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
+function HistoryChart({ points }: { points: NetWorthHistory['points'] }) {
+  if (points.length < 2) return null;
+
+  const values = points.map((point) => Number(point.net_worth));
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueRange = maxValue - minValue || 1;
+  const width = 720;
+  const height = 220;
+  const padding = 28;
+  const plotWidth = width - padding * 2;
+  const plotHeight = height - padding * 2;
+  const xForIndex = (index: number) => padding + (plotWidth * index) / Math.max(points.length - 1, 1);
+  const yForValue = (value: number) => padding + plotHeight - ((value - minValue) / valueRange) * plotHeight;
+  const actualPolyline = points
+    .map((point, index) => `${xForIndex(index)},${yForValue(Number(point.net_worth))}`)
+    .join(' ');
+
+  return (
+    <div className="trend-chart" aria-label="Historical net worth trend chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        <title>Historical net worth trend</title>
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} className="axis" />
+        <polyline points={actualPolyline} className="trend-line" />
+        {points.map((point, index) => (
+          <circle
+            key={`${point.as_of_date}-${point.estimated ? 'estimate' : 'snapshot'}`}
+            cx={xForIndex(index)}
+            cy={yForValue(Number(point.net_worth))}
+            r={point.estimated ? 3 : 5}
+            className={point.estimated ? 'trend-dot estimate' : 'trend-dot snapshot'}
+          />
+        ))}
+      </svg>
+      <div className="chart-labels">
+        <span>{points[0]?.as_of_date}</span>
+        <span>{points[points.length - 1]?.as_of_date}</span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
@@ -64,6 +107,7 @@ function App() {
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
+  const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -101,7 +145,7 @@ function App() {
     ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
-      getNetWorthHistory(householdId),
+      getHistoricalTrend(householdId, showInterpolatedHistory),
       listRealEstateProperties(householdId),
       listMortgageProfiles(householdId),
       listIncomeSources(householdId),
@@ -130,8 +174,12 @@ function App() {
     if (!selectedHouseholdId) return;
     setExpenseEstimate(null);
     setProjection(null);
-    refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
   }, [selectedHouseholdId]);
+
+  useEffect(() => {
+    if (!selectedHouseholdId) return;
+    refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
+  }, [selectedHouseholdId, showInterpolatedHistory]);
 
   async function handleCreateHousehold(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -440,6 +488,52 @@ function App() {
           </section>
 
           <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>Historical trend</h2>
+                <p className="muted">Known household snapshot dates first; optional monthly estimates connect the gaps.</p>
+              </div>
+              <label className="inline-toggle">
+                <input
+                  type="checkbox"
+                  checked={showInterpolatedHistory}
+                  onChange={(event) => setShowInterpolatedHistory(event.target.checked)}
+                />
+                Show interpolated estimates
+              </label>
+            </div>
+            {history?.points.length ? (
+              <>
+                <HistoryChart points={history.points} />
+                <table className="spaced-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Net worth</th>
+                      <th>Assets</th>
+                      <th>Liabilities</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.points.map((point) => (
+                      <tr key={`${point.as_of_date}-${point.estimated ? 'estimate' : 'snapshot'}`} className={point.estimated ? 'estimated-row' : undefined}>
+                        <td>{point.as_of_date}</td>
+                        <td>{formatMoney(point.net_worth)}</td>
+                        <td>{formatMoney(point.assets_total)}</td>
+                        <td>{formatMoney(point.liabilities_total)}</td>
+                        <td>{point.estimated ? 'Estimate' : 'Snapshot'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="muted">Add snapshots to see historical trend.</p>
+            )}
+          </section>
+
+          <section className="card">
             <h2>Projection</h2>
             <p className="muted">Project net worth from current balances, account yields, mortgages, and future projection events.</p>
             <form onSubmit={handleGetProjection} className="form-row">
@@ -744,60 +838,34 @@ function App() {
             </div>
           </section>
 
-          <section className="grid two-column">
-            <div className="card">
-              <h2>Accounts</h2>
-              {netWorth?.accounts.length ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Kind</th>
-                      <th>Category</th>
-                      <th>Yield</th>
-                      <th>Balance</th>
+          <section className="card">
+            <h2>Accounts</h2>
+            {netWorth?.accounts.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Kind</th>
+                    <th>Category</th>
+                    <th>Yield</th>
+                    <th>Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {netWorth.accounts.map((account) => (
+                    <tr key={account.account_id}>
+                      <td>{account.name}</td>
+                      <td>{account.account_kind}</td>
+                      <td>{account.category}</td>
+                      <td>{accounts.find((item) => item.id === account.account_id)?.expected_annual_yield ?? '—'}</td>
+                      <td>{formatMoney(account.balance)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {netWorth.accounts.map((account) => (
-                      <tr key={account.account_id}>
-                        <td>{account.name}</td>
-                        <td>{account.account_kind}</td>
-                        <td>{account.category}</td>
-                        <td>{accounts.find((item) => item.id === account.account_id)?.expected_annual_yield ?? '—'}</td>
-                        <td>{formatMoney(account.balance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="muted">No accounts yet.</p>
-              )}
-            </div>
-
-            <div className="card">
-              <h2>History</h2>
-              {history?.points.length ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Net worth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.points.map((point) => (
-                      <tr key={point.as_of_date}>
-                        <td>{point.as_of_date}</td>
-                        <td>{formatMoney(point.net_worth)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="muted">Add snapshots to see history.</p>
-              )}
-            </div>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">No accounts yet.</p>
+            )}
           </section>
 
           <section className="grid two-column">

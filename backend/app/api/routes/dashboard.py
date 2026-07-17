@@ -4,11 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.analytics.expense_estimation import ExpenseEstimateError, estimate_annual_living_expense
+from app.analytics.historical_trend import calculate_historical_trend
 from app.analytics.net_worth import calculate_net_worth, calculate_net_worth_history
 from app.analytics.projections import calculate_net_worth_projection
 from app.db.models import Household
 from app.db.session import get_db
-from app.schemas.dashboard import AnnualExpenseEstimateRead, NetWorthHistoryRead, NetWorthRead
+from app.schemas.dashboard import (
+    AnnualExpenseEstimateRead,
+    HistoricalTrendRead,
+    NetWorthHistoryRead,
+    NetWorthRead,
+)
 from app.schemas.projection import NetWorthProjectionRead
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -26,6 +32,26 @@ def get_net_worth_history(household_id: UUID, db: Session = Depends(get_db)) -> 
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
     return calculate_net_worth_history(db, household_id)
+
+
+@router.get("/{household_id}/historical-trend", response_model=HistoricalTrendRead)
+def get_historical_trend(
+    household_id: UUID,
+    interpolate: bool = False,
+    interval: str = "month",
+    db: Session = Depends(get_db),
+) -> dict:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    try:
+        return calculate_historical_trend(
+            db,
+            household_id,
+            interpolate=interpolate,
+            interval=interval,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/{household_id}/projection", response_model=NetWorthProjectionRead)

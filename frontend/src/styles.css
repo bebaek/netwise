@@ -163,11 +163,95 @@ th {
   color: #18212f;
 }
 
+.section-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.section-header h2 {
+  margin-bottom: 0.25rem;
+}
+
+.section-header p {
+  margin-top: 0;
+}
+
+.inline-toggle {
+  align-items: center;
+  color: #475569;
+  display: flex;
+  gap: 0.5rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.trend-chart {
+  margin-top: 1rem;
+}
+
+.trend-chart svg {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.axis {
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+}
+
+.trend-line {
+  fill: none;
+  stroke: #1d4ed8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.trend-dot {
+  stroke: white;
+  stroke-width: 2;
+}
+
+.trend-dot.snapshot {
+  fill: #1d4ed8;
+}
+
+.trend-dot.estimate {
+  fill: #94a3b8;
+}
+
+.chart-labels {
+  color: #64748b;
+  display: flex;
+  font-size: 0.9rem;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
+.estimated-row {
+  color: #64748b;
+  font-style: italic;
+}
+
 @media (max-width: 800px) {
   .hero,
   .form-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .section-header {
+    flex-direction: column;
+  }
+
+  .inline-toggle {
+    white-space: normal;
   }
 
   .summary-grid,
