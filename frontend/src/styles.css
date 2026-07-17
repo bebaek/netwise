@@ -325,6 +325,16 @@ code {
   stroke-width: 1.5;
 }
 
+.axis-label,
+.axis-title {
+  fill: #64748b;
+  font-size: 12px;
+}
+
+.axis-title {
+  font-weight: 700;
+}
+
 .trend-line {
   fill: none;
   stroke: #1d4ed8;

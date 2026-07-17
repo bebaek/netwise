@@ -195,9 +195,10 @@ function HistoryChart({
   const width = 720;
   const height = 240;
   const padding = 28;
-  const plotWidth = width - padding * 2;
+  const leftPadding = 96;
+  const plotWidth = width - leftPadding - padding;
   const plotHeight = height - padding * 2;
-  const xForDate = (value: string) => padding + ((dateMs(value) - minDate) / dateRange) * plotWidth;
+  const xForDate = (value: string) => leftPadding + ((dateMs(value) - minDate) / dateRange) * plotWidth;
   const yForValue = (value: number) => padding + plotHeight - ((value - minValue) / valueRange) * plotHeight;
   const polylineFor = (items: Array<{ as_of_date: string; net_worth: string }>) =>
     items.map((point) => `${xForDate(point.as_of_date)},${yForValue(Number(point.net_worth))}`).join(' ');
@@ -210,8 +211,17 @@ function HistoryChart({
     <div className="trend-chart" aria-label="Financial trajectory chart">
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         <title>Financial trajectory</title>
-        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis" />
-        <line x1={padding} y1={padding} x2={padding} y2={height - padding} className="axis" />
+        <line x1={leftPadding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis" />
+        <line x1={leftPadding} y1={padding} x2={leftPadding} y2={height - padding} className="axis" />
+        <text x={leftPadding - 10} y={padding + 4} textAnchor="end" className="axis-label">
+          {formatMoney(String(maxValue))}
+        </text>
+        <text x={leftPadding - 10} y={height - padding + 4} textAnchor="end" className="axis-label">
+          {formatMoney(String(minValue))}
+        </text>
+        <text transform={`translate(18 ${height / 2}) rotate(-90)`} textAnchor="middle" className="axis-title">
+          Net worth
+        </text>
         <polyline points={historyPolyline} className="trend-line history" />
         {visibleProjectionPoints.length > 0 && <polyline points={projectionPolyline} className="trend-line projection" />}
         {sortedHistory.map((point) => (
