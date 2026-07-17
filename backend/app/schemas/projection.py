@@ -20,6 +20,10 @@ class ProjectionPointRead(BaseModel):
     net_worth: Decimal
     assets_total: Decimal
     liabilities_total: Decimal
+    projected_income: Decimal
+    projected_taxes: Decimal
+    projected_spending: Decimal
+    net_cash_flow: Decimal
     accounts: list[ProjectionAccountRead]
 
 

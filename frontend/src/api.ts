@@ -249,6 +249,10 @@ export type NetWorthProjection = {
     net_worth: string;
     assets_total: string;
     liabilities_total: string;
+    projected_income: string;
+    projected_taxes: string;
+    projected_spending: string;
+    net_cash_flow: string;
     accounts: Array<{
       account_id: string;
       name: string;

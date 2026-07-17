@@ -108,6 +108,64 @@ def test_projection_projects_real_estate_and_mortgage_balance(client: TestClient
     assert point["liabilities_total"] == "290833.33"
     assert point["net_worth"] == "229166.67"
 
+def test_projection_models_estimated_spending_income_and_taxes(client: TestClient):
+    household = client.post("/households", json={"name": "Spending Projection"}).json()
+    household_id = household["id"]
+
+    cash = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Cash",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{cash['id']}/snapshots",
+        json={"as_of_date": "2025-01-01", "balance": "100000.00"},
+    )
+    client.post(
+        f"/accounts/{cash['id']}/snapshots",
+        json={"as_of_date": "2025-12-31", "balance": "110000.00"},
+    )
+    client.post(
+        "/annual-tax-records",
+        json={
+            "household_id": household_id,
+            "tax_year": 2025,
+            "gross_income": "100000.00",
+            "total_taxes_paid": "20000.00",
+        },
+    )
+    client.post(
+        "/income-sources",
+        json={
+            "household_id": household_id,
+            "name": "Salary",
+            "amount": "100000.00",
+            "frequency": "annually",
+            "start_date": "2026-01-01",
+            "growth_rate": "0.000000",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
+    )
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    assert point["projected_income"] == "100000.00"
+    assert point["projected_taxes"] == "20000.00"
+    assert point["projected_spending"] == "72100.00"
+    assert point["net_cash_flow"] == "7900.00"
+    assert point["assets_total"] == "117900.00"
+    assert point["net_worth"] == "117900.00"
+
 
 def test_projection_rejects_invalid_year_range(client: TestClient):
     household = client.post("/households", json={"name": "Invalid Projection"}).json()

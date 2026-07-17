@@ -1207,7 +1207,7 @@ function App() {
 
           <section className="card">
             <h2>Projection</h2>
-            <p className="muted">Project net worth from current balances, account yields, mortgages, and future projection events.</p>
+            <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
             <form onSubmit={handleGetProjection} className="form-row">
               <input
                 name="start_year"
@@ -1233,6 +1233,10 @@ function App() {
                     <th>Net worth</th>
                     <th>Assets</th>
                     <th>Liabilities</th>
+                    <th>Income</th>
+                    <th>Taxes</th>
+                    <th>Spending</th>
+                    <th>Net cash flow</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1242,6 +1246,10 @@ function App() {
                       <td>{formatMoney(point.net_worth)}</td>
                       <td>{formatMoney(point.assets_total)}</td>
                       <td>{formatMoney(point.liabilities_total)}</td>
+                      <td>{formatMoney(point.projected_income)}</td>
+                      <td>{formatMoney(point.projected_taxes)}</td>
+                      <td>{formatMoney(point.projected_spending)}</td>
+                      <td>{formatMoney(point.net_cash_flow)}</td>
                     </tr>
                   ))}
                 </tbody>
