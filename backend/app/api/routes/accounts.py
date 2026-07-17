@@ -1,7 +1,8 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import Account, AccountEvent, BalanceSnapshot, Household
@@ -13,9 +14,55 @@ from app.schemas.account import (
     AccountRead,
     BalanceSnapshotCreate,
     BalanceSnapshotRead,
+    BalanceSnapshotUpdate,
 )
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+
+@router.patch(
+    "/{account_id}/snapshots/{snapshot_id}",
+    response_model=BalanceSnapshotRead,
+)
+def update_snapshot(
+    account_id: UUID,
+    snapshot_id: UUID,
+    payload: BalanceSnapshotUpdate,
+    db: Session = Depends(get_db),
+) -> BalanceSnapshot:
+    snapshot = db.get(BalanceSnapshot, snapshot_id)
+    if snapshot is None or snapshot.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(snapshot, key, value)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A snapshot already exists for this account and date",
+        ) from exc
+    db.refresh(snapshot)
+    return snapshot
+
+
+@router.delete("/{account_id}/snapshots/{snapshot_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_snapshot(
+    account_id: UUID,
+    snapshot_id: UUID,
+    db: Session = Depends(get_db),
+) -> Response:
+    snapshot = db.get(BalanceSnapshot, snapshot_id)
+    if snapshot is None or snapshot.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
+
+    db.delete(snapshot)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)

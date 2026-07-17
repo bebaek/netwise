@@ -5,6 +5,7 @@ import {
   AnnualExpenseEstimate,
   AnnualTaxRecord,
   Household,
+  HouseholdSnapshot,
   IncomeSource,
   MortgageProfile,
   NetWorth,
@@ -20,6 +21,7 @@ import {
   createRealEstateProperty,
   createSnapshot,
   createSnapshotBatch,
+  deleteSnapshot,
   getAnnualExpenseEstimate,
   getHistoricalTrend,
   getNetWorth,
@@ -28,9 +30,11 @@ import {
   listAccountEvents,
   listAnnualTaxRecords,
   listHouseholds,
+  listHouseholdSnapshots,
   listIncomeSources,
   listMortgageProfiles,
   listRealEstateProperties,
+  updateSnapshot,
 } from './api';
 import './styles.css';
 
@@ -140,6 +144,13 @@ function App() {
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
+  const [householdSnapshots, setHouseholdSnapshots] = useState<HouseholdSnapshot[]>([]);
+  const [snapshotAccountFilter, setSnapshotAccountFilter] = useState<string>('');
+  const [snapshotEditDraft, setSnapshotEditDraft] = useState<{
+    id: string;
+    as_of_date: string;
+    balance: string;
+  } | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
@@ -190,6 +201,7 @@ function App() {
       mortgageList,
       incomeSourceList,
       taxRecordList,
+      snapshotList,
     ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
@@ -198,12 +210,14 @@ function App() {
       listMortgageProfiles(householdId),
       listIncomeSources(householdId),
       listAnnualTaxRecords(householdId),
+      listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
     ]);
     const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
       .flat()
       .sort((left, right) => right.event_date.localeCompare(left.event_date));
     setAccounts(accountList);
     setAccountEvents(accountEventList);
+    setHouseholdSnapshots(snapshotList);
     setNetWorth(netWorthResult);
     setHistory(historyResult);
     setProperties(propertyList);
@@ -223,12 +237,13 @@ function App() {
     setExpenseEstimate(null);
     setProjection(null);
     setSnapshotBatchMessage('');
+    setSnapshotEditDraft(null);
   }, [selectedHouseholdId]);
 
   useEffect(() => {
     if (!selectedHouseholdId) return;
     refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
-  }, [selectedHouseholdId, showInterpolatedHistory]);
+  }, [selectedHouseholdId, showInterpolatedHistory, snapshotAccountFilter]);
 
   async function handleCreateHousehold(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -316,6 +331,38 @@ function App() {
       setSnapshotBatchMessage(
         `Saved ${result.created_count} new and ${result.updated_count} updated snapshot${result.snapshots.length === 1 ? '' : 's'}.`,
       );
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUpdateSnapshot(snapshot: HouseholdSnapshot) {
+    if (!selectedHouseholdId || snapshotEditDraft?.id !== snapshot.id) return;
+    setError('');
+    try {
+      await updateSnapshot(snapshot.account_id, snapshot.id, {
+        as_of_date: snapshotEditDraft.as_of_date,
+        balance: snapshotEditDraft.balance,
+        currency: snapshot.currency,
+      });
+      setSnapshotEditDraft(null);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteSnapshot(snapshot: HouseholdSnapshot) {
+    if (!selectedHouseholdId) return;
+    const confirmed = window.confirm(
+      `Delete ${snapshot.account_name} snapshot from ${snapshot.as_of_date}?`,
+    );
+    if (!confirmed) return;
+    setError('');
+    try {
+      await deleteSnapshot(snapshot.account_id, snapshot.id);
+      if (snapshotEditDraft?.id === snapshot.id) setSnapshotEditDraft(null);
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -657,6 +704,115 @@ function App() {
               </form>
             ) : (
               <p className="muted">Add accounts before capturing a household snapshot.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>Snapshot history</h2>
+                <p className="muted">Review, correct, or delete the balance snapshots that drive current status and trends.</p>
+              </div>
+              <select
+                value={snapshotAccountFilter}
+                onChange={(event) => setSnapshotAccountFilter(event.target.value)}
+                aria-label="Filter snapshot history by account"
+              >
+                <option value="">All accounts</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {householdSnapshots.length ? (
+              <table className="spaced-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Balance</th>
+                    <th>Source</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {householdSnapshots.map((snapshot) => {
+                    const isEditing = snapshotEditDraft?.id === snapshot.id;
+                    return (
+                      <tr key={snapshot.id}>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              type="date"
+                              value={snapshotEditDraft.as_of_date}
+                              onChange={(event) =>
+                                setSnapshotEditDraft({ ...snapshotEditDraft, as_of_date: event.target.value })
+                              }
+                            />
+                          ) : (
+                            snapshot.as_of_date
+                          )}
+                        </td>
+                        <td>
+                          {snapshot.account_name}
+                          <span className="muted cell-detail">{snapshot.account_kind} · {snapshot.account_category}</span>
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              inputMode="decimal"
+                              value={snapshotEditDraft.balance}
+                              onChange={(event) =>
+                                setSnapshotEditDraft({ ...snapshotEditDraft, balance: event.target.value })
+                              }
+                            />
+                          ) : (
+                            formatMoney(snapshot.balance)
+                          )}
+                        </td>
+                        <td>{snapshot.source}</td>
+                        <td>
+                          <div className="action-row">
+                            {isEditing ? (
+                              <>
+                                <button type="button" onClick={() => handleUpdateSnapshot(snapshot)}>
+                                  Save
+                                </button>
+                                <button type="button" className="secondary-button" onClick={() => setSnapshotEditDraft(null)}>
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() =>
+                                    setSnapshotEditDraft({
+                                      id: snapshot.id,
+                                      as_of_date: snapshot.as_of_date,
+                                      balance: snapshot.balance,
+                                    })
+                                  }
+                                >
+                                  Edit
+                                </button>
+                                <button type="button" className="danger-button" onClick={() => handleDeleteSnapshot(snapshot)}>
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">No snapshots found for this household/filter.</p>
             )}
           </section>
 

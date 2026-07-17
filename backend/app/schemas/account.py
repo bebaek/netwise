@@ -43,6 +43,14 @@ class BalanceSnapshotCreate(BaseModel):
     confidence_level: str | None = None
 
 
+class BalanceSnapshotUpdate(BaseModel):
+    as_of_date: date | None = None
+    balance: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    source: SnapshotSource | None = None
+    confidence_level: str | None = None
+
+
 class BalanceSnapshotRead(BaseModel):
     id: UUID
     household_id: UUID
@@ -55,6 +63,12 @@ class BalanceSnapshotRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class HouseholdBalanceSnapshotRead(BalanceSnapshotRead):
+    account_name: str
+    account_kind: str
+    account_category: str
 
 
 class BalanceSnapshotBatchItemCreate(BaseModel):

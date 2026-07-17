@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Account, BalanceSnapshot, Household
 from app.db.session import get_db
-from app.schemas.account import BalanceSnapshotBatchCreate, BalanceSnapshotBatchRead
+from app.schemas.account import (
+    BalanceSnapshotBatchCreate,
+    BalanceSnapshotBatchRead,
+    HouseholdBalanceSnapshotRead,
+)
 from app.schemas.household import HouseholdCreate, HouseholdRead
 
 router = APIRouter(prefix="/households", tags=["households"])
@@ -24,6 +28,46 @@ def create_household(payload: HouseholdCreate, db: Session = Depends(get_db)) ->
 @router.get("", response_model=list[HouseholdRead])
 def list_households(db: Session = Depends(get_db)) -> list[Household]:
     return list(db.scalars(select(Household).order_by(Household.created_at)).all())
+
+
+@router.get("/{household_id}/snapshots", response_model=list[HouseholdBalanceSnapshotRead])
+def list_household_snapshots(
+    household_id: UUID,
+    account_id: UUID | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+    statement = (
+        select(BalanceSnapshot, Account)
+        .join(Account, BalanceSnapshot.account_id == Account.id)
+        .where(BalanceSnapshot.household_id == household_id)
+        .order_by(BalanceSnapshot.as_of_date.desc(), Account.name, BalanceSnapshot.created_at.desc())
+        .limit(min(max(limit, 1), 200))
+    )
+    if account_id is not None:
+        statement = statement.where(BalanceSnapshot.account_id == account_id)
+
+    rows = db.execute(statement).all()
+    return [
+        {
+            "id": snapshot.id,
+            "household_id": snapshot.household_id,
+            "account_id": snapshot.account_id,
+            "account_name": account.name,
+            "account_kind": account.account_kind,
+            "account_category": account.category,
+            "as_of_date": snapshot.as_of_date,
+            "balance": snapshot.balance,
+            "currency": snapshot.currency,
+            "source": snapshot.source,
+            "confidence_level": snapshot.confidence_level,
+            "created_at": snapshot.created_at,
+        }
+        for snapshot, account in rows
+    ]
 
 
 @router.get("/{household_id}", response_model=HouseholdRead)

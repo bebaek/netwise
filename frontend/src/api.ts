@@ -62,6 +62,12 @@ export type SnapshotBatch = {
   }>;
 };
 
+export type HouseholdSnapshot = SnapshotBatch['snapshots'][number] & {
+  account_name: string;
+  account_kind: string;
+  account_category: string;
+};
+
 export type AccountEvent = {
   id: string;
   household_id: string;
@@ -186,6 +192,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.text();
     throw new Error(`${response.status} ${response.statusText}: ${body}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -240,6 +247,32 @@ export function createSnapshotBatch(
   return request<SnapshotBatch>(`/households/${householdId}/snapshot-batch`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function listHouseholdSnapshots(
+  householdId: string,
+  accountId?: string,
+): Promise<HouseholdSnapshot[]> {
+  const params = new URLSearchParams({ limit: '100' });
+  if (accountId) params.set('account_id', accountId);
+  return request<HouseholdSnapshot[]>(`/households/${householdId}/snapshots?${params}`);
+}
+
+export function updateSnapshot(
+  accountId: string,
+  snapshotId: string,
+  payload: { as_of_date?: string; balance?: string; currency?: string },
+): Promise<SnapshotBatch['snapshots'][number]> {
+  return request<SnapshotBatch['snapshots'][number]>(`/accounts/${accountId}/snapshots/${snapshotId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSnapshot(accountId: string, snapshotId: string): Promise<void> {
+  return request<void>(`/accounts/${accountId}/snapshots/${snapshotId}`, {
+    method: 'DELETE',
   });
 }
 
