@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.db.models import Household
 from app.db.session import get_db
 from app.importers.fintrack import FintrackImportError, import_fintrack_directory
@@ -9,8 +10,17 @@ from app.schemas.imports import FintrackImportCreate, FintrackImportRead
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 
+def require_admin_tools_enabled(settings: Settings = Depends(get_settings)) -> None:
+    if not settings.enable_admin_tools:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tools are disabled")
+
+
 @router.post("/fintrack", response_model=FintrackImportRead, status_code=status.HTTP_201_CREATED)
-def import_fintrack(payload: FintrackImportCreate, db: Session = Depends(get_db)):
+def import_fintrack(
+    payload: FintrackImportCreate,
+    _: None = Depends(require_admin_tools_enabled),
+    db: Session = Depends(get_db),
+):
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
 

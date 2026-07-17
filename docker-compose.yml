@@ -22,6 +22,7 @@ services:
       NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise@postgres:5432/netwise
       NETWISE_PUBLIC_SIGNUP: "false"
       NETWISE_SINGLE_HOUSEHOLD_MODE: "true"
+      NETWISE_ENABLE_ADMIN_TOOLS: "true"
     ports:
       - "8000:8000"
     depends_on:

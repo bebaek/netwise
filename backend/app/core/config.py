@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./netwise.db"
     public_signup: bool = False
     single_household_mode: bool = True
+    enable_admin_tools: bool = False
 
     model_config = SettingsConfigDict(env_prefix="NETWISE_", env_file=".env", extra="ignore")
 

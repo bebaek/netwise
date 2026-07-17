@@ -7,6 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import Settings, get_settings
 from app.db.models import (
     Account,
     AccountEvent,
@@ -42,6 +43,11 @@ def validate_membership_role(role: str) -> str:
             detail=f"Role must be one of: {', '.join(sorted(_ALLOWED_ROLES))}",
         )
     return normalized
+
+
+def require_admin_tools_enabled(settings: Settings = Depends(get_settings)) -> None:
+    if not settings.enable_admin_tools:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tools are disabled")
 
 
 def _model_export(model: object, fields: tuple[str, ...]) -> dict:
@@ -305,7 +311,11 @@ def remove_household_member(
 
 
 @router.get("/{household_id}/export")
-def export_household(household_id: UUID, db: Session = Depends(get_db)) -> dict:
+def export_household(
+    household_id: UUID,
+    _: None = Depends(require_admin_tools_enabled),
+    db: Session = Depends(get_db),
+) -> dict:
     household = db.get(Household, household_id)
     if household is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")

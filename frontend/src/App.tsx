@@ -30,6 +30,7 @@ import {
   deleteSnapshot,
   exportHousehold,
   getAnnualExpenseEstimate,
+  getCapabilities,
   getHistoricalTrend,
   getNetWorth,
   getNetWorthBreakdownHistory,
@@ -203,6 +204,7 @@ function App() {
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
+  const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
   const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
@@ -311,7 +313,8 @@ function App() {
   }
 
   useEffect(() => {
-    refreshUsers()
+    Promise.all([refreshUsers(), getCapabilities()])
+      .then(([, capabilities]) => setAdminToolsEnabled(capabilities.admin_tools_enabled))
       .catch((err: unknown) => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -820,9 +823,11 @@ function App() {
                 <p className="muted">Switch users, switch households, and manage household memberships.</p>
               </div>
               <div className="management-actions">
-                <button type="button" className="secondary-button" onClick={handleDownloadHouseholdExport}>
-                  Download household JSON
-                </button>
+                {adminToolsEnabled && (
+                  <button type="button" className="secondary-button" onClick={handleDownloadHouseholdExport}>
+                    Download household JSON
+                  </button>
+                )}
                 <form onSubmit={handleCreateHousehold} className="form-row">
                   <input name="name" placeholder="New household name" required />
                   <button type="submit">Add household</button>
@@ -871,30 +876,31 @@ function App() {
             )}
           </section>
 
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <h2>Import FinTrack data</h2>
-                <p className="muted">
-                  Import a server-local FinTrack data directory into {selectedHousehold.name}. Expected files: <code>*-condition.toml</code>, <code>*-values.csv</code>, and optional <code>*-value-changes.csv</code>.
-                </p>
+          {adminToolsEnabled && (
+            <section className="card">
+              <div className="section-header">
+                <div>
+                  <h2>Import FinTrack data</h2>
+                  <p className="muted">
+                    Import a server-local FinTrack data directory into {selectedHousehold.name}. Expected files: <code>*-condition.toml</code>, <code>*-values.csv</code>, and optional <code>*-value-changes.csv</code>.
+                  </p>
+                </div>
               </div>
-            </div>
-            <form onSubmit={handleImportFintrack} className="form-row">
-              <input name="data_dir" placeholder="/Users/burm/code/fintrack/data-me" required />
-              <input name="currency" placeholder="USD" defaultValue="USD" maxLength={3} />
-              <label className="inline-toggle">
-                <input
-                  name="dry_run"
-                  type="checkbox"
-                  checked={fintrackDryRun}
-                  onChange={(event) => setFintrackDryRun(event.target.checked)}
-                />
-                Dry run
-              </label>
-              <button type="submit">{fintrackDryRun ? 'Preview import' : 'Import for real'}</button>
-            </form>
-            {fintrackImportResult && (
+              <form onSubmit={handleImportFintrack} className="form-row">
+                <input name="data_dir" placeholder="/Users/burm/code/fintrack/data-me" required />
+                <input name="currency" placeholder="USD" defaultValue="USD" maxLength={3} />
+                <label className="inline-toggle">
+                  <input
+                    name="dry_run"
+                    type="checkbox"
+                    checked={fintrackDryRun}
+                    onChange={(event) => setFintrackDryRun(event.target.checked)}
+                  />
+                  Dry run
+                </label>
+                <button type="submit">{fintrackDryRun ? 'Preview import' : 'Import for real'}</button>
+              </form>
+              {fintrackImportResult && (
               <div className="import-result">
                 <p>
                   <strong>{fintrackImportResult.dry_run ? 'Dry run' : 'Import'} complete:</strong>{' '}
@@ -937,8 +943,9 @@ function App() {
                   </table>
                 </div>
               </div>
-            )}
-          </section>
+              )}
+            </section>
+          )}
 
           <section className="summary-grid">
             <div className="metric-card">

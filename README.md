@@ -65,6 +65,8 @@ The backend is available directly at:
 http://localhost:8000
 ```
 
+Admin tools such as FinTrack import and household JSON export are disabled by default in backend configuration. The committed Docker Compose development setup enables them with `NETWISE_ENABLE_ADMIN_TOOLS=true`; only enable this intentionally for trusted deployments.
+
 Health checks:
 
 ```bash

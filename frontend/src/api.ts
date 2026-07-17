@@ -20,6 +20,10 @@ export type HouseholdMembership = {
   user: User | null;
 };
 
+export type Capabilities = {
+  admin_tools_enabled: boolean;
+};
+
 export type HouseholdExport = {
   schema: string;
   exported_at: string;
@@ -276,6 +280,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listUsers(): Promise<User[]> {
   return request<User[]>('/users');
+}
+
+export function getCapabilities(): Promise<Capabilities> {
+  return request<Capabilities>('/capabilities');
 }
 
 export function createUser(payload: { display_name: string; email?: string }): Promise<User> {

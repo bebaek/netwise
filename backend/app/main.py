@@ -1,12 +1,23 @@
 from fastapi import FastAPI
 
-from app.api.routes import accounts, dashboard, health, households, imports, planning, real_estate, users
+from app.api.routes import (
+    accounts,
+    capabilities,
+    dashboard,
+    health,
+    households,
+    imports,
+    planning,
+    real_estate,
+    users,
+)
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Netwise API")
 
     app.include_router(health.router)
+    app.include_router(capabilities.router)
     app.include_router(users.router)
     app.include_router(households.router)
     app.include_router(imports.router)
