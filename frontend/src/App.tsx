@@ -729,7 +729,7 @@ function App() {
 
           <section className="grid two-column">
             <div className="card">
-              <h2>Account events</h2>
+              <h2>Projection events</h2>
               {accountEvents.length ? (
                 <table>
                   <thead>
@@ -754,13 +754,13 @@ function App() {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted">No account events yet.</p>
+                <p className="muted">No projection events yet.</p>
               )}
             </div>
 
             <div className="card">
-              <h2>Add account event</h2>
-              <p className="muted">Capture known or planned contributions, withdrawals, tax payments, and major adjustments.</p>
+              <h2>Add projection event</h2>
+              <p className="muted">Capture planned future contributions, withdrawals, purchases, sales, and adjustments.</p>
               <form onSubmit={handleCreateAccountEvent} className="stacked-form">
                 <select name="account_id" required defaultValue="">
                   <option value="" disabled>
@@ -790,13 +790,13 @@ function App() {
                   <option value="account_removed">Account removed</option>
                   <option value="manual_projection_adjustment">Manual projection adjustment</option>
                 </select>
-                <select name="projection_behavior" defaultValue="historical_only" required>
-                  <option value="historical_only">Historical only</option>
+                <select name="projection_behavior" defaultValue="projection_only" required>
                   <option value="projection_only">Projection only</option>
                   <option value="historical_and_projection">Historical and projection</option>
+                  <option value="historical_only">Historical only</option>
                 </select>
                 <input name="description" placeholder="Description" />
-                <button type="submit">Add event</button>
+                <button type="submit">Add projection event</button>
               </form>
             </div>
           </section>

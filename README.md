@@ -90,6 +90,14 @@ npm run lint
 npm run build
 ```
 
+Seed realistic demo data for manual testing:
+
+```bash
+docker compose exec backend python -m app.seed_demo --reset
+```
+
+The seed command creates a `Demo Household` with accounts, snapshots, real estate, mortgage, income, tax records, and future projection events. Omit `--reset` to reuse existing demo data without duplicating records.
+
 ## Planned frontend stack
 
 - React or Next.js
