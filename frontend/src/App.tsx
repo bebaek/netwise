@@ -5,6 +5,7 @@ import {
   AnnualExpenseEstimate,
   AnnualTaxRecord,
   Household,
+  HouseholdMembership,
   HouseholdSnapshot,
   IncomeSource,
   MortgageProfile,
@@ -13,6 +14,8 @@ import {
   NetWorthHistory,
   NetWorthProjection,
   RealEstateProperty,
+  User,
+  addHouseholdMember,
   createAccount,
   createAccountEvent,
   createAnnualTaxRecord,
@@ -22,6 +25,7 @@ import {
   createRealEstateProperty,
   createSnapshot,
   createSnapshotBatch,
+  createUser,
   deleteSnapshot,
   getAnnualExpenseEstimate,
   getHistoricalTrend,
@@ -32,10 +36,13 @@ import {
   listAccountEvents,
   listAnnualTaxRecords,
   listHouseholds,
+  listHouseholdMembers,
   listHouseholdSnapshots,
   listIncomeSources,
   listMortgageProfiles,
   listRealEstateProperties,
+  listUsers,
+  removeHouseholdMember,
   updateSnapshot,
 } from './api';
 import './styles.css';
@@ -149,11 +156,14 @@ function HistoryChart({
 }
 
 function App() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
   const [householdSnapshots, setHouseholdSnapshots] = useState<HouseholdSnapshot[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [snapshotAccountFilter, setSnapshotAccountFilter] = useState<string>('');
   const [snapshotEditDraft, setSnapshotEditDraft] = useState<{
     id: string;
@@ -174,6 +184,11 @@ function App() {
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+
+  const selectedUser = useMemo(
+    () => users.find((user) => user.id === selectedUserId),
+    [users, selectedUserId],
+  );
 
   const selectedHousehold = useMemo(
     () => households.find((household) => household.id === selectedHouseholdId),
@@ -207,10 +222,26 @@ function App() {
     (account) => account.account_kind === 'asset' && account.category === 'real_estate',
   );
 
-  async function refreshHouseholds() {
-    const householdList = await listHouseholds();
+  const availableUsersForMembership = users.filter(
+    (user) => !householdMembers.some((membership) => membership.user_id === user.id),
+  );
+
+  async function refreshUsers() {
+    const userList = await listUsers();
+    setUsers(userList);
+    if (!selectedUserId && userList.length > 0) {
+      setSelectedUserId(userList[0].id);
+    }
+  }
+
+  async function refreshHouseholds(userId: string) {
+    const householdList = await listHouseholds(userId);
     setHouseholds(householdList);
-    if (!selectedHouseholdId && householdList.length > 0) {
+    if (householdList.length === 0) {
+      setSelectedHouseholdId('');
+      return;
+    }
+    if (!householdList.some((household) => household.id === selectedHouseholdId)) {
       setSelectedHouseholdId(householdList[0].id);
     }
   }
@@ -226,6 +257,7 @@ function App() {
       taxRecordList,
       snapshotList,
       breakdownResult,
+      memberList,
     ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
@@ -236,6 +268,7 @@ function App() {
       listAnnualTaxRecords(householdId),
       listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
       getNetWorthBreakdownHistory(householdId),
+      listHouseholdMembers(householdId),
     ]);
     const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
       .flat()
@@ -243,6 +276,7 @@ function App() {
     setAccounts(accountList);
     setAccountEvents(accountEventList);
     setHouseholdSnapshots(snapshotList);
+    setHouseholdMembers(memberList);
     setNetWorth(netWorthResult);
     setHistory(historyResult);
     setBreakdownHistory(breakdownResult);
@@ -253,10 +287,19 @@ function App() {
   }
 
   useEffect(() => {
-    refreshHouseholds()
+    refreshUsers()
       .catch((err: unknown) => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setHouseholds([]);
+      setSelectedHouseholdId('');
+      return;
+    }
+    refreshHouseholds(selectedUserId).catch((err: unknown) => setError(String(err)));
+  }, [selectedUserId]);
 
   useEffect(() => {
     if (!selectedHouseholdId) return;
@@ -271,18 +314,67 @@ function App() {
     refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
   }, [selectedHouseholdId, showInterpolatedHistory, snapshotAccountFilter]);
 
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    setError('');
+    const form = new FormData(target);
+    const displayName = String(form.get('display_name') ?? '').trim();
+    const email = String(form.get('email') ?? '').trim();
+    if (!displayName) return;
+    try {
+      const user = await createUser({ display_name: displayName, email: email || undefined });
+      target.reset();
+      await refreshUsers();
+      setSelectedUserId(user.id);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateHousehold(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
     setError('');
     const form = new FormData(target);
     const name = String(form.get('name') ?? '').trim();
-    if (!name) return;
+    if (!name || !selectedUserId) return;
     try {
-      const household = await createHousehold(name);
+      const household = await createHousehold(name, selectedUserId);
       target.reset();
-      await refreshHouseholds();
+      await refreshHouseholds(selectedUserId);
       setSelectedHouseholdId(household.id);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleAddHouseholdMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const userId = requiredString(form, 'user_id');
+    const role = requiredString(form, 'role');
+    setError('');
+    try {
+      await addHouseholdMember(selectedHouseholdId, { user_id: userId, role });
+      target.reset();
+      setHouseholdMembers(await listHouseholdMembers(selectedHouseholdId));
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleRemoveHouseholdMember(userId: string) {
+    if (!selectedHouseholdId) return;
+    setError('');
+    try {
+      await removeHouseholdMember(selectedHouseholdId, userId);
+      setHouseholdMembers(await listHouseholdMembers(selectedHouseholdId));
+      if (userId === selectedUserId) {
+        await refreshHouseholds(selectedUserId);
+      }
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -597,27 +689,55 @@ function App() {
           <h1>Financial status from balance snapshots</h1>
           <p className="muted">Track household net worth without transaction categorization.</p>
         </div>
-        {selectedHousehold && (
-          <select
-            value={selectedHouseholdId}
-            onChange={(event) => setSelectedHouseholdId(event.target.value)}
-            aria-label="Selected household"
-          >
-            {households.map((household) => (
-              <option key={household.id} value={household.id}>
-                {household.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="selector-stack">
+          {selectedUser && (
+            <select
+              value={selectedUserId}
+              onChange={(event) => setSelectedUserId(event.target.value)}
+              aria-label="Selected user"
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.display_name}
+                </option>
+              ))}
+            </select>
+          )}
+          {selectedHousehold && (
+            <select
+              value={selectedHouseholdId}
+              onChange={(event) => setSelectedHouseholdId(event.target.value)}
+              aria-label="Selected household"
+            >
+              {households.map((household) => (
+                <option key={household.id} value={household.id}>
+                  {household.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </header>
 
       {error && <div className="error">{error}</div>}
       {loading && <div className="card">Loading…</div>}
 
-      {!loading && households.length === 0 && (
+      {!loading && users.length === 0 && (
+        <section className="card narrow">
+          <h2>Create your user</h2>
+          <p className="muted">Users own or join households. Authentication can be added later.</p>
+          <form onSubmit={handleCreateUser} className="form-grid compact-form">
+            <input name="display_name" placeholder="Your name" required />
+            <input name="email" type="email" placeholder="Email (optional)" />
+            <button type="submit">Create user</button>
+          </form>
+        </section>
+      )}
+
+      {!loading && users.length > 0 && households.length === 0 && (
         <section className="card narrow">
           <h2>Create your household</h2>
+          <p className="muted">This household will be owned by {selectedUser?.display_name ?? 'the selected user'}.</p>
           <form onSubmit={handleCreateHousehold} className="form-row">
             <input name="name" placeholder="Home" required />
             <button type="submit">Create</button>
@@ -627,6 +747,55 @@ function App() {
 
       {selectedHousehold && (
         <>
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>People & household access</h2>
+                <p className="muted">Switch users, switch households, and manage household memberships.</p>
+              </div>
+              <form onSubmit={handleCreateUser} className="form-row">
+                <input name="display_name" placeholder="New user name" required />
+                <input name="email" type="email" placeholder="Email (optional)" />
+                <button type="submit">Add user</button>
+              </form>
+            </div>
+            <div className="member-list">
+              {householdMembers.map((membership) => (
+                <div key={membership.id} className="member-row">
+                  <span>
+                    <strong>{membership.user?.display_name ?? membership.user_id}</strong>
+                    <span className="muted"> {membership.user?.email ?? ''}</span>
+                  </span>
+                  <span className="pill">{membership.role}</span>
+                  <button type="button" className="secondary-button" onClick={() => handleRemoveHouseholdMember(membership.user_id)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            {availableUsersForMembership.length > 0 && (
+              <form onSubmit={handleAddHouseholdMember} className="form-row spaced-table">
+                <select name="user_id" required defaultValue="">
+                  <option value="" disabled>
+                    Add user to household
+                  </option>
+                  {availableUsersForMembership.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.display_name}
+                    </option>
+                  ))}
+                </select>
+                <select name="role" defaultValue="member">
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                  <option value="member">Member</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button type="submit">Add member</button>
+              </form>
+            )}
+          </section>
+
           <section className="summary-grid">
             <div className="metric-card">
               <span>Net worth</span>

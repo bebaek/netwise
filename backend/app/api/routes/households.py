@@ -2,9 +2,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Account, BalanceSnapshot, Household
+from app.db.models import Account, BalanceSnapshot, Household, HouseholdMembership, MembershipRole, User
 from app.db.session import get_db
 from app.schemas.account import (
     BalanceSnapshotBatchCreate,
@@ -12,22 +12,63 @@ from app.schemas.account import (
     HouseholdBalanceSnapshotRead,
 )
 from app.schemas.household import HouseholdCreate, HouseholdRead
+from app.schemas.user import HouseholdMembershipCreate, HouseholdMembershipRead
 
 router = APIRouter(prefix="/households", tags=["households"])
+
+_ALLOWED_ROLES = {role.value for role in MembershipRole}
+
+
+def validate_membership_role(role: str) -> str:
+    normalized = role.strip().lower()
+    if normalized not in _ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role must be one of: {', '.join(sorted(_ALLOWED_ROLES))}",
+        )
+    return normalized
 
 
 @router.post("", response_model=HouseholdRead, status_code=status.HTTP_201_CREATED)
 def create_household(payload: HouseholdCreate, db: Session = Depends(get_db)) -> Household:
-    household = Household(name=payload.name)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Household name is required")
+
+    if payload.owner_user_id is not None and db.get(User, payload.owner_user_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Owner user not found")
+
+    household = Household(name=name)
     db.add(household)
+    db.flush()
+    if payload.owner_user_id is not None:
+        db.add(
+            HouseholdMembership(
+                household_id=household.id,
+                user_id=payload.owner_user_id,
+                role="owner",
+            )
+        )
     db.commit()
     db.refresh(household)
     return household
 
 
 @router.get("", response_model=list[HouseholdRead])
-def list_households(db: Session = Depends(get_db)) -> list[Household]:
-    return list(db.scalars(select(Household).order_by(Household.created_at)).all())
+def list_households(user_id: UUID | None = None, db: Session = Depends(get_db)) -> list[Household]:
+    if user_id is None:
+        return list(db.scalars(select(Household).order_by(Household.created_at)).all())
+
+    if db.get(User, user_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    statement = (
+        select(Household)
+        .join(HouseholdMembership, HouseholdMembership.household_id == Household.id)
+        .where(HouseholdMembership.user_id == user_id)
+        .order_by(Household.created_at)
+    )
+    return list(db.scalars(statement).all())
 
 
 @router.get("/{household_id}/snapshots", response_model=list[HouseholdBalanceSnapshotRead])
@@ -68,6 +109,81 @@ def list_household_snapshots(
         }
         for snapshot, account in rows
     ]
+
+
+@router.get("/{household_id}/members", response_model=list[HouseholdMembershipRead])
+def list_household_members(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[HouseholdMembership]:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+    return list(
+        db.scalars(
+            select(HouseholdMembership)
+            .options(selectinload(HouseholdMembership.user))
+            .where(HouseholdMembership.household_id == household_id)
+            .order_by(HouseholdMembership.created_at)
+        ).all()
+    )
+
+
+@router.post(
+    "/{household_id}/members",
+    response_model=HouseholdMembershipRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_household_member(
+    household_id: UUID,
+    payload: HouseholdMembershipCreate,
+    db: Session = Depends(get_db),
+) -> HouseholdMembership:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    if db.get(User, payload.user_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    existing = db.scalars(
+        select(HouseholdMembership).where(
+            HouseholdMembership.household_id == household_id,
+            HouseholdMembership.user_id == payload.user_id,
+        )
+    ).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already a member of this household",
+        )
+
+    membership = HouseholdMembership(
+        household_id=household_id,
+        user_id=payload.user_id,
+        role=validate_membership_role(payload.role),
+    )
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+    return membership
+
+
+@router.delete("/{household_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_household_member(
+    household_id: UUID,
+    user_id: UUID,
+    db: Session = Depends(get_db),
+) -> None:
+    membership = db.scalars(
+        select(HouseholdMembership).where(
+            HouseholdMembership.household_id == household_id,
+            HouseholdMembership.user_id == user_id,
+        )
+    ).first()
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
+
+    db.delete(membership)
+    db.commit()
 
 
 @router.get("/{household_id}", response_model=HouseholdRead)

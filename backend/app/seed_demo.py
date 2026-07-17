@@ -16,16 +16,20 @@ from app.db.models import (
     AnnualTaxRecord,
     BalanceSnapshot,
     Household,
+    HouseholdMembership,
     IncomeFrequency,
     IncomeSource,
     MortgageProfile,
     ProjectionBehavior,
     RealEstateProperty,
     SnapshotSource,
+    User,
 )
 from app.db.session import SessionLocal
 
 DEMO_HOUSEHOLD_NAME = "Demo Household"
+DEMO_USER_NAME = "Demo User"
+DEMO_USER_EMAIL = "demo@netwise.local"
 
 
 @dataclass
@@ -47,6 +51,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
         db.flush()
 
     household = _get_or_create_household(db, DEMO_HOUSEHOLD_NAME)
+    _ensure_demo_user_membership(db, household)
     summary = DemoSeedSummary(household_id=str(household.id), reset=reset)
     if household.created_at == household.updated_at:
         # This is only a hint for summary accounting. Existing rows are counted by the
@@ -137,6 +142,7 @@ def _delete_demo_households(db: Session) -> None:
         db.scalars(select(Household.id).where(Household.name == DEMO_HOUSEHOLD_NAME)).all()
     )
     for household_id in household_ids:
+        db.execute(delete(HouseholdMembership).where(HouseholdMembership.household_id == household_id))
         db.execute(delete(AccountEvent).where(AccountEvent.household_id == household_id))
         db.execute(delete(BalanceSnapshot).where(BalanceSnapshot.household_id == household_id))
         db.execute(delete(MortgageProfile).where(MortgageProfile.household_id == household_id))
@@ -155,6 +161,24 @@ def _get_or_create_household(db: Session, name: str) -> Household:
     db.add(household)
     db.flush()
     return household
+
+
+def _ensure_demo_user_membership(db: Session, household: Household) -> None:
+    user = db.scalars(select(User).where(User.email == DEMO_USER_EMAIL)).first()
+    if user is None:
+        user = User(display_name=DEMO_USER_NAME, email=DEMO_USER_EMAIL)
+        db.add(user)
+        db.flush()
+
+    membership = db.scalars(
+        select(HouseholdMembership).where(
+            HouseholdMembership.household_id == household.id,
+            HouseholdMembership.user_id == user.id,
+        )
+    ).first()
+    if membership is None:
+        db.add(HouseholdMembership(household_id=household.id, user_id=user.id, role="owner"))
+        db.flush()
 
 
 def _get_or_create_account(

@@ -9,6 +9,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.session import Base
 
 
+class MembershipRole(StrEnum):
+    owner = "owner"
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
+
+
 class AccountKind(StrEnum):
     asset = "asset"
     liability = "liability"
@@ -55,6 +62,22 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household_memberships: Mapped[list["HouseholdMembership"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
 class Household(Base):
     __tablename__ = "households"
 
@@ -66,11 +89,33 @@ class Household(Base):
     )
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="household")
+    memberships: Mapped[list["HouseholdMembership"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
     income_sources: Mapped[list["IncomeSource"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
     annual_tax_records: Mapped[list["AnnualTaxRecord"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
+    )
+
+
+class HouseholdMembership(Base):
+    __tablename__ = "household_memberships"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default=MembershipRole.member)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    household: Mapped[Household] = relationship(back_populates="memberships")
+    user: Mapped[User] = relationship(back_populates="household_memberships")
+
+    __table_args__ = (
+        UniqueConstraint("household_id", "user_id", name="uq_household_memberships_household_user"),
+        Index("ix_household_memberships_household_id", "household_id"),
+        Index("ix_household_memberships_user_id", "user_id"),
     )
 
 

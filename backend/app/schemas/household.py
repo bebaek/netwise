@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 class HouseholdCreate(BaseModel):
     name: str
+    owner_user_id: UUID | None = None
 
 
 class HouseholdRead(BaseModel):

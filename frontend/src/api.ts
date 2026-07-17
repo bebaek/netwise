@@ -3,6 +3,23 @@ export type Household = {
   name: string;
 };
 
+export type User = {
+  id: string;
+  display_name: string;
+  email: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HouseholdMembership = {
+  id: string;
+  household_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  user: User | null;
+};
+
 export type Account = {
   id: string;
   household_id: string;
@@ -208,15 +225,45 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function listHouseholds(): Promise<Household[]> {
-  return request<Household[]>('/households');
+export function listUsers(): Promise<User[]> {
+  return request<User[]>('/users');
 }
 
-export function createHousehold(name: string): Promise<Household> {
+export function createUser(payload: { display_name: string; email?: string }): Promise<User> {
+  return request<User>('/users', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listHouseholds(userId?: string): Promise<Household[]> {
+  const query = userId ? `?user_id=${userId}` : '';
+  return request<Household[]>(`/households${query}`);
+}
+
+export function createHousehold(name: string, ownerUserId?: string): Promise<Household> {
   return request<Household>('/households', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, owner_user_id: ownerUserId || null }),
   });
+}
+
+export function listHouseholdMembers(householdId: string): Promise<HouseholdMembership[]> {
+  return request<HouseholdMembership[]>(`/households/${householdId}/members`);
+}
+
+export function addHouseholdMember(
+  householdId: string,
+  payload: { user_id: string; role: string },
+): Promise<HouseholdMembership> {
+  return request<HouseholdMembership>(`/households/${householdId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeHouseholdMember(householdId: string, userId: string): Promise<void> {
+  return request<void>(`/households/${householdId}/members/${userId}`, { method: 'DELETE' });
 }
 
 export function listAccounts(householdId: string): Promise<Account[]> {
