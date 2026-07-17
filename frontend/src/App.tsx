@@ -51,44 +51,84 @@ function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
-function HistoryChart({ points }: { points: NetWorthHistory['points'] }) {
-  if (points.length < 2) return null;
+type TrajectoryProjectionPoint = Pick<NetWorthProjection['points'][number], 'as_of_date' | 'net_worth'>;
 
-  const values = points.map((point) => Number(point.net_worth));
+function dateMs(value: string): number {
+  return new Date(`${value}T00:00:00`).getTime();
+}
+
+function HistoryChart({
+  points,
+  projectionPoints = [],
+}: {
+  points: NetWorthHistory['points'];
+  projectionPoints?: TrajectoryProjectionPoint[];
+}) {
+  const sortedHistory = [...points].sort((left, right) => left.as_of_date.localeCompare(right.as_of_date));
+  const lastHistoryPoint = sortedHistory[sortedHistory.length - 1];
+  const visibleProjectionPoints = [...projectionPoints]
+    .filter((point) => !lastHistoryPoint || point.as_of_date > lastHistoryPoint.as_of_date)
+    .sort((left, right) => left.as_of_date.localeCompare(right.as_of_date));
+  const chartPoints = [...sortedHistory, ...visibleProjectionPoints];
+  if (chartPoints.length < 2) return null;
+
+  const values = chartPoints.map((point) => Number(point.net_worth));
+  const dates = chartPoints.map((point) => dateMs(point.as_of_date));
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
+  const minDate = Math.min(...dates);
+  const maxDate = Math.max(...dates);
   const valueRange = maxValue - minValue || 1;
+  const dateRange = maxDate - minDate || 1;
   const width = 720;
-  const height = 220;
+  const height = 240;
   const padding = 28;
   const plotWidth = width - padding * 2;
   const plotHeight = height - padding * 2;
-  const xForIndex = (index: number) => padding + (plotWidth * index) / Math.max(points.length - 1, 1);
+  const xForDate = (value: string) => padding + ((dateMs(value) - minDate) / dateRange) * plotWidth;
   const yForValue = (value: number) => padding + plotHeight - ((value - minValue) / valueRange) * plotHeight;
-  const actualPolyline = points
-    .map((point, index) => `${xForIndex(index)},${yForValue(Number(point.net_worth))}`)
-    .join(' ');
+  const polylineFor = (items: Array<{ as_of_date: string; net_worth: string }>) =>
+    items.map((point) => `${xForDate(point.as_of_date)},${yForValue(Number(point.net_worth))}`).join(' ');
+  const historyPolyline = polylineFor(sortedHistory);
+  const projectionPolyline = lastHistoryPoint
+    ? polylineFor([lastHistoryPoint, ...visibleProjectionPoints])
+    : polylineFor(visibleProjectionPoints);
 
   return (
-    <div className="trend-chart" aria-label="Historical net worth trend chart">
+    <div className="trend-chart" aria-label="Financial trajectory chart">
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
-        <title>Historical net worth trend</title>
+        <title>Financial trajectory</title>
         <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis" />
         <line x1={padding} y1={padding} x2={padding} y2={height - padding} className="axis" />
-        <polyline points={actualPolyline} className="trend-line" />
-        {points.map((point, index) => (
+        <polyline points={historyPolyline} className="trend-line history" />
+        {visibleProjectionPoints.length > 0 && <polyline points={projectionPolyline} className="trend-line projection" />}
+        {sortedHistory.map((point) => (
           <circle
             key={`${point.as_of_date}-${point.estimated ? 'estimate' : 'snapshot'}`}
-            cx={xForIndex(index)}
+            cx={xForDate(point.as_of_date)}
             cy={yForValue(Number(point.net_worth))}
             r={point.estimated ? 3 : 5}
             className={point.estimated ? 'trend-dot estimate' : 'trend-dot snapshot'}
           />
         ))}
+        {visibleProjectionPoints.map((point) => (
+          <circle
+            key={`${point.as_of_date}-projection`}
+            cx={xForDate(point.as_of_date)}
+            cy={yForValue(Number(point.net_worth))}
+            r={4}
+            className="trend-dot projection"
+          />
+        ))}
       </svg>
       <div className="chart-labels">
-        <span>{points[0]?.as_of_date}</span>
-        <span>{points[points.length - 1]?.as_of_date}</span>
+        <span>{chartPoints[0]?.as_of_date}</span>
+        <span>{chartPoints[chartPoints.length - 1]?.as_of_date}</span>
+      </div>
+      <div className="chart-legend">
+        <span><i className="legend-dot snapshot" />Snapshot</span>
+        <span><i className="legend-dot estimate" />Estimate</span>
+        {visibleProjectionPoints.length > 0 && <span><i className="legend-dot projection" />Projection</span>}
       </div>
     </div>
   );
@@ -108,6 +148,7 @@ function App() {
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
+  const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -490,21 +531,34 @@ function App() {
           <section className="card">
             <div className="section-header">
               <div>
-                <h2>Historical trend</h2>
-                <p className="muted">Known household snapshot dates first; optional monthly estimates connect the gaps.</p>
+                <h2>Financial trajectory</h2>
+                <p className="muted">Known historical snapshots, optional interpolated estimates, and projected future net worth in one view.</p>
               </div>
-              <label className="inline-toggle">
-                <input
-                  type="checkbox"
-                  checked={showInterpolatedHistory}
-                  onChange={(event) => setShowInterpolatedHistory(event.target.checked)}
-                />
-                Show interpolated estimates
-              </label>
+              <div className="toggle-group">
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showInterpolatedHistory}
+                    onChange={(event) => setShowInterpolatedHistory(event.target.checked)}
+                  />
+                  Show interpolated estimates
+                </label>
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showProjectionOnTrajectory}
+                    onChange={(event) => setShowProjectionOnTrajectory(event.target.checked)}
+                  />
+                  Show projection after run
+                </label>
+              </div>
             </div>
             {history?.points.length ? (
               <>
-                <HistoryChart points={history.points} />
+                <HistoryChart
+                  points={history.points}
+                  projectionPoints={showProjectionOnTrajectory ? projection?.points ?? [] : []}
+                />
                 <table className="spaced-table">
                   <thead>
                     <tr>

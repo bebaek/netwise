@@ -178,6 +178,12 @@ th {
   margin-top: 0;
 }
 
+.toggle-group {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+}
+
 .inline-toggle {
   align-items: center;
   color: #475569;
@@ -213,6 +219,15 @@ th {
   stroke-width: 3;
 }
 
+.trend-line.history {
+  stroke: #1d4ed8;
+}
+
+.trend-line.projection {
+  stroke: #059669;
+  stroke-dasharray: 8 6;
+}
+
 .trend-dot {
   stroke: white;
   stroke-width: 2;
@@ -226,12 +241,50 @@ th {
   fill: #94a3b8;
 }
 
+.trend-dot.projection {
+  fill: #059669;
+}
+
 .chart-labels {
   color: #64748b;
   display: flex;
   font-size: 0.9rem;
   justify-content: space-between;
   margin-top: 0.35rem;
+}
+
+.chart-legend {
+  align-items: center;
+  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.chart-legend span {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.legend-dot {
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.7rem;
+  width: 0.7rem;
+}
+
+.legend-dot.snapshot {
+  background: #1d4ed8;
+}
+
+.legend-dot.estimate {
+  background: #94a3b8;
+}
+
+.legend-dot.projection {
+  background: #059669;
 }
 
 .estimated-row {
@@ -248,6 +301,10 @@ th {
 
   .section-header {
     flex-direction: column;
+  }
+
+  .toggle-group {
+    justify-items: start;
   }
 
   .inline-toggle {
