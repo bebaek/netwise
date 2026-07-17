@@ -182,6 +182,7 @@ function App() {
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
+  const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
   const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
@@ -690,6 +691,13 @@ function App() {
     if (!selectedHouseholdId) return;
     const target = event.currentTarget;
     const form = new FormData(target);
+    const dryRun = form.get('dry_run') === 'on';
+    if (!dryRun) {
+      const confirmed = window.confirm(
+        `Import FinTrack data into ${selectedHousehold?.name ?? 'the selected household'}? This will write accounts, snapshots, and events to the database.`,
+      );
+      if (!confirmed) return;
+    }
     setError('');
     setFintrackImportResult(null);
     try {
@@ -697,7 +705,7 @@ function App() {
         household_id: selectedHouseholdId,
         data_dir: requiredString(form, 'data_dir'),
         currency: optionalString(form, 'currency') || 'USD',
-        dry_run: form.get('dry_run') === 'on',
+        dry_run: dryRun,
       });
       setFintrackImportResult(result);
       if (!result.dry_run) {
@@ -842,10 +850,15 @@ function App() {
               <input name="data_dir" placeholder="/Users/burm/code/fintrack/data-me" required />
               <input name="currency" placeholder="USD" defaultValue="USD" maxLength={3} />
               <label className="inline-toggle">
-                <input name="dry_run" type="checkbox" />
+                <input
+                  name="dry_run"
+                  type="checkbox"
+                  checked={fintrackDryRun}
+                  onChange={(event) => setFintrackDryRun(event.target.checked)}
+                />
                 Dry run
               </label>
-              <button type="submit">Import</button>
+              <button type="submit">{fintrackDryRun ? 'Preview import' : 'Import for real'}</button>
             </form>
             {fintrackImportResult && (
               <div className="import-result">
