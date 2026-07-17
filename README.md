@@ -59,12 +59,32 @@ Open the frontend at:
 http://localhost:5173
 ```
 
+The backend is available directly at:
+
+```text
+http://localhost:8000
+```
+
 Health checks:
 
 ```bash
 curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
+
+### Optional local Docker overrides
+
+Keep machine-specific Docker Compose settings in `docker-compose.override.yml`. This file is ignored by git so local absolute paths and personal mounts are not committed.
+
+To mount FinTrack export/import data for the importer:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
+# Edit docker-compose.override.yml and replace /path/to/fintrack/data.
+docker compose up --build
+```
+
+The example mounts the host directory read-only at `/import/fintrack` inside the backend container.
 
 Run backend tests and migrations locally:
 
