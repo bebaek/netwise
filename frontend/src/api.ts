@@ -20,6 +20,20 @@ export type HouseholdMembership = {
   user: User | null;
 };
 
+export type HouseholdExport = {
+  schema: string;
+  exported_at: string;
+  household: Record<string, unknown>;
+  members: Array<Record<string, unknown>>;
+  accounts: Array<Record<string, unknown>>;
+  snapshots: Array<Record<string, unknown>>;
+  account_events: Array<Record<string, unknown>>;
+  real_estate_properties: Array<Record<string, unknown>>;
+  mortgage_profiles: Array<Record<string, unknown>>;
+  income_sources: Array<Record<string, unknown>>;
+  annual_tax_records: Array<Record<string, unknown>>;
+};
+
 export type FintrackImportResult = {
   household_id: string;
   data_dir: string;
@@ -299,6 +313,10 @@ export function addHouseholdMember(
 
 export function removeHouseholdMember(householdId: string, userId: string): Promise<void> {
   return request<void>(`/households/${householdId}/members/${userId}`, { method: 'DELETE' });
+}
+
+export function exportHousehold(householdId: string): Promise<HouseholdExport> {
+  return request<HouseholdExport>(`/households/${householdId}/export`);
 }
 
 export function importFintrack(payload: {

@@ -28,6 +28,7 @@ import {
   createSnapshotBatch,
   createUser,
   deleteSnapshot,
+  exportHousehold,
   getAnnualExpenseEstimate,
   getHistoricalTrend,
   getNetWorth,
@@ -65,6 +66,25 @@ function optionalString(form: FormData, key: string): string | undefined {
 
 function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
+}
+
+function exportFilename(name: string): string {
+  const safeName = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'household';
+  return `netwise-${safeName}-export-${today()}.json`;
+}
+
+function downloadJson(filename: string, value: unknown): void {
+  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function categoryBalance(
@@ -686,6 +706,17 @@ function App() {
     }
   }
 
+  async function handleDownloadHouseholdExport() {
+    if (!selectedHouseholdId || !selectedHousehold) return;
+    setError('');
+    try {
+      const result = await exportHousehold(selectedHouseholdId);
+      downloadJson(exportFilename(selectedHousehold.name), result);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleImportFintrack(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedHouseholdId) return;
@@ -789,6 +820,9 @@ function App() {
                 <p className="muted">Switch users, switch households, and manage household memberships.</p>
               </div>
               <div className="management-actions">
+                <button type="button" className="secondary-button" onClick={handleDownloadHouseholdExport}>
+                  Download household JSON
+                </button>
                 <form onSubmit={handleCreateHousehold} className="form-row">
                   <input name="name" placeholder="New household name" required />
                   <button type="submit">Add household</button>

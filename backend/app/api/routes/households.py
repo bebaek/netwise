@@ -1,10 +1,25 @@
+from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Account, BalanceSnapshot, Household, HouseholdMembership, MembershipRole, User
+from app.db.models import (
+    Account,
+    AccountEvent,
+    AnnualTaxRecord,
+    BalanceSnapshot,
+    Household,
+    HouseholdMembership,
+    IncomeSource,
+    MembershipRole,
+    MortgageProfile,
+    RealEstateProperty,
+    User,
+)
 from app.db.session import get_db
 from app.schemas.account import (
     BalanceSnapshotBatchCreate,
@@ -27,6 +42,109 @@ def validate_membership_role(role: str) -> str:
             detail=f"Role must be one of: {', '.join(sorted(_ALLOWED_ROLES))}",
         )
     return normalized
+
+
+def _model_export(model: object, fields: tuple[str, ...]) -> dict:
+    return {field: getattr(model, field) for field in fields}
+
+
+_HOUSEHOLD_FIELDS = ("id", "name", "created_at", "updated_at")
+_USER_FIELDS = ("id", "display_name", "email", "created_at", "updated_at")
+_MEMBERSHIP_FIELDS = ("id", "household_id", "user_id", "role", "created_at")
+_ACCOUNT_FIELDS = (
+    "id",
+    "household_id",
+    "name",
+    "institution_name",
+    "account_kind",
+    "category",
+    "liquidity_class",
+    "expected_annual_yield",
+    "currency",
+    "is_active",
+    "created_at",
+    "updated_at",
+)
+_SNAPSHOT_FIELDS = (
+    "id",
+    "household_id",
+    "account_id",
+    "as_of_date",
+    "balance",
+    "currency",
+    "source",
+    "confidence_level",
+    "created_at",
+)
+_ACCOUNT_EVENT_FIELDS = (
+    "id",
+    "household_id",
+    "account_id",
+    "event_date",
+    "amount",
+    "currency",
+    "event_type",
+    "description",
+    "projection_behavior",
+    "scenario_id",
+    "created_at",
+    "updated_at",
+)
+_REAL_ESTATE_FIELDS = (
+    "id",
+    "household_id",
+    "account_id",
+    "property_type",
+    "purchase_date",
+    "purchase_price",
+    "down_payment",
+    "expected_appreciation_rate",
+    "property_tax_annual",
+    "insurance_annual",
+    "maintenance_rate",
+    "hoa_monthly",
+    "created_at",
+    "updated_at",
+)
+_MORTGAGE_FIELDS = (
+    "id",
+    "household_id",
+    "liability_account_id",
+    "property_account_id",
+    "original_principal",
+    "interest_rate",
+    "term_months",
+    "start_date",
+    "monthly_payment",
+    "rate_type",
+    "created_at",
+    "updated_at",
+)
+_INCOME_SOURCE_FIELDS = (
+    "id",
+    "household_id",
+    "name",
+    "income_type",
+    "amount",
+    "currency",
+    "frequency",
+    "start_date",
+    "end_date",
+    "growth_rate",
+    "created_at",
+    "updated_at",
+)
+_ANNUAL_TAX_RECORD_FIELDS = (
+    "id",
+    "household_id",
+    "tax_year",
+    "gross_income",
+    "total_taxes_paid",
+    "refund_or_amount_due",
+    "notes",
+    "created_at",
+    "updated_at",
+)
 
 
 @router.post("", response_model=HouseholdRead, status_code=status.HTTP_201_CREATED)
@@ -184,6 +302,90 @@ def remove_household_member(
 
     db.delete(membership)
     db.commit()
+
+
+@router.get("/{household_id}/export")
+def export_household(household_id: UUID, db: Session = Depends(get_db)) -> dict:
+    household = db.get(Household, household_id)
+    if household is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+    memberships = list(
+        db.scalars(
+            select(HouseholdMembership)
+            .options(selectinload(HouseholdMembership.user))
+            .where(HouseholdMembership.household_id == household_id)
+            .order_by(HouseholdMembership.created_at)
+        ).all()
+    )
+    accounts = list(
+        db.scalars(
+            select(Account).where(Account.household_id == household_id).order_by(Account.name)
+        ).all()
+    )
+
+    export = {
+        "schema": "netwise.household_export.v1",
+        "exported_at": datetime.now(UTC),
+        "household": _model_export(household, _HOUSEHOLD_FIELDS),
+        "members": [
+            {
+                **_model_export(membership, _MEMBERSHIP_FIELDS),
+                "user": _model_export(membership.user, _USER_FIELDS) if membership.user else None,
+            }
+            for membership in memberships
+        ],
+        "accounts": [_model_export(account, _ACCOUNT_FIELDS) for account in accounts],
+        "snapshots": [
+            _model_export(snapshot, _SNAPSHOT_FIELDS)
+            for snapshot in db.scalars(
+                select(BalanceSnapshot)
+                .where(BalanceSnapshot.household_id == household_id)
+                .order_by(BalanceSnapshot.as_of_date, BalanceSnapshot.account_id)
+            ).all()
+        ],
+        "account_events": [
+            _model_export(event, _ACCOUNT_EVENT_FIELDS)
+            for event in db.scalars(
+                select(AccountEvent)
+                .where(AccountEvent.household_id == household_id)
+                .order_by(AccountEvent.event_date, AccountEvent.account_id, AccountEvent.created_at)
+            ).all()
+        ],
+        "real_estate_properties": [
+            _model_export(property_record, _REAL_ESTATE_FIELDS)
+            for property_record in db.scalars(
+                select(RealEstateProperty)
+                .where(RealEstateProperty.household_id == household_id)
+                .order_by(RealEstateProperty.created_at)
+            ).all()
+        ],
+        "mortgage_profiles": [
+            _model_export(mortgage, _MORTGAGE_FIELDS)
+            for mortgage in db.scalars(
+                select(MortgageProfile)
+                .where(MortgageProfile.household_id == household_id)
+                .order_by(MortgageProfile.created_at)
+            ).all()
+        ],
+        "income_sources": [
+            _model_export(income_source, _INCOME_SOURCE_FIELDS)
+            for income_source in db.scalars(
+                select(IncomeSource)
+                .where(IncomeSource.household_id == household_id)
+                .order_by(IncomeSource.name)
+            ).all()
+        ],
+        "annual_tax_records": [
+            _model_export(tax_record, _ANNUAL_TAX_RECORD_FIELDS)
+            for tax_record in db.scalars(
+                select(AnnualTaxRecord)
+                .where(AnnualTaxRecord.household_id == household_id)
+                .order_by(AnnualTaxRecord.tax_year)
+            ).all()
+        ],
+    }
+    return jsonable_encoder(export, custom_encoder={Decimal: str})
 
 
 @router.get("/{household_id}", response_model=HouseholdRead)
