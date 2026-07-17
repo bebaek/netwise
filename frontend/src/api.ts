@@ -381,6 +381,26 @@ export function createAccount(payload: {
   });
 }
 
+export function updateAccount(
+  accountId: string,
+  payload: {
+    name?: string;
+    institution_name?: string | null;
+    account_kind?: 'asset' | 'liability';
+    category?: string;
+    liquidity_class?: string;
+    expected_annual_yield?: string | null;
+    liquidation_expense_rate?: string | null;
+    currency?: string;
+    is_active?: boolean;
+  },
+): Promise<Account> {
+  return request<Account>(`/accounts/${accountId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createSnapshot(
   accountId: string,
   payload: { as_of_date: string; balance: string; currency: string },

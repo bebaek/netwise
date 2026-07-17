@@ -7,6 +7,38 @@ def test_health(client: TestClient):
     assert response.json() == {"status": "ok"}
 
 
+def test_update_account(client: TestClient):
+    household = client.post("/households", json={"name": "Account Editing"}).json()
+    account = client.post(
+        "/accounts",
+        json={
+            "household_id": household["id"],
+            "name": "Fidelity",
+            "account_kind": "asset",
+            "category": "taxable_investment",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.050000",
+            "currency": "USD",
+        },
+    ).json()
+
+    response = client.patch(
+        f"/accounts/{account['id']}",
+        json={
+            "category": "retirement",
+            "liquidity_class": "retirement_liquid",
+            "liquidation_expense_rate": "0.100000",
+        },
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["name"] == "Fidelity"
+    assert updated["category"] == "retirement"
+    assert updated["liquidity_class"] == "retirement_liquid"
+    assert updated["liquidation_expense_rate"] == "0.100000"
+
+
 def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     household = client.post("/households", json={"name": "Home"}).json()
     household_id = household["id"]

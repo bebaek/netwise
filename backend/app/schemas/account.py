@@ -19,6 +19,18 @@ class AccountCreate(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 
+class AccountUpdate(BaseModel):
+    name: str | None = None
+    institution_name: str | None = None
+    account_kind: AccountKind | None = None
+    category: str | None = None
+    liquidity_class: str | None = None
+    expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    is_active: bool | None = None
+
+
 class AccountRead(BaseModel):
     id: UUID
     household_id: UUID

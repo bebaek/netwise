@@ -13,6 +13,7 @@ from app.schemas.account import (
     AccountEventRead,
     AccountEventUpdate,
     AccountRead,
+    AccountUpdate,
     BalanceSnapshotCreate,
     BalanceSnapshotRead,
     BalanceSnapshotUpdate,
@@ -94,6 +95,23 @@ def get_account(account_id: UUID, db: Session = Depends(get_db)) -> Account:
     account = db.get(Account, account_id)
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return account
+
+
+@router.patch("/{account_id}", response_model=AccountRead)
+def update_account(
+    account_id: UUID,
+    payload: AccountUpdate,
+    db: Session = Depends(get_db),
+) -> Account:
+    account = db.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(account, key, value)
+    db.commit()
+    db.refresh(account)
     return account
 
 

@@ -52,6 +52,7 @@ import {
   listRealEstateSales,
   listUsers,
   removeHouseholdMember,
+  updateAccount,
   updateAccountEvent,
   updateSnapshot,
   upsertProjectionSettings,
@@ -103,6 +104,19 @@ function categoryBalance(
 }
 
 type TrajectoryProjectionPoint = Pick<NetWorthProjection['points'][number], 'as_of_date' | 'net_worth'>;
+
+type AccountEditDraft = {
+  id: string;
+  name: string;
+  institution_name: string;
+  account_kind: 'asset' | 'liability';
+  category: string;
+  liquidity_class: string;
+  expected_annual_yield: string;
+  liquidation_expense_rate: string;
+  currency: string;
+  is_active: boolean;
+};
 
 type AccountEventDraft = {
   id?: string;
@@ -238,6 +252,7 @@ function App() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
   const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
   const [householdSnapshots, setHouseholdSnapshots] = useState<HouseholdSnapshot[]>([]);
@@ -396,6 +411,7 @@ function App() {
     if (!selectedHouseholdId) return;
     setProjection(null);
     setProjectionSettings(null);
+    setAccountEditDraft(null);
     setFintrackImportResult(null);
     setSnapshotBatchMessage('');
     setSnapshotEditDraft(null);
@@ -467,6 +483,44 @@ function App() {
       if (userId === selectedUserId) {
         await refreshHouseholds(selectedUserId);
       }
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  function startEditAccount(account: Account) {
+    setAccountEditDraft({
+      id: account.id,
+      name: account.name,
+      institution_name: account.institution_name ?? '',
+      account_kind: account.account_kind,
+      category: account.category,
+      liquidity_class: account.liquidity_class,
+      expected_annual_yield: account.expected_annual_yield ?? '',
+      liquidation_expense_rate: account.liquidation_expense_rate ?? '',
+      currency: account.currency,
+      is_active: account.is_active,
+    });
+  }
+
+  async function handleSaveAccountEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId || !accountEditDraft) return;
+    setError('');
+    try {
+      await updateAccount(accountEditDraft.id, {
+        name: accountEditDraft.name.trim(),
+        institution_name: accountEditDraft.institution_name.trim() || null,
+        account_kind: accountEditDraft.account_kind,
+        category: accountEditDraft.category.trim(),
+        liquidity_class: accountEditDraft.liquidity_class.trim(),
+        expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
+        liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
+        currency: accountEditDraft.currency.trim().toUpperCase(),
+        is_active: accountEditDraft.is_active,
+      });
+      setAccountEditDraft(null);
+      await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1897,8 +1951,71 @@ function App() {
           </section>
 
           <section className="card">
-            <h2>Accounts</h2>
-            {netWorth?.accounts.length ? (
+            <div className="section-header">
+              <div>
+                <h2>Accounts</h2>
+                <p className="muted">Edit account classifications and projection assumptions without changing balance history.</p>
+              </div>
+            </div>
+            {accountEditDraft && (
+              <form onSubmit={handleSaveAccountEdit} className="event-editor-card">
+                <div className="section-header">
+                  <div>
+                    <h3>Edit account</h3>
+                    <p className="muted">Category and liquidity class affect projection funding and tax estimates.</p>
+                  </div>
+                  <button type="button" className="secondary-button" onClick={() => setAccountEditDraft(null)}>
+                    Cancel
+                  </button>
+                </div>
+                <div className="event-editor-grid">
+                  <label>
+                    Name
+                    <input required value={accountEditDraft.name} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, name: event.target.value })} />
+                  </label>
+                  <label>
+                    Institution
+                    <input value={accountEditDraft.institution_name} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, institution_name: event.target.value })} />
+                  </label>
+                  <label>
+                    Kind
+                    <select value={accountEditDraft.account_kind} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, account_kind: event.target.value as 'asset' | 'liability' })}>
+                      <option value="asset">Asset</option>
+                      <option value="liability">Liability</option>
+                    </select>
+                  </label>
+                  <label>
+                    Category
+                    <input required value={accountEditDraft.category} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, category: event.target.value })} />
+                  </label>
+                  <label>
+                    Liquidity class
+                    <input required value={accountEditDraft.liquidity_class} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidity_class: event.target.value })} />
+                  </label>
+                  <label>
+                    Expected annual yield
+                    <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
+                  </label>
+                  <label>
+                    Liquidation expense rate
+                    <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
+                  </label>
+                  <label>
+                    Currency
+                    <input required maxLength={3} value={accountEditDraft.currency} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, currency: event.target.value })} />
+                  </label>
+                  <label className="inline-toggle">
+                    <input type="checkbox" checked={accountEditDraft.is_active} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, is_active: event.target.checked })} />
+                    Active account
+                  </label>
+                </div>
+                <div className="action-row">
+                  <button type="submit">Save account</button>
+                  <button type="button" className="secondary-button" onClick={() => setAccountEditDraft(null)}>Cancel</button>
+                </div>
+              </form>
+            )}
+            {accounts.length ? (
               <table>
                 <thead>
                   <tr>
@@ -1907,16 +2024,18 @@ function App() {
                     <th>Category</th>
                     <th>Yield</th>
                     <th>Balance</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {netWorth.accounts.map((account) => (
-                    <tr key={account.account_id}>
-                      <td>{account.name}</td>
+                  {accounts.map((account) => (
+                    <tr key={account.id}>
+                      <td>{account.name}{!account.is_active && <span className="muted cell-detail">Inactive</span>}</td>
                       <td>{account.account_kind}</td>
                       <td>{account.category}</td>
-                      <td>{accounts.find((item) => item.id === account.account_id)?.expected_annual_yield ?? '—'}</td>
-                      <td>{formatMoney(account.balance)}</td>
+                      <td>{account.expected_annual_yield ?? '—'}</td>
+                      <td>{formatMoney(latestBalanceByAccountId.get(account.id))}</td>
+                      <td><button type="button" className="secondary-button" onClick={() => startEditAccount(account)}>Edit</button></td>
                     </tr>
                   ))}
                 </tbody>
