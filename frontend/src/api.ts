@@ -208,6 +208,18 @@ export type IncomeSource = {
   start_date: string;
   end_date: string | null;
   growth_rate: string | null;
+  deposit_account_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectionSettings = {
+  id: string;
+  household_id: string;
+  annual_spending: string | null;
+  spending_inflation_rate: string | null;
+  spending_account_id: string | null;
+  tax_account_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -253,6 +265,12 @@ export type NetWorthProjection = {
     projected_taxes: string;
     projected_spending: string;
     net_cash_flow: string;
+    cash_flows: Array<{
+      account_id: string;
+      account_name: string;
+      cash_flow_type: string;
+      amount: string;
+    }>;
     accounts: Array<{
       account_id: string;
       name: string;
@@ -433,6 +451,31 @@ export function createAccountEvent(
   });
 }
 
+export function updateAccountEvent(
+  accountId: string,
+  eventId: string,
+  payload: {
+    account_id?: string;
+    event_date?: string;
+    amount?: string;
+    currency?: string;
+    event_type?: string;
+    description?: string | null;
+    projection_behavior?: string;
+  },
+): Promise<AccountEvent> {
+  return request<AccountEvent>(`/accounts/${accountId}/events/${eventId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAccountEvent(accountId: string, eventId: string): Promise<void> {
+  return request<void>(`/accounts/${accountId}/events/${eventId}`, {
+    method: 'DELETE',
+  });
+}
+
 export function getNetWorth(householdId: string): Promise<NetWorth> {
   return request<NetWorth>(`/dashboard/${householdId}/net-worth`);
 }
@@ -510,9 +553,34 @@ export function createIncomeSource(payload: {
   start_date: string;
   end_date?: string;
   growth_rate?: string;
+  deposit_account_id?: string;
 }): Promise<IncomeSource> {
   return request<IncomeSource>('/income-sources', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjectionSettings(householdId: string): Promise<ProjectionSettings | null> {
+  try {
+    return await request<ProjectionSettings>(`/projection-settings/${householdId}`);
+  } catch (error) {
+    if (String(error).includes('404')) return null;
+    throw error;
+  }
+}
+
+export function upsertProjectionSettings(
+  householdId: string,
+  payload: {
+    annual_spending?: string;
+    spending_inflation_rate?: string;
+    spending_account_id?: string;
+    tax_account_id?: string;
+  },
+): Promise<ProjectionSettings> {
+  return request<ProjectionSettings>(`/projection-settings/${householdId}`, {
+    method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
@@ -546,7 +614,12 @@ export function getNetWorthProjection(
   householdId: string,
   startYear: number,
   endYear: number,
-  options: { annualSpending?: string; spendingInflationRate?: string } = {},
+  options: {
+    annualSpending?: string;
+    spendingInflationRate?: string;
+    spendingAccountId?: string;
+    taxAccountId?: string;
+  } = {},
 ): Promise<NetWorthProjection> {
   const params = new URLSearchParams({
     start_year: String(startYear),
@@ -554,5 +627,7 @@ export function getNetWorthProjection(
   });
   if (options.annualSpending) params.set('annual_spending', options.annualSpending);
   if (options.spendingInflationRate) params.set('spending_inflation_rate', options.spendingInflationRate);
+  if (options.spendingAccountId) params.set('spending_account_id', options.spendingAccountId);
+  if (options.taxAccountId) params.set('tax_account_id', options.taxAccountId);
   return request<NetWorthProjection>(`/dashboard/${householdId}/projection?${params.toString()}`);
 }

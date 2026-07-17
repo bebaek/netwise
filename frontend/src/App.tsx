@@ -14,6 +14,7 @@ import {
   NetWorthBreakdownHistory,
   NetWorthHistory,
   NetWorthProjection,
+  ProjectionSettings,
   RealEstateProperty,
   User,
   addHouseholdMember,
@@ -27,6 +28,7 @@ import {
   createSnapshot,
   createSnapshotBatch,
   createUser,
+  deleteAccountEvent,
   deleteSnapshot,
   exportHousehold,
   getAnnualExpenseEstimate,
@@ -35,6 +37,7 @@ import {
   getNetWorth,
   getNetWorthBreakdownHistory,
   getNetWorthProjection,
+  getProjectionSettings,
   importFintrack,
   listAccounts,
   listAccountEvents,
@@ -47,7 +50,9 @@ import {
   listRealEstateProperties,
   listUsers,
   removeHouseholdMember,
+  updateAccountEvent,
   updateSnapshot,
+  upsertProjectionSettings,
 } from './api';
 import './styles.css';
 
@@ -185,6 +190,7 @@ function App() {
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
+  const [accountEventEditDraft, setAccountEventEditDraft] = useState<(AccountEvent & { original_account_id: string }) | null>(null);
   const [householdSnapshots, setHouseholdSnapshots] = useState<HouseholdSnapshot[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [snapshotAccountFilter, setSnapshotAccountFilter] = useState<string>('');
@@ -202,6 +208,7 @@ function App() {
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
+  const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
   const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
@@ -244,6 +251,8 @@ function App() {
     };
   }, [breakdownHistory]);
 
+  const assetAccounts = accounts.filter((account) => account.account_kind === 'asset');
+
   const propertyAccounts = accounts.filter(
     (account) => account.account_kind === 'asset' && account.category === 'real_estate',
   );
@@ -284,6 +293,7 @@ function App() {
       snapshotList,
       breakdownResult,
       memberList,
+      projectionSettingsResult,
     ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
@@ -295,6 +305,7 @@ function App() {
       listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
       getNetWorthBreakdownHistory(householdId),
       listHouseholdMembers(householdId),
+      getProjectionSettings(householdId),
     ]);
     const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
       .flat()
@@ -310,6 +321,7 @@ function App() {
     setMortgages(mortgageList);
     setIncomeSources(incomeSourceList);
     setTaxRecords(taxRecordList);
+    setProjectionSettings(projectionSettingsResult);
   }
 
   useEffect(() => {
@@ -332,6 +344,7 @@ function App() {
     if (!selectedHouseholdId) return;
     setExpenseEstimate(null);
     setProjection(null);
+    setProjectionSettings(null);
     setFintrackImportResult(null);
     setSnapshotBatchMessage('');
     setSnapshotEditDraft(null);
@@ -537,6 +550,42 @@ function App() {
     }
   }
 
+  async function handleSaveAccountEventEdit() {
+    if (!selectedHouseholdId || !accountEventEditDraft) return;
+    setError('');
+    try {
+      await updateAccountEvent(accountEventEditDraft.original_account_id, accountEventEditDraft.id, {
+        account_id: accountEventEditDraft.account_id,
+        event_date: accountEventEditDraft.event_date,
+        amount: accountEventEditDraft.amount,
+        currency: accountEventEditDraft.currency,
+        event_type: accountEventEditDraft.event_type,
+        description: accountEventEditDraft.description,
+        projection_behavior: accountEventEditDraft.projection_behavior,
+      });
+      setAccountEventEditDraft(null);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteAccountEvent(accountEvent: AccountEvent) {
+    if (!selectedHouseholdId) return;
+    const confirmed = window.confirm(
+      `Delete ${accountEvent.event_type} event from ${accountEvent.event_date}?`,
+    );
+    if (!confirmed) return;
+    setError('');
+    try {
+      await deleteAccountEvent(accountEvent.account_id, accountEvent.id);
+      if (accountEventEditDraft?.id === accountEvent.id) setAccountEventEditDraft(null);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
@@ -644,6 +693,7 @@ function App() {
         start_date: requiredString(form, 'start_date'),
         end_date: optionalString(form, 'end_date'),
         growth_rate: optionalString(form, 'growth_rate'),
+        deposit_account_id: optionalString(form, 'deposit_account_id'),
       });
       target.reset();
       await refreshDashboard(selectedHouseholdId);
@@ -699,16 +749,36 @@ function App() {
     try {
       const result = await getNetWorthProjection(
         selectedHouseholdId,
-        Number(requiredString(form, 'start_year')),
-        Number(requiredString(form, 'end_year')),
+        Number(requiredString(form, 'projection_start_year')),
+        Number(requiredString(form, 'projection_end_year')),
         {
-          annualSpending: optionalString(form, 'annual_spending'),
-          spendingInflationRate: optionalString(form, 'spending_inflation_rate'),
+          annualSpending: optionalString(form, 'projection_annual_spending'),
+          spendingInflationRate: optionalString(form, 'projection_spending_inflation_rate'),
+          spendingAccountId: optionalString(form, 'projection_spending_account_id'),
+          taxAccountId: optionalString(form, 'projection_tax_account_id'),
         },
       );
       setProjection(result);
     } catch (err: unknown) {
       setProjection(null);
+      setError(String(err));
+    }
+  }
+
+  async function handleSaveProjectionSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await upsertProjectionSettings(selectedHouseholdId, {
+        annual_spending: optionalString(form, 'settings_annual_spending'),
+        spending_inflation_rate: optionalString(form, 'settings_spending_inflation_rate'),
+        spending_account_id: optionalString(form, 'settings_spending_account_id'),
+        tax_account_id: optionalString(form, 'settings_tax_account_id'),
+      });
+      setProjectionSettings(result);
+    } catch (err: unknown) {
       setError(String(err));
     }
   }
@@ -1212,63 +1282,188 @@ function App() {
           <section className="card">
             <h2>Projection</h2>
             <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
-            <form onSubmit={handleGetProjection} className="form-row">
-              <input
-                name="start_year"
-                inputMode="numeric"
-                placeholder="Start year"
-                defaultValue={new Date().getFullYear()}
-                required
-              />
-              <input
-                name="end_year"
-                inputMode="numeric"
-                placeholder="End year"
-                defaultValue={new Date().getFullYear() + 10}
-                required
-              />
-              <input
-                name="annual_spending"
-                inputMode="decimal"
-                placeholder="Annual spending override"
-              />
-              <input
-                name="spending_inflation_rate"
-                inputMode="decimal"
-                placeholder="Spending inflation, e.g. 0.03"
-                defaultValue="0.03"
-              />
-              <button type="submit">Run projection</button>
-            </form>
+
+            <div className="projection-panels">
+              <form onSubmit={handleSaveProjectionSettings} className="projection-form">
+                <div>
+                  <h3>Projection assumptions</h3>
+                  <p className="muted">Saved defaults used when a projection run does not provide overrides.</p>
+                </div>
+                <label>
+                  Annual spending
+                  <input
+                    name="settings_annual_spending"
+                    inputMode="decimal"
+                    placeholder="70000"
+                    defaultValue={projectionSettings?.annual_spending ?? ''}
+                  />
+                </label>
+                <label>
+                  Spending inflation rate
+                  <input
+                    name="settings_spending_inflation_rate"
+                    inputMode="decimal"
+                    placeholder="0.03"
+                    defaultValue={projectionSettings?.spending_inflation_rate ?? ''}
+                  />
+                </label>
+                <label>
+                  Spending account
+                  <select name="settings_spending_account_id" defaultValue={projectionSettings?.spending_account_id ?? ''}>
+                    <option value="">Default funding order</option>
+                    {assetAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Tax payment account
+                  <select name="settings_tax_account_id" defaultValue={projectionSettings?.tax_account_id ?? ''}>
+                    <option value="">Default funding order</option>
+                    {assetAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit">Save settings</button>
+              </form>
+
+              <form onSubmit={handleGetProjection} className="projection-form">
+                <div>
+                  <h3>Run projection</h3>
+                  <p className="muted">Optional overrides apply only to this run.</p>
+                </div>
+                <label>
+                  Start year
+                  <input
+                    name="projection_start_year"
+                    inputMode="numeric"
+                    placeholder="2026"
+                    defaultValue={new Date().getFullYear()}
+                    required
+                  />
+                </label>
+                <label>
+                  End year
+                  <input
+                    name="projection_end_year"
+                    inputMode="numeric"
+                    placeholder="2036"
+                    defaultValue={new Date().getFullYear() + 10}
+                    required
+                  />
+                </label>
+                <label>
+                  Annual spending override
+                  <input
+                    name="projection_annual_spending"
+                    inputMode="decimal"
+                    placeholder="Use saved/default"
+                  />
+                </label>
+                <label>
+                  Inflation override
+                  <input
+                    name="projection_spending_inflation_rate"
+                    inputMode="decimal"
+                    placeholder="Use saved/default"
+                  />
+                </label>
+                <label>
+                  Spending account override
+                  <select name="projection_spending_account_id" defaultValue="">
+                    <option value="">Use saved/default</option>
+                    {assetAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Tax account override
+                  <select name="projection_tax_account_id" defaultValue="">
+                    <option value="">Use saved/default</option>
+                    {assetAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit">Run projection</button>
+              </form>
+            </div>
+
+            {incomeSources.length === 0 && (
+              <p className="projection-note">No active income sources are configured, so projected income and taxes are $0.00.</p>
+            )}
+            <p className="projection-note">Spending and taxes draw from their configured account first. If that account cannot cover the amount, the projection uses the default asset funding order.</p>
+
             {projection?.points.length ? (
-              <table className="spaced-table">
-                <thead>
-                  <tr>
-                    <th>Year</th>
-                    <th>Net worth</th>
-                    <th>Assets</th>
-                    <th>Liabilities</th>
-                    <th>Income</th>
-                    <th>Taxes</th>
-                    <th>Spending</th>
-                    <th>Net cash flow</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projection.points.map((point) => (
-                    <tr key={point.year}>
-                      <td>{point.year}</td>
-                      <td>{formatMoney(point.net_worth)}</td>
-                      <td>{formatMoney(point.assets_total)}</td>
-                      <td>{formatMoney(point.liabilities_total)}</td>
-                      <td>{formatMoney(point.projected_income)}</td>
-                      <td>{formatMoney(point.projected_taxes)}</td>
-                      <td>{formatMoney(point.projected_spending)}</td>
-                      <td>{formatMoney(point.net_cash_flow)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="table-scroll">
+                  <table className="spaced-table projection-summary-table">
+                    <thead>
+                      <tr>
+                        <th>Year</th>
+                        <th>Net worth</th>
+                        <th>Assets</th>
+                        <th>Liabilities</th>
+                        <th>Income</th>
+                        <th>Taxes</th>
+                        <th>Spending</th>
+                        <th>Net cash flow</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projection.points.map((point) => (
+                        <tr key={point.year}>
+                          <td>{point.year}</td>
+                          <td>{formatMoney(point.net_worth)}</td>
+                          <td>{formatMoney(point.assets_total)}</td>
+                          <td>{formatMoney(point.liabilities_total)}</td>
+                          <td>{formatMoney(point.projected_income)}</td>
+                          <td>{formatMoney(point.projected_taxes)}</td>
+                          <td>{formatMoney(point.projected_spending)}</td>
+                          <td>{formatMoney(point.net_cash_flow)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <details className="cash-flow-details">
+                  <summary>Show projected account cash flows</summary>
+                  <div className="table-scroll">
+                    <table className="spaced-table">
+                      <thead>
+                        <tr>
+                          <th>Year</th>
+                          <th>Account</th>
+                          <th>Cash flow</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projection.points.flatMap((point) =>
+                          point.cash_flows.map((cashFlow, index) => (
+                            <tr key={`${point.year}-${cashFlow.account_id}-${cashFlow.cash_flow_type}-${index}`}>
+                              <td>{point.year}</td>
+                              <td>{cashFlow.account_name}</td>
+                              <td>{cashFlow.cash_flow_type}</td>
+                              <td>{formatMoney(cashFlow.amount)}</td>
+                            </tr>
+                          )),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
             ) : (
               <p className="muted">Run a projection to see future net worth points.</p>
             )}
@@ -1285,6 +1480,7 @@ function App() {
                       <th>Type</th>
                       <th>Amount</th>
                       <th>Frequency</th>
+                      <th>Deposit account</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1294,6 +1490,7 @@ function App() {
                         <td>{source.income_type}</td>
                         <td>{formatMoney(source.amount)}</td>
                         <td>{source.frequency}</td>
+                        <td>{source.deposit_account_id ? accountNameById.get(source.deposit_account_id) ?? source.deposit_account_id : 'Default'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1356,6 +1553,14 @@ function App() {
                   <input name="end_date" type="date" />
                 </label>
                 <input name="growth_rate" inputMode="decimal" placeholder="Growth rate, e.g. 0.03" />
+                <select name="deposit_account_id" defaultValue="">
+                  <option value="">Default deposit account</option>
+                  {assetAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
                 <button type="submit">Add income source</button>
               </form>
             </div>
@@ -1567,28 +1772,152 @@ function App() {
             <div className="card">
               <h2>Projection events</h2>
               {accountEvents.length ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Account</th>
-                      <th>Type</th>
-                      <th>Amount</th>
-                      <th>Behavior</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accountEvents.map((event) => (
-                      <tr key={event.id}>
-                        <td>{event.event_date}</td>
-                        <td>{accountNameById.get(event.account_id) ?? event.account_id}</td>
-                        <td>{event.event_type}</td>
-                        <td>{formatMoney(event.amount)}</td>
-                        <td>{event.projection_behavior}</td>
+                <div className="table-scroll">
+                  <table className="editable-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Account</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Behavior</th>
+                        <th>Description</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {accountEvents.map((event) => {
+                        const isEditing = accountEventEditDraft?.id === event.id;
+                        return (
+                          <tr key={event.id}>
+                            <td>
+                              {isEditing ? (
+                                <input
+                                  type="date"
+                                  value={accountEventEditDraft.event_date}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({ ...accountEventEditDraft, event_date: changeEvent.target.value })
+                                  }
+                                />
+                              ) : (
+                                event.event_date
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <select
+                                  value={accountEventEditDraft.account_id}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({ ...accountEventEditDraft, account_id: changeEvent.target.value })
+                                  }
+                                >
+                                  {accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                accountNameById.get(event.account_id) ?? event.account_id
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <select
+                                  value={accountEventEditDraft.event_type}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({ ...accountEventEditDraft, event_type: changeEvent.target.value })
+                                  }
+                                >
+                                  <option value="contribution">Contribution</option>
+                                  <option value="withdrawal">Withdrawal</option>
+                                  <option value="transfer">Transfer</option>
+                                  <option value="large_purchase">Large purchase</option>
+                                  <option value="asset_sale">Asset sale</option>
+                                  <option value="gift">Gift</option>
+                                  <option value="inheritance">Inheritance</option>
+                                  <option value="tax_payment">Tax payment</option>
+                                  <option value="account_added">Account added</option>
+                                  <option value="account_removed">Account removed</option>
+                                  <option value="manual_projection_adjustment">Manual projection adjustment</option>
+                                </select>
+                              ) : (
+                                event.event_type
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input
+                                  inputMode="decimal"
+                                  value={accountEventEditDraft.amount}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({ ...accountEventEditDraft, amount: changeEvent.target.value })
+                                  }
+                                />
+                              ) : (
+                                formatMoney(event.amount)
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <select
+                                  value={accountEventEditDraft.projection_behavior}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({ ...accountEventEditDraft, projection_behavior: changeEvent.target.value })
+                                  }
+                                >
+                                  <option value="projection_only">Projection only</option>
+                                  <option value="historical_and_projection">Historical and projection</option>
+                                  <option value="historical_only">Historical only</option>
+                                </select>
+                              ) : (
+                                event.projection_behavior
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input
+                                  value={accountEventEditDraft.description ?? ''}
+                                  onChange={(changeEvent) =>
+                                    setAccountEventEditDraft({
+                                      ...accountEventEditDraft,
+                                      description: changeEvent.target.value || null,
+                                    })
+                                  }
+                                />
+                              ) : (
+                                event.description || '—'
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <div className="action-row">
+                                  <button type="button" onClick={handleSaveAccountEventEdit}>Save</button>
+                                  <button type="button" className="secondary-button" onClick={() => setAccountEventEditDraft(null)}>
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="action-row">
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => setAccountEventEditDraft({ ...event, original_account_id: event.account_id })}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button type="button" className="danger-button" onClick={() => handleDeleteAccountEvent(event)}>
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <p className="muted">No projection events yet.</p>
               )}

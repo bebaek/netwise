@@ -11,6 +11,7 @@ from app.schemas.account import (
     AccountCreate,
     AccountEventCreate,
     AccountEventRead,
+    AccountEventUpdate,
     AccountRead,
     BalanceSnapshotCreate,
     BalanceSnapshotRead,
@@ -157,6 +158,46 @@ def create_event(
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.patch(
+    "/{account_id}/events/{event_id}",
+    response_model=AccountEventRead,
+)
+def update_event(
+    account_id: UUID,
+    event_id: UUID,
+    payload: AccountEventUpdate,
+    db: Session = Depends(get_db),
+) -> AccountEvent:
+    account_event = db.get(AccountEvent, event_id)
+    if account_event is None or account_event.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    new_account_id = updates.pop("account_id", None)
+    if new_account_id is not None:
+        new_account = db.get(Account, new_account_id)
+        if new_account is None or new_account.household_id != account_event.household_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid account")
+        account_event.account_id = new_account.id
+
+    for key, value in updates.items():
+        setattr(account_event, key, value)
+
+    db.commit()
+    db.refresh(account_event)
+    return account_event
+
+
+@router.delete("/{account_id}/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_event(account_id: UUID, event_id: UUID, db: Session = Depends(get_db)) -> Response:
+    account_event = db.get(AccountEvent, event_id)
+    if account_event is None or account_event.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    db.delete(account_event)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{account_id}/events", response_model=list[AccountEventRead])

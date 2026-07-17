@@ -102,6 +102,17 @@ class AccountEventCreate(BaseModel):
     scenario_id: UUID | None = None
 
 
+class AccountEventUpdate(BaseModel):
+    account_id: UUID | None = None
+    event_date: date | None = None
+    amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    event_type: AccountEventType | None = None
+    description: str | None = None
+    projection_behavior: ProjectionBehavior | None = None
+    scenario_id: UUID | None = None
+
+
 class AccountEventRead(BaseModel):
     id: UUID
     household_id: UUID
