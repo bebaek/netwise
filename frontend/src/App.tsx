@@ -904,6 +904,7 @@ function App() {
           spendingInflationRate: optionalString(form, 'projection_spending_inflation_rate'),
           spendingAccountId: optionalString(form, 'projection_spending_account_id'),
           taxAccountId: optionalString(form, 'projection_tax_account_id'),
+          interval: requiredString(form, 'projection_interval') as 'annual' | 'quarterly' | 'monthly',
         },
       );
       setProjection(result);
@@ -1506,6 +1507,14 @@ function App() {
                   />
                 </label>
                 <label>
+                  Projection interval
+                  <select name="projection_interval" defaultValue="quarterly">
+                    <option value="annual">Annual</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </label>
+                <label>
                   Annual spending override
                   <input
                     name="projection_annual_spending"
@@ -1558,7 +1567,7 @@ function App() {
                   <table className="spaced-table projection-summary-table compact-table">
                     <thead>
                       <tr>
-                        <th>Year</th>
+                        <th>{projection.interval === 'annual' ? 'Year' : 'Period ending'}</th>
                         <th>Net worth</th>
                         <th>Assets</th>
                         <th>Liabilities</th>
@@ -1570,8 +1579,8 @@ function App() {
                     </thead>
                     <tbody>
                       {projection.points.map((point) => (
-                        <tr key={point.year}>
-                          <td>{point.year}</td>
+                        <tr key={point.as_of_date}>
+                          <td>{projection.interval === 'annual' ? point.year : point.as_of_date}</td>
                           <td>{formatMoney(point.net_worth)}</td>
                           <td>{formatMoney(point.assets_total)}</td>
                           <td>{formatMoney(point.liabilities_total)}</td>

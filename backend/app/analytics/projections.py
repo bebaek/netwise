@@ -1,3 +1,4 @@
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_UP, Decimal
@@ -104,9 +105,12 @@ def calculate_net_worth_projection(
     spending_inflation_rate: Decimal | None = None,
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
+    interval: str = "annual",
 ) -> dict:
     if end_year < start_year:
         raise ValueError("end_year must be greater than or equal to start_year")
+    if interval not in {"annual", "quarterly", "monthly"}:
+        raise ValueError("interval must be one of: annual, quarterly, monthly")
 
     accounts = list(
         db.scalars(
@@ -210,10 +214,16 @@ def calculate_net_worth_projection(
     tax_rate = _latest_effective_tax_rate(db, household_id)
 
     points = []
+    months_per_period = {"annual": 12, "quarterly": 3, "monthly": 1}[interval]
+    period_ends = [
+        date(year, month, monthrange(year, month)[1])
+        for year in range(start_year, end_year + 1)
+        for month in range(months_per_period, 13, months_per_period)
+    ]
     sold_mortgage_account_ids: set[UUID] = set()
-    for year in range(start_year, end_year + 1):
-        as_of_date = date(year, 12, 31)
-        year_start = date(year, 1, 1)
+    for as_of_date in period_ends:
+        year = as_of_date.year
+        period_start = date(year, as_of_date.month - months_per_period + 1, 1)
 
         for account in accounts:
             if account.id in mortgage_profiles:
@@ -226,7 +236,13 @@ def calculate_net_worth_projection(
                 continue
 
             annual_yield = _yield_for_account(account, property_profiles.get(account.id))
-            balances[account.id] = (balances[account.id] * (Decimal("1") + annual_yield)).quantize(
+            period_yield = (
+                annual_yield
+                if months_per_period == 12
+                else (Decimal("1") + annual_yield) ** (Decimal(months_per_period) / Decimal("12"))
+                - Decimal("1")
+            )
+            balances[account.id] = (balances[account.id] * (Decimal("1") + period_yield)).quantize(
                 Decimal("0.01")
             )
 
@@ -235,11 +251,11 @@ def calculate_net_worth_projection(
         year_operations = [
             (sale.sale_date, 0, sale)
             for sale in real_estate_sales
-            if year_start <= sale.sale_date <= as_of_date
+            if period_start <= sale.sale_date <= as_of_date
         ] + [
             (event.event_date, 1, event)
             for event in projection_events
-            if year_start <= event.event_date <= as_of_date
+            if period_start <= event.event_date <= as_of_date
         ]
         for _, operation_kind, operation in sorted(year_operations, key=lambda item: (item[0], item[1])):
             if operation_kind == 0:
@@ -264,7 +280,9 @@ def calculate_net_worth_projection(
 
         projected_income = Decimal("0.00")
         for income_source in income_sources:
-            income_amount = _projected_income_source_for_year(income_source, year)
+            income_amount = _projected_income_source_for_period(
+                income_source, period_start, as_of_date, months_per_period
+            )
             projected_income += income_amount
             if income_amount != Decimal("0.00"):
                 target_account = _cash_flow_target_account(
@@ -277,9 +295,10 @@ def calculate_net_worth_projection(
 
         projected_income = projected_income.quantize(Decimal("0.01"))
         income_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
-        projected_spending = _projected_spending_for_year(
+        projected_spending = _projected_spending_for_period(
             spending_baseline,
-            year,
+            period_start,
+            months_per_period,
             effective_spending_inflation_rate,
         )
         if projected_spending != Decimal("0.00"):
@@ -361,6 +380,7 @@ def calculate_net_worth_projection(
         "household_id": household_id,
         "start_year": start_year,
         "end_year": end_year,
+        "interval": interval,
         "points": points,
     }
 
@@ -375,6 +395,21 @@ def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
         if tax_record.effective_tax_rate is not None:
             return tax_record.effective_tax_rate
     return Decimal("0.00")
+
+
+def _projected_spending_for_period(
+    spending_baseline: tuple[int, Decimal] | None,
+    period_start: date,
+    months_per_period: int,
+    spending_inflation_rate: Decimal,
+) -> Decimal:
+    """Return the portion of inflation-adjusted annual spending for a projection period."""
+    annual_spending = _projected_spending_for_year(
+        spending_baseline, period_start.year, spending_inflation_rate
+    )
+    if months_per_period == 12:
+        return annual_spending
+    return (annual_spending * Decimal(months_per_period) / Decimal("12")).quantize(Decimal("0.01"))
 
 
 def _projected_spending_for_year(
@@ -396,6 +431,28 @@ def _projected_income_for_year(income_sources: list[IncomeSource], year: int) ->
         (_projected_income_source_for_year(source, year) for source in income_sources),
         Decimal("0.00"),
     )
+
+
+def _projected_income_source_for_period(
+    source: IncomeSource,
+    period_start: date,
+    period_end: date,
+    months_per_period: int,
+) -> Decimal:
+    """Allocate an active income source across a monthly, quarterly, or annual period.
+
+    The first fine-grained projection release spreads the source's annualized amount
+    evenly over its active periods.  A later payroll scheduler can replace this for
+    weekly and biweekly sources without changing the projection API.
+    """
+    if source.start_date > period_end or (
+        source.end_date is not None and source.end_date < period_start
+    ):
+        return Decimal("0.00")
+    annual_amount = _projected_income_source_for_year(source, period_start.year)
+    if months_per_period == 12:
+        return annual_amount
+    return (annual_amount * Decimal(months_per_period) / Decimal("12")).quantize(Decimal("0.01"))
 
 
 def _projected_income_source_for_year(source: IncomeSource, year: int) -> Decimal:

@@ -74,6 +74,7 @@ def get_net_worth_projection(
     spending_inflation_rate: Decimal | None = None,
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
+    interval: str = "annual",
     db: Session = Depends(get_db),
 ) -> dict:
     if db.get(Household, household_id) is None:
@@ -88,6 +89,7 @@ def get_net_worth_projection(
             spending_inflation_rate=spending_inflation_rate,
             spending_account_id=spending_account_id,
             tax_account_id=tax_account_id,
+            interval=interval,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -38,6 +38,49 @@ def test_default_projection_funding_order():
     ]
 
 
+
+def test_monthly_projection_returns_month_end_points_and_dates_events(client: TestClient):
+    household = client.post("/households", json={"name": "Monthly Projection"}).json()
+    account = client.post(
+        "/accounts",
+        json={
+            "household_id": household["id"],
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "cash",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{account['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "100.00"},
+    )
+    client.post(
+        f"/accounts/{account['id']}/events",
+        json={
+            "event_date": "2026-06-15",
+            "amount": "50.00",
+            "event_type": "contribution",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household['id']}/projection?start_year=2026&end_year=2026&interval=monthly"
+    )
+
+    assert response.status_code == 200
+    projection = response.json()
+    assert projection["interval"] == "monthly"
+    assert len(projection["points"]) == 12
+    assert projection["points"][0]["as_of_date"] == "2026-01-31"
+    assert projection["points"][-1]["as_of_date"] == "2026-12-31"
+    assert projection["points"][4]["net_worth"] == "100.00"
+    assert projection["points"][5]["net_worth"] == "150.00"
+
+
 def test_projection_uses_account_yields_and_projection_events(client: TestClient):
     household = client.post("/households", json={"name": "Projection Home"}).json()
     household_id = household["id"]

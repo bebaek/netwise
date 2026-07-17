@@ -254,6 +254,7 @@ export type NetWorthProjection = {
   household_id: string;
   start_year: number;
   end_year: number;
+  interval: 'annual' | 'quarterly' | 'monthly';
   points: Array<{
     year: number;
     as_of_date: string;
@@ -654,6 +655,7 @@ export function getNetWorthProjection(
     spendingInflationRate?: string;
     spendingAccountId?: string;
     taxAccountId?: string;
+    interval?: 'annual' | 'quarterly' | 'monthly';
   } = {},
 ): Promise<NetWorthProjection> {
   const params = new URLSearchParams({
@@ -664,5 +666,6 @@ export function getNetWorthProjection(
   if (options.spendingInflationRate) params.set('spending_inflation_rate', options.spendingInflationRate);
   if (options.spendingAccountId) params.set('spending_account_id', options.spendingAccountId);
   if (options.taxAccountId) params.set('tax_account_id', options.taxAccountId);
+  if (options.interval) params.set('interval', options.interval);
   return request<NetWorthProjection>(`/dashboard/${householdId}/projection?${params.toString()}`);
 }

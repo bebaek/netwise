@@ -40,4 +40,5 @@ class NetWorthProjectionRead(BaseModel):
     household_id: UUID
     start_year: int
     end_year: int
+    interval: str
     points: list[ProjectionPointRead]
