@@ -43,6 +43,78 @@ def test_projection_uses_account_yields_and_projection_events(client: TestClient
     assert projection["points"][1]["net_worth"] == "126500.00"
 
 
+def test_projection_event_outflows_use_funding_order_without_negative_balances(client: TestClient):
+    household = client.post("/households", json={"name": "Projection Event Spending"}).json()
+    household_id = household["id"]
+
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "cash",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    savings = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Savings",
+            "account_kind": "asset",
+            "category": "savings",
+            "liquidity_class": "cash",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{checking['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "1000.00"},
+    )
+    client.post(
+        f"/accounts/{savings['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "4000.00"},
+    )
+    client.post(
+        f"/accounts/{checking['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "2500.00",
+            "event_type": "large_purchase",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
+    )
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances["Checking"] == "0.00"
+    assert balances["Savings"] == "2500.00"
+    assert point["net_worth"] == "2500.00"
+    assert point["cash_flows"] == [
+        {
+            "account_id": checking["id"],
+            "account_name": "Checking",
+            "cash_flow_type": "large_purchase",
+            "amount": "-1000.00",
+        },
+        {
+            "account_id": savings["id"],
+            "account_name": "Savings",
+            "cash_flow_type": "large_purchase",
+            "amount": "-1500.00",
+        },
+    ]
+
+
 def test_projection_projects_real_estate_and_mortgage_balance(client: TestClient):
     household = client.post("/households", json={"name": "Mortgage Projection"}).json()
     household_id = household["id"]

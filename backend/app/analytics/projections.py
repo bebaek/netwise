@@ -10,6 +10,7 @@ from app.analytics.mortgage import estimate_mortgage_balance
 from app.db.models import (
     Account,
     AccountEvent,
+    AccountEventType,
     AccountKind,
     AnnualTaxRecord,
     BalanceSnapshot,
@@ -44,6 +45,21 @@ CASH_FLOW_CATEGORY_PRIORITY = {
     "brokerage": 2,
     "retirement": 3,
     "real_estate": 4,
+}
+
+
+AccountEventOutflowTypes = {
+    AccountEventType.withdrawal,
+    AccountEventType.large_purchase,
+    AccountEventType.tax_payment,
+    AccountEventType.account_removed,
+}
+AccountEventInflowTypes = {
+    AccountEventType.contribution,
+    AccountEventType.asset_sale,
+    AccountEventType.gift,
+    AccountEventType.inheritance,
+    AccountEventType.account_added,
 }
 
 
@@ -163,13 +179,11 @@ def calculate_net_worth_projection(
                 Decimal("0.01")
             )
 
+        cash_flows = []
         for event in projection_events:
             if year_start <= event.event_date <= as_of_date:
-                balances[event.account_id] = (
-                    balances.get(event.account_id, Decimal("0.00")) + event.amount
-                ).quantize(Decimal("0.01"))
+                _apply_projection_event(accounts_by_id, balances, cash_flows, event)
 
-        cash_flows = []
         projected_income = Decimal("0.00")
         for income_source in income_sources:
             income_amount = _projected_income_source_for_year(income_source, year)
@@ -369,6 +383,43 @@ def _apply_account_cash_flow(
     )
 
 
+def _apply_projection_event(
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    event: AccountEvent,
+) -> None:
+    account = accounts_by_id.get(event.account_id)
+    if account is None:
+        return
+
+    amount = _projection_event_amount(event)
+    if amount == Decimal("0.00"):
+        return
+
+    if account.account_kind == AccountKind.asset and amount < Decimal("0.00"):
+        _withdraw_from_assets(
+            list(accounts_by_id.values()),
+            accounts_by_id,
+            balances,
+            cash_flows,
+            abs(amount),
+            event.event_type,
+            event.account_id,
+        )
+        return
+
+    _apply_account_cash_flow(balances, cash_flows, account, event.event_type, amount)
+
+
+def _projection_event_amount(event: AccountEvent) -> Decimal:
+    if event.event_type in AccountEventOutflowTypes:
+        return -abs(event.amount)
+    if event.event_type in AccountEventInflowTypes:
+        return abs(event.amount)
+    return event.amount
+
+
 def _withdraw_from_assets(
     accounts: list[Account],
     accounts_by_id: dict[UUID, Account],
@@ -396,13 +447,6 @@ def _withdraw_from_assets(
         remaining = (remaining - deduction).quantize(Decimal("0.01"))
         if remaining == Decimal("0.00"):
             return
-
-    fallback_account = (
-        accounts_by_id[preferred_account_id]
-        if preferred_account_id is not None
-        else min(asset_accounts, key=_cash_flow_priority)
-    )
-    _apply_account_cash_flow(balances, cash_flows, fallback_account, cash_flow_type, -remaining)
 
 
 def _withdrawal_order(
