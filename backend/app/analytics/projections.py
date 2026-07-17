@@ -73,6 +73,10 @@ CASH_FLOW_CATEGORY_PRIORITY = {
 BANK_CATEGORIES = {"cash", "checking", "savings"}
 LIQUIDITY_CLASSES = {"cash", "liquid", "marketable", "retirement_liquid"}
 
+# Default withdrawal sequence: checking, taxable investments, Roth retirement,
+# then other retirement accounts. Remaining eligible liquid accounts are fallbacks.
+DEFAULT_FUNDING_ACCOUNT_NAMES = {"checking"}
+
 
 AccountEventOutflowTypes = {
     AccountEventType.withdrawal,
@@ -656,15 +660,22 @@ def _liquidation_expense_rate(account: Account) -> Decimal:
 
 
 def _funding_priority(account: Account) -> tuple[int, str] | None:
-    if account.category in BANK_CATEGORIES:
-        return (0, account.name)
+    account_name = account.name.casefold()
+    if account_name in DEFAULT_FUNDING_ACCOUNT_NAMES:
+        return (0, account_name)
     if (
-        account.category not in {"retirement", "real_estate"}
+        account.category in {"taxable_investment", "brokerage"}
         and account.liquidity_class in LIQUIDITY_CLASSES
     ):
-        return (1, account.name)
+        return (1, account_name)
+    if account.category == "retirement" and "roth" in account_name:
+        return (2, account_name)
     if account.category == "retirement" and account.liquidity_class in LIQUIDITY_CLASSES:
-        return (3, account.name)
+        return (3, account_name)
+    if account.category in BANK_CATEGORIES:
+        return (4, account_name)
+    if account.category != "real_estate" and account.liquidity_class in LIQUIDITY_CLASSES:
+        return (5, account_name)
     return None
 
 

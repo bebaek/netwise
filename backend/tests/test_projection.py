@@ -1,4 +1,37 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
+
+from app.analytics.projections import _withdrawal_order
+from app.db.models import Account
+
+
+def test_default_projection_funding_order():
+    accounts = [
+        Account(
+            id=uuid4(),
+            name=name,
+            account_kind="asset",
+            category=category,
+            liquidity_class=liquidity_class,
+            currency="USD",
+        )
+        for name, category, liquidity_class in [
+            ("Ally", "cash", "marketable"),
+            ("401k", "retirement", "retirement_liquid"),
+            ("Vanguard Roth", "retirement", "retirement_liquid"),
+            ("Brokerage", "taxable_investment", "marketable"),
+            ("Checking", "cash", "liquid"),
+        ]
+    ]
+
+    assert [account.name for account in _withdrawal_order(accounts, {}, None)] == [
+        "Checking",
+        "Brokerage",
+        "Vanguard Roth",
+        "401k",
+        "Ally",
+    ]
 
 
 def test_projection_uses_account_yields_and_projection_events(client: TestClient):
