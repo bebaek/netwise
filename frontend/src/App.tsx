@@ -19,6 +19,7 @@ import {
   createMortgageProfile,
   createRealEstateProperty,
   createSnapshot,
+  createSnapshotBatch,
   getAnnualExpenseEstimate,
   getHistoricalTrend,
   getNetWorth,
@@ -147,6 +148,7 @@ function App() {
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
+  const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -160,6 +162,11 @@ function App() {
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
     [accounts],
+  );
+
+  const latestBalanceByAccountId = useMemo(
+    () => new Map((netWorth?.accounts ?? []).map((account) => [account.account_id, account.balance])),
+    [netWorth],
   );
 
   const propertyAccounts = accounts.filter(
@@ -215,6 +222,7 @@ function App() {
     if (!selectedHouseholdId) return;
     setExpenseEstimate(null);
     setProjection(null);
+    setSnapshotBatchMessage('');
   }, [selectedHouseholdId]);
 
   useEffect(() => {
@@ -275,6 +283,39 @@ function App() {
         currency: 'USD',
       });
       target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateSnapshotBatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    setSnapshotBatchMessage('');
+    const form = new FormData(target);
+    const snapshots = accounts
+      .map((account) => ({
+        account_id: account.id,
+        balance: String(form.get(`balance:${account.id}`) ?? '').trim(),
+      }))
+      .filter((snapshot) => snapshot.balance !== '');
+    if (snapshots.length === 0) {
+      setError('Enter at least one account balance for the snapshot date.');
+      return;
+    }
+    try {
+      const result = await createSnapshotBatch(selectedHouseholdId, {
+        as_of_date: requiredString(form, 'as_of_date'),
+        currency: 'USD',
+        snapshots,
+      });
+      target.reset();
+      setSnapshotBatchMessage(
+        `Saved ${result.created_count} new and ${result.updated_count} updated snapshot${result.snapshots.length === 1 ? '' : 's'}.`,
+      );
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -584,6 +625,38 @@ function App() {
               </>
             ) : (
               <p className="muted">Add snapshots to see historical trend.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <h2>Add household snapshot</h2>
+            <p className="muted">Capture a snapshot day across many accounts. Empty balances are skipped; existing same-day snapshots are updated.</p>
+            {accounts.length ? (
+              <form onSubmit={handleCreateSnapshotBatch} className="stacked-form">
+                <label>
+                  Snapshot date
+                  <input name="as_of_date" type="date" defaultValue={today()} required />
+                </label>
+                <div className="snapshot-batch-table">
+                  <div className="snapshot-batch-header">Account</div>
+                  <div className="snapshot-batch-header">Latest balance</div>
+                  <div className="snapshot-batch-header">New balance</div>
+                  {accounts.map((account) => (
+                    <div className="snapshot-batch-row" key={account.id}>
+                      <div>
+                        <strong>{account.name}</strong>
+                        <span>{account.account_kind} · {account.category}</span>
+                      </div>
+                      <div>{formatMoney(latestBalanceByAccountId.get(account.id))}</div>
+                      <input name={`balance:${account.id}`} inputMode="decimal" placeholder="Leave blank to skip" />
+                    </div>
+                  ))}
+                </div>
+                <button type="submit">Save household snapshot</button>
+                {snapshotBatchMessage && <p className="success-message">{snapshotBatchMessage}</p>}
+              </form>
+            ) : (
+              <p className="muted">Add accounts before capturing a household snapshot.</p>
             )}
           </section>
 

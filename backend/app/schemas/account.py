@@ -57,6 +57,27 @@ class BalanceSnapshotRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BalanceSnapshotBatchItemCreate(BaseModel):
+    account_id: UUID
+    balance: Decimal = Field(max_digits=18, decimal_places=2)
+
+
+class BalanceSnapshotBatchCreate(BaseModel):
+    as_of_date: date
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    source: SnapshotSource = SnapshotSource.manual
+    confidence_level: str | None = None
+    snapshots: list[BalanceSnapshotBatchItemCreate] = Field(min_length=1)
+
+
+class BalanceSnapshotBatchRead(BaseModel):
+    household_id: UUID
+    as_of_date: date
+    created_count: int
+    updated_count: int
+    snapshots: list[BalanceSnapshotRead]
+
+
 class AccountEventCreate(BaseModel):
     event_date: date
     amount: Decimal = Field(max_digits=18, decimal_places=2)

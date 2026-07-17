@@ -44,6 +44,24 @@ export type NetWorthHistory = {
   }>;
 };
 
+export type SnapshotBatch = {
+  household_id: string;
+  as_of_date: string;
+  created_count: number;
+  updated_count: number;
+  snapshots: Array<{
+    id: string;
+    household_id: string;
+    account_id: string;
+    as_of_date: string;
+    balance: string;
+    currency: string;
+    source: string;
+    confidence_level: string | null;
+    created_at: string;
+  }>;
+};
+
 export type AccountEvent = {
   id: string;
   household_id: string;
@@ -206,6 +224,20 @@ export function createSnapshot(
   payload: { as_of_date: string; balance: string; currency: string },
 ): Promise<unknown> {
   return request(`/accounts/${accountId}/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createSnapshotBatch(
+  householdId: string,
+  payload: {
+    as_of_date: string;
+    currency: string;
+    snapshots: Array<{ account_id: string; balance: string }>;
+  },
+): Promise<SnapshotBatch> {
+  return request<SnapshotBatch>(`/households/${householdId}/snapshot-batch`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
