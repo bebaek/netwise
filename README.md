@@ -45,12 +45,18 @@ Planned deployment options:
 
 ## Current development quickstart
 
-The current skeleton starts a FastAPI backend and PostgreSQL database:
+The current skeleton starts a FastAPI backend, PostgreSQL database, and Vite frontend:
 
 ```bash
 cd /Users/burm/code/netwise
 cp .env.example .env
 docker compose up --build
+```
+
+Open the frontend at:
+
+```text
+http://localhost:5173
 ```
 
 Health checks:
@@ -73,6 +79,15 @@ Create future migrations after model changes:
 ```bash
 cd /Users/burm/code/netwise/backend
 uv run alembic revision --autogenerate -m "describe change"
+```
+
+Run frontend type checks locally:
+
+```bash
+cd /Users/burm/code/netwise/frontend
+npm install
+npm run lint
+npm run build
 ```
 
 ## Planned frontend stack

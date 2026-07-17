@@ -36,3 +36,6 @@ backups/
 *.db
 *.sqlite
 *.sqlite3
+
+# TypeScript
+*.tsbuildinfo
