@@ -16,11 +16,16 @@ class FintrackAssetImportRead(BaseModel):
     account_id: UUID | None
     liability_account_id: UUID | None
     accounts_created: int
+    accounts_existing: int
     snapshots_created: int
     snapshots_updated: int
+    snapshots_existing: int
     events_created: int
+    events_existing: int
     real_estate_profiles_created: int
+    real_estate_profiles_existing: int
     mortgage_profiles_created: int
+    mortgage_profiles_existing: int
     warnings: list[str]
 
 
@@ -29,9 +34,14 @@ class FintrackImportRead(BaseModel):
     data_dir: str
     dry_run: bool
     accounts_created: int
+    accounts_existing: int
     snapshots_created: int
     snapshots_updated: int
+    snapshots_existing: int
     events_created: int
+    events_existing: int
     real_estate_profiles_created: int
+    real_estate_profiles_existing: int
     mortgage_profiles_created: int
+    mortgage_profiles_existing: int
     assets: list[FintrackAssetImportRead]

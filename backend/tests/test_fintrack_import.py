@@ -75,8 +75,10 @@ def test_fintrack_import_is_idempotent_and_supports_dry_run(client, tmp_path):
     )
     assert second.status_code == 201
     assert second.json()["accounts_created"] == 0
+    assert second.json()["accounts_existing"] == 1
     assert second.json()["snapshots_created"] == 0
-    assert second.json()["snapshots_updated"] == 1
+    assert second.json()["snapshots_updated"] == 0
+    assert second.json()["snapshots_existing"] == 1
 
     write_text(tmp_path / "new-account-condition.toml", "yield = 0.01\n")
     write_text(tmp_path / "new-account-values.csv", "date,value\n2024-01-01,500.00\n")
@@ -87,6 +89,8 @@ def test_fintrack_import_is_idempotent_and_supports_dry_run(client, tmp_path):
     assert dry_run.status_code == 201
     assert dry_run.json()["dry_run"] is True
     assert dry_run.json()["accounts_created"] == 1
+    assert dry_run.json()["accounts_existing"] == 1
+    assert dry_run.json()["snapshots_existing"] == 1
 
     accounts = client.get(f"/accounts?household_id={household['id']}").json()
     assert {account["name"] for account in accounts} == {"Ally"}

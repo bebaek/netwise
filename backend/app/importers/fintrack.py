@@ -32,11 +32,16 @@ class FintrackAssetImportResult:
     account_id: UUID | None = None
     liability_account_id: UUID | None = None
     accounts_created: int = 0
+    accounts_existing: int = 0
     snapshots_created: int = 0
     snapshots_updated: int = 0
+    snapshots_existing: int = 0
     events_created: int = 0
+    events_existing: int = 0
     real_estate_profiles_created: int = 0
+    real_estate_profiles_existing: int = 0
     mortgage_profiles_created: int = 0
+    mortgage_profiles_existing: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -52,6 +57,10 @@ class FintrackImportResult:
         return sum(asset.accounts_created for asset in self.assets)
 
     @property
+    def accounts_existing(self) -> int:
+        return sum(asset.accounts_existing for asset in self.assets)
+
+    @property
     def snapshots_created(self) -> int:
         return sum(asset.snapshots_created for asset in self.assets)
 
@@ -60,16 +69,32 @@ class FintrackImportResult:
         return sum(asset.snapshots_updated for asset in self.assets)
 
     @property
+    def snapshots_existing(self) -> int:
+        return sum(asset.snapshots_existing for asset in self.assets)
+
+    @property
     def events_created(self) -> int:
         return sum(asset.events_created for asset in self.assets)
+
+    @property
+    def events_existing(self) -> int:
+        return sum(asset.events_existing for asset in self.assets)
 
     @property
     def real_estate_profiles_created(self) -> int:
         return sum(asset.real_estate_profiles_created for asset in self.assets)
 
     @property
+    def real_estate_profiles_existing(self) -> int:
+        return sum(asset.real_estate_profiles_existing for asset in self.assets)
+
+    @property
     def mortgage_profiles_created(self) -> int:
         return sum(asset.mortgage_profiles_created for asset in self.assets)
+
+    @property
+    def mortgage_profiles_existing(self) -> int:
+        return sum(asset.mortgage_profiles_existing for asset in self.assets)
 
 
 class FintrackImportError(ValueError):
@@ -167,7 +192,10 @@ def _import_liquid_asset(
         currency=currency,
     )
     result.account_id = account.id
-    result.accounts_created += int(created)
+    if created:
+        result.accounts_created += 1
+    else:
+        result.accounts_existing += 1
     _upsert_snapshots(db, result, account=account, values=values, currency=currency)
     _create_events(db, result, account=account, values=value_changes, currency=currency)
     return result
@@ -195,12 +223,17 @@ def _import_real_estate_asset(
         currency=currency,
     )
     result.account_id = property_account.id
-    result.accounts_created += int(created)
+    if created:
+        result.accounts_created += 1
+    else:
+        result.accounts_existing += 1
     _upsert_snapshots(db, result, account=property_account, values=values, currency=currency)
     _create_events(db, result, account=property_account, values=value_changes, currency=currency)
 
     if _get_or_create_real_estate_profile(db, household_id, property_account, condition):
         result.real_estate_profiles_created += 1
+    else:
+        result.real_estate_profiles_existing += 1
 
     loan_amount = _decimal_or_none(condition.get("loan"))
     if loan_amount is not None:
@@ -215,11 +248,16 @@ def _import_real_estate_asset(
             currency=currency,
         )
         result.liability_account_id = liability_account.id
-        result.accounts_created += int(liability_created)
+        if liability_created:
+            result.accounts_created += 1
+        else:
+            result.accounts_existing += 1
         if _get_or_create_mortgage_profile(
             db, household_id, liability_account, property_account, condition, loan_amount
         ):
             result.mortgage_profiles_created += 1
+        else:
+            result.mortgage_profiles_existing += 1
     else:
         result.warnings.append("No loan amount found; imported property without mortgage profile")
 
@@ -347,6 +385,15 @@ def _upsert_snapshots(
             )
             result.snapshots_created += 1
         else:
+            already_matches = (
+                snapshot.balance == balance
+                and snapshot.currency == currency
+                and snapshot.source == SnapshotSource.imported_csv
+                and snapshot.confidence_level == "imported"
+            )
+            if already_matches:
+                result.snapshots_existing += 1
+                continue
             snapshot.balance = balance
             snapshot.currency = currency
             snapshot.source = SnapshotSource.imported_csv
@@ -374,6 +421,7 @@ def _create_events(
             )
         ).first()
         if existing is not None:
+            result.events_existing += 1
             continue
         db.add(
             AccountEvent(

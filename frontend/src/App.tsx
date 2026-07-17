@@ -864,7 +864,7 @@ function App() {
               <div className="import-result">
                 <p>
                   <strong>{fintrackImportResult.dry_run ? 'Dry run' : 'Import'} complete:</strong>{' '}
-                  {fintrackImportResult.accounts_created} accounts, {fintrackImportResult.snapshots_created} snapshots created, {fintrackImportResult.snapshots_updated} snapshots updated, {fintrackImportResult.events_created} events.
+                  {fintrackImportResult.accounts_created} accounts created, {fintrackImportResult.accounts_existing} existing, {fintrackImportResult.snapshots_created} snapshots created, {fintrackImportResult.snapshots_updated} updated, {fintrackImportResult.snapshots_existing} unchanged, {fintrackImportResult.events_created} events created, {fintrackImportResult.events_existing} existing.
                 </p>
                 <div className="table-scroll">
                   <table>
@@ -875,6 +875,7 @@ function App() {
                         <th>Accounts</th>
                         <th>Snapshots</th>
                         <th>Events</th>
+                        <th>Profiles</th>
                         <th>Warnings</th>
                       </tr>
                     </thead>
@@ -883,11 +884,18 @@ function App() {
                         <tr key={asset.name}>
                           <td>{asset.name}</td>
                           <td>{asset.kind}</td>
-                          <td>{asset.accounts_created}</td>
                           <td>
-                            {asset.snapshots_created} created / {asset.snapshots_updated} updated
+                            {asset.accounts_created} created / {asset.accounts_existing} existing
                           </td>
-                          <td>{asset.events_created}</td>
+                          <td>
+                            {asset.snapshots_created} created / {asset.snapshots_updated} updated / {asset.snapshots_existing} unchanged
+                          </td>
+                          <td>
+                            {asset.events_created} created / {asset.events_existing} existing
+                          </td>
+                          <td>
+                            {asset.real_estate_profiles_created + asset.mortgage_profiles_created} created / {asset.real_estate_profiles_existing + asset.mortgage_profiles_existing} existing
+                          </td>
                           <td>{asset.warnings.join('; ') || '—'}</td>
                         </tr>
                       ))}
