@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Account,
+  AccountEvent,
   AnnualExpenseEstimate,
   AnnualTaxRecord,
   Household,
@@ -10,6 +11,7 @@ import {
   NetWorthHistory,
   RealEstateProperty,
   createAccount,
+  createAccountEvent,
   createAnnualTaxRecord,
   createHousehold,
   createIncomeSource,
@@ -20,6 +22,7 @@ import {
   getNetWorth,
   getNetWorthHistory,
   listAccounts,
+  listAccountEvents,
   listAnnualTaxRecords,
   listHouseholds,
   listIncomeSources,
@@ -50,6 +53,7 @@ function App() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
   const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
@@ -100,7 +104,11 @@ function App() {
       listIncomeSources(householdId),
       listAnnualTaxRecords(householdId),
     ]);
+    const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
+      .flat()
+      .sort((left, right) => right.event_date.localeCompare(left.event_date));
     setAccounts(accountList);
+    setAccountEvents(accountEventList);
     setNetWorth(netWorthResult);
     setHistory(historyResult);
     setProperties(propertyList);
@@ -171,6 +179,28 @@ function App() {
         as_of_date: String(form.get('as_of_date')),
         balance: String(form.get('balance')),
         currency: 'USD',
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateAccountEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createAccountEvent(requiredString(form, 'account_id'), {
+        event_date: requiredString(form, 'event_date'),
+        amount: requiredString(form, 'amount'),
+        currency: 'USD',
+        event_type: requiredString(form, 'event_type'),
+        description: optionalString(form, 'description'),
+        projection_behavior: requiredString(form, 'projection_behavior'),
       });
       target.reset();
       await refreshDashboard(selectedHouseholdId);
@@ -694,6 +724,80 @@ function App() {
               ) : (
                 <p className="muted">Add snapshots to see history.</p>
               )}
+            </div>
+          </section>
+
+          <section className="grid two-column">
+            <div className="card">
+              <h2>Account events</h2>
+              {accountEvents.length ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Account</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Behavior</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td>{event.event_date}</td>
+                        <td>{accountNameById.get(event.account_id) ?? event.account_id}</td>
+                        <td>{event.event_type}</td>
+                        <td>{formatMoney(event.amount)}</td>
+                        <td>{event.projection_behavior}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No account events yet.</p>
+              )}
+            </div>
+
+            <div className="card">
+              <h2>Add account event</h2>
+              <p className="muted">Capture known or planned contributions, withdrawals, tax payments, and major adjustments.</p>
+              <form onSubmit={handleCreateAccountEvent} className="stacked-form">
+                <select name="account_id" required defaultValue="">
+                  <option value="" disabled>
+                    Select account
+                  </option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+                <label>
+                  Event date
+                  <input name="event_date" type="date" defaultValue={today()} required />
+                </label>
+                <input name="amount" inputMode="decimal" placeholder="Amount" required />
+                <select name="event_type" defaultValue="manual_projection_adjustment" required>
+                  <option value="contribution">Contribution</option>
+                  <option value="withdrawal">Withdrawal</option>
+                  <option value="transfer">Transfer</option>
+                  <option value="large_purchase">Large purchase</option>
+                  <option value="asset_sale">Asset sale</option>
+                  <option value="gift">Gift</option>
+                  <option value="inheritance">Inheritance</option>
+                  <option value="tax_payment">Tax payment</option>
+                  <option value="account_added">Account added</option>
+                  <option value="account_removed">Account removed</option>
+                  <option value="manual_projection_adjustment">Manual projection adjustment</option>
+                </select>
+                <select name="projection_behavior" defaultValue="historical_only" required>
+                  <option value="historical_only">Historical only</option>
+                  <option value="projection_only">Projection only</option>
+                  <option value="historical_and_projection">Historical and projection</option>
+                </select>
+                <input name="description" placeholder="Description" />
+                <button type="submit">Add event</button>
+              </form>
             </div>
           </section>
 

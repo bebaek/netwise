@@ -41,6 +41,21 @@ export type NetWorthHistory = {
   }>;
 };
 
+export type AccountEvent = {
+  id: string;
+  household_id: string;
+  account_id: string;
+  event_date: string;
+  amount: string;
+  currency: string;
+  event_type: string;
+  description: string | null;
+  projection_behavior: string;
+  scenario_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RealEstateProperty = {
   id: string;
   household_id: string;
@@ -166,6 +181,27 @@ export function createSnapshot(
   payload: { as_of_date: string; balance: string; currency: string },
 ): Promise<unknown> {
   return request(`/accounts/${accountId}/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAccountEvents(accountId: string): Promise<AccountEvent[]> {
+  return request<AccountEvent[]>(`/accounts/${accountId}/events`);
+}
+
+export function createAccountEvent(
+  accountId: string,
+  payload: {
+    event_date: string;
+    amount: string;
+    currency: string;
+    event_type: string;
+    description?: string;
+    projection_behavior?: string;
+  },
+): Promise<AccountEvent> {
+  return request<AccountEvent>(`/accounts/${accountId}/events`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
