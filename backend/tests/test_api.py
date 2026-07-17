@@ -238,6 +238,10 @@ def test_net_worth_history_uses_mortgage_profile_when_no_liability_snapshot(clie
 
     assert client.post(
         f"/accounts/{home['id']}/snapshots",
+        json={"as_of_date": "2019-12-01", "balance": "390000.00"},
+    ).status_code == 201
+    assert client.post(
+        f"/accounts/{home['id']}/snapshots",
         json={"as_of_date": "2020-02-01", "balance": "400000.00"},
     ).status_code == 201
 
@@ -259,9 +263,15 @@ def test_net_worth_history_uses_mortgage_profile_when_no_liability_snapshot(clie
     assert response.status_code == 200
     assert response.json()["points"] == [
         {
+            "as_of_date": "2019-12-01",
+            "assets_total": "390000.00",
+            "liabilities_total": "0.00",
+            "net_worth": "390000.00",
+        },
+        {
             "as_of_date": "2020-02-01",
             "assets_total": "400000.00",
             "liabilities_total": "299000.00",
             "net_worth": "101000.00",
-        }
+        },
     ]

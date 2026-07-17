@@ -15,6 +15,9 @@ def estimate_mortgage_balance(profile: MortgageProfile, as_of_date: date) -> Dec
     principal.
     """
     principal = profile.original_principal
+    if as_of_date < profile.start_date:
+        return Decimal("0.00")
+
     elapsed_months = months_between(profile.start_date, as_of_date)
     if elapsed_months <= 0:
         return principal

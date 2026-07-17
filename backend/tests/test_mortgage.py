@@ -20,6 +20,7 @@ def test_estimate_zero_interest_mortgage_balance():
         start_date=date(2020, 1, 1),
     )
 
+    assert estimate_mortgage_balance(profile, date(2019, 12, 31)) == Decimal("0.00")
     assert estimate_mortgage_balance(profile, date(2020, 1, 1)) == Decimal("300000.00")
     assert estimate_mortgage_balance(profile, date(2020, 2, 1)) == Decimal("299000.00")
     assert estimate_mortgage_balance(profile, date(2045, 1, 1)) == Decimal("0.00")

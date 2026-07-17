@@ -204,4 +204,7 @@ def _estimated_balance_from_profile(
     if mortgage_profile is None:
         return None
 
+    if as_of_date is not None and as_of_date < mortgage_profile.start_date:
+        return None
+
     return estimate_mortgage_balance(mortgage_profile, as_of_date or date.today())
