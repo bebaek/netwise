@@ -73,7 +73,7 @@ def get_net_worth_projection(
     start_year: int,
     end_year: int,
     annual_spending: Decimal | None = None,
-    spending_inflation_rate: Decimal = Decimal("0.030000"),
+    spending_inflation_rate: Decimal | None = None,
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
     db: Session = Depends(get_db),

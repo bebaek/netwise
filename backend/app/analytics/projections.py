@@ -17,6 +17,7 @@ from app.db.models import (
     IncomeSource,
     MortgageProfile,
     ProjectionBehavior,
+    ProjectionSettings,
     RealEstateProperty,
 )
 
@@ -53,7 +54,7 @@ def calculate_net_worth_projection(
     start_year: int,
     end_year: int,
     annual_spending: Decimal | None = None,
-    spending_inflation_rate: Decimal = DEFAULT_SPENDING_INFLATION_RATE,
+    spending_inflation_rate: Decimal | None = None,
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
 ) -> dict:
@@ -99,16 +100,48 @@ def calculate_net_worth_projection(
     income_sources = list(
         db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
     )
+    projection_settings = db.scalars(
+        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+    ).first()
+    effective_annual_spending = (
+        annual_spending
+        if annual_spending is not None
+        else projection_settings.annual_spending
+        if projection_settings is not None
+        else None
+    )
+    effective_spending_inflation_rate = (
+        spending_inflation_rate
+        if spending_inflation_rate is not None
+        else projection_settings.spending_inflation_rate
+        if projection_settings is not None
+        and projection_settings.spending_inflation_rate is not None
+        else DEFAULT_SPENDING_INFLATION_RATE
+    )
+    effective_spending_account_id = (
+        spending_account_id
+        if spending_account_id is not None
+        else projection_settings.spending_account_id
+        if projection_settings is not None
+        else None
+    )
+    effective_tax_account_id = (
+        tax_account_id
+        if tax_account_id is not None
+        else projection_settings.tax_account_id
+        if projection_settings is not None
+        else None
+    )
     accounts_by_id = {account.id: account for account in accounts}
-    _validate_cash_flow_account(accounts_by_id, spending_account_id, "Spending account")
-    _validate_cash_flow_account(accounts_by_id, tax_account_id, "Tax account")
+    _validate_cash_flow_account(accounts_by_id, effective_spending_account_id, "Spending account")
+    _validate_cash_flow_account(accounts_by_id, effective_tax_account_id, "Tax account")
     for income_source in income_sources:
         _validate_cash_flow_account(
             accounts_by_id, income_source.deposit_account_id, "Income deposit account"
         )
     spending_baseline = (
-        (start_year, annual_spending.quantize(Decimal("0.01")))
-        if annual_spending is not None
+        (start_year, effective_annual_spending.quantize(Decimal("0.01")))
+        if effective_annual_spending is not None
         else _latest_living_expense_estimate(db, household_id)
     )
     tax_rate = _latest_effective_tax_rate(db, household_id)
@@ -155,7 +188,7 @@ def calculate_net_worth_projection(
         projected_spending = _projected_spending_for_year(
             spending_baseline,
             year,
-            spending_inflation_rate,
+            effective_spending_inflation_rate,
         )
         if projected_taxes != Decimal("0.00"):
             _withdraw_from_assets(
@@ -165,7 +198,7 @@ def calculate_net_worth_projection(
                 cash_flows,
                 projected_taxes,
                 "tax_payment",
-                tax_account_id,
+                effective_tax_account_id,
             )
         if projected_spending != Decimal("0.00"):
             _withdraw_from_assets(
@@ -175,7 +208,7 @@ def calculate_net_worth_projection(
                 cash_flows,
                 projected_spending,
                 "spending",
-                spending_account_id,
+                effective_spending_account_id,
             )
         net_cash_flow = (projected_income - projected_taxes - projected_spending).quantize(
             Decimal("0.01")

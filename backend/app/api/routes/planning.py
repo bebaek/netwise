@@ -4,16 +4,31 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountKind, AnnualTaxRecord, Household, IncomeSource
+from app.db.models import Account, AccountKind, AnnualTaxRecord, Household, IncomeSource, ProjectionSettings
 from app.db.session import get_db
 from app.schemas.planning import (
     AnnualTaxRecordCreate,
     AnnualTaxRecordRead,
     IncomeSourceCreate,
     IncomeSourceRead,
+    ProjectionSettingsRead,
+    ProjectionSettingsUpsert,
 )
 
 router = APIRouter(tags=["planning"])
+
+
+def _validate_asset_account(
+    db: Session, household_id: UUID, account_id: UUID | None, label: str
+) -> None:
+    if account_id is None:
+        return
+    account = db.get(Account, account_id)
+    if account is None or account.household_id != household_id or account.account_kind != AccountKind.asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{label} must be an asset account in the household",
+        )
 
 
 @router.post(
@@ -27,23 +42,55 @@ def create_income_source(
 ) -> IncomeSource:
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
-    if payload.deposit_account_id is not None:
-        account = db.get(Account, payload.deposit_account_id)
-        if (
-            account is None
-            or account.household_id != payload.household_id
-            or account.account_kind != AccountKind.asset
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Deposit account must be an asset account in the household",
-            )
+    _validate_asset_account(db, payload.household_id, payload.deposit_account_id, "Deposit account")
 
     income_source = IncomeSource(**payload.model_dump())
     db.add(income_source)
     db.commit()
     db.refresh(income_source)
     return income_source
+
+
+@router.get("/projection-settings/{household_id}", response_model=ProjectionSettingsRead)
+def get_projection_settings(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> ProjectionSettings:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    projection_settings = db.scalars(
+        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+    ).first()
+    if projection_settings is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projection settings not found")
+    return projection_settings
+
+
+@router.put("/projection-settings/{household_id}", response_model=ProjectionSettingsRead)
+def upsert_projection_settings(
+    household_id: UUID,
+    payload: ProjectionSettingsUpsert,
+    db: Session = Depends(get_db),
+) -> ProjectionSettings:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+    _validate_asset_account(db, household_id, payload.spending_account_id, "Spending account")
+    _validate_asset_account(db, household_id, payload.tax_account_id, "Tax account")
+
+    projection_settings = db.scalars(
+        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+    ).first()
+    if projection_settings is None:
+        projection_settings = ProjectionSettings(household_id=household_id)
+        db.add(projection_settings)
+
+    for field, value in payload.model_dump().items():
+        setattr(projection_settings, field, value)
+
+    db.commit()
+    db.refresh(projection_settings)
+    return projection_settings
 
 
 @router.get("/income-sources", response_model=list[IncomeSourceRead])

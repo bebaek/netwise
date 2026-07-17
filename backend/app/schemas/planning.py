@@ -38,6 +38,26 @@ class IncomeSourceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProjectionSettingsUpsert(BaseModel):
+    annual_spending: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    spending_inflation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    spending_account_id: UUID | None = None
+    tax_account_id: UUID | None = None
+
+
+class ProjectionSettingsRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    annual_spending: Decimal | None
+    spending_inflation_rate: Decimal | None
+    spending_account_id: UUID | None
+    tax_account_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AnnualTaxRecordCreate(BaseModel):
     household_id: UUID
     tax_year: int

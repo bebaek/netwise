@@ -98,6 +98,9 @@ class Household(Base):
     annual_tax_records: Mapped[list["AnnualTaxRecord"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    projection_settings: Mapped["ProjectionSettings | None"] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class HouseholdMembership(Base):
@@ -318,4 +321,30 @@ class AnnualTaxRecord(Base):
     __table_args__ = (
         UniqueConstraint("household_id", "tax_year", name="uq_annual_tax_records_household_year"),
         Index("ix_annual_tax_records_household_id", "household_id"),
+    )
+
+
+class ProjectionSettings(Base):
+    __tablename__ = "projection_settings"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    spending_inflation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    spending_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
+    tax_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="projection_settings")
+    spending_account: Mapped[Account | None] = relationship(foreign_keys=[spending_account_id])
+    tax_account: Mapped[Account | None] = relationship(foreign_keys=[tax_account_id])
+
+    __table_args__ = (
+        UniqueConstraint("household_id", name="uq_projection_settings_household"),
+        Index("ix_projection_settings_household_id", "household_id"),
+        Index("ix_projection_settings_spending_account_id", "spending_account_id"),
+        Index("ix_projection_settings_tax_account_id", "tax_account_id"),
     )

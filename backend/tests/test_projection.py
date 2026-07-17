@@ -295,6 +295,85 @@ def test_projection_applies_income_taxes_and_spending_to_selected_accounts(clien
     ]
 
 
+def test_projection_uses_persisted_cash_flow_settings(client: TestClient):
+    household = client.post("/households", json={"name": "Persisted Projection Settings"}).json()
+    household_id = household["id"]
+
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    savings = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Savings",
+            "account_kind": "asset",
+            "category": "savings",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{checking['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "10000.00"},
+    )
+    client.post(
+        f"/accounts/{savings['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "20000.00"},
+    )
+    client.post(
+        "/annual-tax-records",
+        json={
+            "household_id": household_id,
+            "tax_year": 2025,
+            "gross_income": "100000.00",
+            "total_taxes_paid": "10000.00",
+        },
+    )
+    client.post(
+        "/income-sources",
+        json={
+            "household_id": household_id,
+            "name": "Salary",
+            "amount": "10000.00",
+            "frequency": "annually",
+            "start_date": "2026-01-01",
+            "growth_rate": "0.000000",
+            "deposit_account_id": checking["id"],
+        },
+    )
+    settings = client.put(
+        f"/projection-settings/{household_id}",
+        json={
+            "annual_spending": "6000.00",
+            "spending_inflation_rate": "0.100000",
+            "spending_account_id": savings["id"],
+            "tax_account_id": checking["id"],
+        },
+    )
+    assert settings.status_code == 200
+    assert settings.json()["annual_spending"] == "6000.00"
+
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027")
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert points[0]["projected_spending"] == "6000.00"
+    assert points[1]["projected_spending"] == "6600.00"
+    final_balances = {account["name"]: account["projected_balance"] for account in points[1]["accounts"]}
+    assert final_balances == {"Checking": "28000.00", "Savings": "7400.00"}
+
+
 def test_projection_rejects_invalid_year_range(client: TestClient):
     household = client.post("/households", json={"name": "Invalid Projection"}).json()
 
