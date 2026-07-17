@@ -19,18 +19,22 @@ def test_default_projection_funding_order():
         for name, category, liquidity_class in [
             ("Ally", "cash", "marketable"),
             ("401k", "retirement", "retirement_liquid"),
+            ("Fidelity", "retirement", "retirement_liquid"),
             ("Vanguard Roth", "retirement", "retirement_liquid"),
             ("Brokerage", "taxable_investment", "marketable"),
+            ("Vanguard Stock", "taxable_investment", "marketable"),
             ("Checking", "cash", "liquid"),
         ]
     ]
 
     assert [account.name for account in _withdrawal_order(accounts, {}, None)] == [
         "Checking",
+        "Ally",
         "Brokerage",
+        "Vanguard Stock",
         "Vanguard Roth",
         "401k",
-        "Ally",
+        "Fidelity",
     ]
 
 
