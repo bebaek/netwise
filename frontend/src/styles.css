@@ -198,6 +198,11 @@ th {
   gap: 0.75rem;
 }
 
+.management-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
 .compact-form {
   max-width: 420px;
 }
@@ -227,6 +232,24 @@ th {
   font-weight: 800;
   padding: 0.25rem 0.6rem;
   text-transform: uppercase;
+}
+
+.import-result {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.import-result p {
+  margin-top: 0;
+}
+
+code {
+  background: #e2e8f0;
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
 }
 
 .form-row select {

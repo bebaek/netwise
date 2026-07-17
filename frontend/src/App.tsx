@@ -4,6 +4,7 @@ import {
   AccountEvent,
   AnnualExpenseEstimate,
   AnnualTaxRecord,
+  FintrackImportResult,
   Household,
   HouseholdMembership,
   HouseholdSnapshot,
@@ -32,6 +33,7 @@ import {
   getNetWorth,
   getNetWorthBreakdownHistory,
   getNetWorthProjection,
+  importFintrack,
   listAccounts,
   listAccountEvents,
   listAnnualTaxRecords,
@@ -179,6 +181,7 @@ function App() {
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
+  const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
@@ -305,6 +308,7 @@ function App() {
     if (!selectedHouseholdId) return;
     setExpenseEstimate(null);
     setProjection(null);
+    setFintrackImportResult(null);
     setSnapshotBatchMessage('');
     setSnapshotEditDraft(null);
   }, [selectedHouseholdId]);
@@ -681,6 +685,29 @@ function App() {
     }
   }
 
+  async function handleImportFintrack(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setError('');
+    setFintrackImportResult(null);
+    try {
+      const result = await importFintrack({
+        household_id: selectedHouseholdId,
+        data_dir: requiredString(form, 'data_dir'),
+        currency: optionalString(form, 'currency') || 'USD',
+        dry_run: form.get('dry_run') === 'on',
+      });
+      setFintrackImportResult(result);
+      if (!result.dry_run) {
+        await refreshDashboard(selectedHouseholdId);
+      }
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -753,11 +780,17 @@ function App() {
                 <h2>People & household access</h2>
                 <p className="muted">Switch users, switch households, and manage household memberships.</p>
               </div>
-              <form onSubmit={handleCreateUser} className="form-row">
-                <input name="display_name" placeholder="New user name" required />
-                <input name="email" type="email" placeholder="Email (optional)" />
-                <button type="submit">Add user</button>
-              </form>
+              <div className="management-actions">
+                <form onSubmit={handleCreateHousehold} className="form-row">
+                  <input name="name" placeholder="New household name" required />
+                  <button type="submit">Add household</button>
+                </form>
+                <form onSubmit={handleCreateUser} className="form-row">
+                  <input name="display_name" placeholder="New user name" required />
+                  <input name="email" type="email" placeholder="Email (optional)" />
+                  <button type="submit">Add user</button>
+                </form>
+              </div>
             </div>
             <div className="member-list">
               {householdMembers.map((membership) => (
@@ -793,6 +826,62 @@ function App() {
                 </select>
                 <button type="submit">Add member</button>
               </form>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>Import FinTrack data</h2>
+                <p className="muted">
+                  Import a server-local FinTrack data directory into {selectedHousehold.name}. Expected files: <code>*-condition.toml</code>, <code>*-values.csv</code>, and optional <code>*-value-changes.csv</code>.
+                </p>
+              </div>
+            </div>
+            <form onSubmit={handleImportFintrack} className="form-row">
+              <input name="data_dir" placeholder="/Users/burm/code/fintrack/data-me" required />
+              <input name="currency" placeholder="USD" defaultValue="USD" maxLength={3} />
+              <label className="inline-toggle">
+                <input name="dry_run" type="checkbox" />
+                Dry run
+              </label>
+              <button type="submit">Import</button>
+            </form>
+            {fintrackImportResult && (
+              <div className="import-result">
+                <p>
+                  <strong>{fintrackImportResult.dry_run ? 'Dry run' : 'Import'} complete:</strong>{' '}
+                  {fintrackImportResult.accounts_created} accounts, {fintrackImportResult.snapshots_created} snapshots created, {fintrackImportResult.snapshots_updated} snapshots updated, {fintrackImportResult.events_created} events.
+                </p>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Asset</th>
+                        <th>Kind</th>
+                        <th>Accounts</th>
+                        <th>Snapshots</th>
+                        <th>Events</th>
+                        <th>Warnings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fintrackImportResult.assets.map((asset) => (
+                        <tr key={asset.name}>
+                          <td>{asset.name}</td>
+                          <td>{asset.kind}</td>
+                          <td>{asset.accounts_created}</td>
+                          <td>
+                            {asset.snapshots_created} created / {asset.snapshots_updated} updated
+                          </td>
+                          <td>{asset.events_created}</td>
+                          <td>{asset.warnings.join('; ') || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </section>
 

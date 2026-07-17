@@ -20,6 +20,31 @@ export type HouseholdMembership = {
   user: User | null;
 };
 
+export type FintrackImportResult = {
+  household_id: string;
+  data_dir: string;
+  dry_run: boolean;
+  accounts_created: number;
+  snapshots_created: number;
+  snapshots_updated: number;
+  events_created: number;
+  real_estate_profiles_created: number;
+  mortgage_profiles_created: number;
+  assets: Array<{
+    name: string;
+    kind: string;
+    account_id: string | null;
+    liability_account_id: string | null;
+    accounts_created: number;
+    snapshots_created: number;
+    snapshots_updated: number;
+    events_created: number;
+    real_estate_profiles_created: number;
+    mortgage_profiles_created: number;
+    warnings: string[];
+  }>;
+};
+
 export type Account = {
   id: string;
   household_id: string;
@@ -264,6 +289,18 @@ export function addHouseholdMember(
 
 export function removeHouseholdMember(householdId: string, userId: string): Promise<void> {
   return request<void>(`/households/${householdId}/members/${userId}`, { method: 'DELETE' });
+}
+
+export function importFintrack(payload: {
+  household_id: string;
+  data_dir: string;
+  currency?: string;
+  dry_run?: boolean;
+}): Promise<FintrackImportResult> {
+  return request<FintrackImportResult>('/imports/fintrack', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function listAccounts(householdId: string): Promise<Account[]> {
