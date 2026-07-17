@@ -66,17 +66,3 @@ class NetWorthBreakdownHistoryPointRead(BaseModel):
 class NetWorthBreakdownHistoryRead(BaseModel):
     household_id: UUID
     points: list[NetWorthBreakdownHistoryPointRead]
-
-
-class AnnualExpenseEstimateRead(BaseModel):
-    household_id: UUID
-    tax_year: int
-    period_start: date
-    period_end: date
-    gross_income: Decimal
-    taxes_paid: Decimal
-    net_worth_start: Decimal
-    net_worth_end: Decimal
-    net_worth_change: Decimal
-    adjustment_total: Decimal
-    estimated_living_expense: Decimal

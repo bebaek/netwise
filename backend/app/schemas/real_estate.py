@@ -37,6 +37,30 @@ class RealEstatePropertyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RealEstateSaleCreate(BaseModel):
+    property_account_id: UUID
+    sale_date: date
+    gross_sale_price: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    proceeds_account_id: UUID | None = None
+    selling_expense_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
+
+
+class RealEstateSaleRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    property_account_id: UUID
+    sale_date: date
+    gross_sale_price: Decimal
+    proceeds_account_id: UUID
+    selling_expense_rate: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MortgageProfileCreate(BaseModel):
     liability_account_id: UUID
     property_account_id: UUID | None = None

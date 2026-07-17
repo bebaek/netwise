@@ -180,7 +180,7 @@ def test_projection_projects_real_estate_and_mortgage_balance(client: TestClient
     assert point["liabilities_total"] == "290833.33"
     assert point["net_worth"] == "229166.67"
 
-def test_projection_models_estimated_spending_income_and_taxes(client: TestClient):
+def test_projection_does_not_infer_spending_from_historical_snapshots(client: TestClient):
     household = client.post("/households", json={"name": "Spending Projection"}).json()
     household_id = household["id"]
 
@@ -233,10 +233,10 @@ def test_projection_models_estimated_spending_income_and_taxes(client: TestClien
     point = response.json()["points"][0]
     assert point["projected_income"] == "100000.00"
     assert point["projected_taxes"] == "20000.00"
-    assert point["projected_spending"] == "72100.00"
-    assert point["net_cash_flow"] == "7900.00"
-    assert point["assets_total"] == "117900.00"
-    assert point["net_worth"] == "117900.00"
+    assert point["projected_spending"] == "0.00"
+    assert point["net_cash_flow"] == "80000.00"
+    assert point["assets_total"] == "190000.00"
+    assert point["net_worth"] == "190000.00"
 
 
 def test_projection_accepts_explicit_spending_assumption(client: TestClient):
@@ -341,10 +341,11 @@ def test_projection_applies_income_taxes_and_spending_to_selected_accounts(clien
     assert response.status_code == 200
     point = response.json()["points"][0]
     assert point["projected_income"] == "10000.00"
-    assert point["projected_taxes"] == "2000.00"
+    assert point["projected_taxes"] == "3772.15"
     assert point["projected_spending"] == "7000.00"
+    assert point["projected_liquidation_expenses"] == "88.61"
     balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
-    assert balances == {"Brokerage": "43000.00", "Checking": "9000.00"}
+    assert balances == {"Brokerage": "41139.24", "Checking": "9000.00"}
     assert point["cash_flows"] == [
         {
             "account_id": checking["id"],
@@ -353,16 +354,28 @@ def test_projection_applies_income_taxes_and_spending_to_selected_accounts(clien
             "amount": "10000.00",
         },
         {
-            "account_id": checking["id"],
-            "account_name": "Checking",
-            "cash_flow_type": "tax_payment",
-            "amount": "-2000.00",
-        },
-        {
             "account_id": brokerage["id"],
             "account_name": "Brokerage",
             "cash_flow_type": "spending",
             "amount": "-7000.00",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "tax_payment",
+            "amount": "-1772.15",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "liquidation_expense",
+            "amount": "-88.61",
+        },
+        {
+            "account_id": checking["id"],
+            "account_name": "Checking",
+            "cash_flow_type": "tax_payment",
+            "amount": "-2000.00",
         },
     ]
 
@@ -446,6 +459,95 @@ def test_projection_uses_persisted_cash_flow_settings(client: TestClient):
     assert final_balances == {"Checking": "28000.00", "Savings": "7400.00"}
 
 
+def test_projection_taxes_non_cash_projection_event_withdrawals(client: TestClient):
+    household = client.post("/households", json={"name": "Taxable Withdrawal"}).json()
+    household_id = household["id"]
+
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "brokerage",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.050000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{checking['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "5000.00"},
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "50000.00"},
+    )
+    client.post(
+        "/annual-tax-records",
+        json={
+            "household_id": household_id,
+            "tax_year": 2025,
+            "gross_income": "100000.00",
+            "total_taxes_paid": "20000.00",
+        },
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "10000.00",
+            "event_type": "withdrawal",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
+        f"&tax_account_id={checking['id']}"
+    )
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    assert point["projected_taxes"] == "2666.67"
+    assert point["projected_liquidation_expenses"] == "666.67"
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances == {"Brokerage": "36666.66", "Checking": "5000.00"}
+    assert point["cash_flows"] == [
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "withdrawal",
+            "amount": "-10000.00",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "tax_payment",
+            "amount": "-2666.67",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "liquidation_expense",
+            "amount": "-666.67",
+        },
+    ]
+
+
 def test_projection_rejects_invalid_year_range(client: TestClient):
     household = client.post("/households", json={"name": "Invalid Projection"}).json()
 
@@ -455,3 +557,165 @@ def test_projection_rejects_invalid_year_range(client: TestClient):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "end_year must be greater than or equal to start_year"
+
+
+def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: TestClient):
+    household_id = client.post("/households", json={"name": "Property Sale"}).json()["id"]
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "brokerage",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.100000",
+        },
+    ).json()
+    mortgage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Mortgage",
+            "account_kind": "liability",
+            "category": "mortgage",
+            "liquidity_class": "debt",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    for account, balance in ((home, "500000.00"), (mortgage, "300000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+    client.post(
+        "/mortgages",
+        json={
+            "liability_account_id": mortgage["id"],
+            "property_account_id": home["id"],
+            "original_principal": "300000.00",
+            "interest_rate": "0.000000",
+            "term_months": 360,
+            "start_date": "2026-01-01",
+        },
+    )
+
+    sale_response = client.post(
+        "/real-estate/sales",
+        json={
+            "property_account_id": home["id"],
+            "sale_date": "2026-06-01",
+            "gross_sale_price": "500000.00",
+        },
+    )
+    assert sale_response.status_code == 201
+    assert sale_response.json()["proceeds_account_id"] == brokerage["id"]
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027"
+    )
+    assert response.status_code == 200
+    points = response.json()["points"]
+    for point in points:
+        balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+        assert balances["Home"] == "0.00"
+        assert balances["Mortgage"] == "0.00"
+        assert balances["Brokerage"] == "159166.67"
+    assert points[0]["cash_flows"] == [
+        {
+            "account_id": home["id"],
+            "account_name": "Home",
+            "cash_flow_type": "property_sale_removal",
+            "amount": "-500000.00",
+        },
+        {
+            "account_id": mortgage["id"],
+            "account_name": "Mortgage",
+            "cash_flow_type": "mortgage_payoff",
+            "amount": "-290833.33",
+        },
+        {
+            "account_id": home["id"],
+            "account_name": "Home",
+            "cash_flow_type": "property_sale_expense",
+            "amount": "-50000.00",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "property_sale_proceeds",
+            "amount": "159166.67",
+        },
+    ]
+
+
+def test_default_withdrawals_do_not_liquidate_real_estate(client: TestClient):
+    household_id = client.post("/households", json={"name": "No Implicit Home Sale"}).json()["id"]
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    retirement = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Retirement",
+            "account_kind": "asset",
+            "category": "retirement",
+            "liquidity_class": "retirement_liquid",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+        },
+    ).json()
+    for account, balance in ((checking, "1000.00"), (home, "10000.00"), (retirement, "1000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+    client.post(
+        f"/accounts/{checking['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "1500.00",
+            "event_type": "large_purchase",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026")
+    assert response.status_code == 200
+    balances = {
+        account["name"]: account["projected_balance"]
+        for account in response.json()["points"][0]["accounts"]
+    }
+    assert balances == {"Checking": "0.00", "Home": "10000.00", "Retirement": "500.00"}

@@ -82,6 +82,7 @@ export type Account = {
   category: string;
   liquidity_class: string;
   expected_annual_yield: string | null;
+  liquidation_expense_rate: string | null;
   currency: string;
   is_active: boolean;
 };
@@ -182,6 +183,18 @@ export type RealEstateProperty = {
   updated_at: string;
 };
 
+export type RealEstateSale = {
+  id: string;
+  household_id: string;
+  property_account_id: string;
+  sale_date: string;
+  gross_sale_price: string;
+  proceeds_account_id: string;
+  selling_expense_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MortgageProfile = {
   id: string;
   household_id: string;
@@ -237,20 +250,6 @@ export type AnnualTaxRecord = {
   updated_at: string;
 };
 
-export type AnnualExpenseEstimate = {
-  household_id: string;
-  tax_year: number;
-  period_start: string;
-  period_end: string;
-  gross_income: string;
-  taxes_paid: string;
-  net_worth_start: string;
-  net_worth_end: string;
-  net_worth_change: string;
-  adjustment_total: string;
-  estimated_living_expense: string;
-};
-
 export type NetWorthProjection = {
   household_id: string;
   start_year: number;
@@ -264,6 +263,7 @@ export type NetWorthProjection = {
     projected_income: string;
     projected_taxes: string;
     projected_spending: string;
+    projected_liquidation_expenses: string;
     net_cash_flow: string;
     cash_flows: Array<{
       account_id: string;
@@ -372,6 +372,7 @@ export function createAccount(payload: {
   category: string;
   liquidity_class: string;
   expected_annual_yield?: string;
+  liquidation_expense_rate?: string;
   currency: string;
 }): Promise<Account> {
   return request<Account>('/accounts', {
@@ -519,6 +520,27 @@ export function createRealEstateProperty(payload: {
   });
 }
 
+export function listRealEstateSales(householdId: string): Promise<RealEstateSale[]> {
+  return request<RealEstateSale[]>(`/real-estate/sales?household_id=${householdId}`);
+}
+
+export function createRealEstateSale(payload: {
+  property_account_id: string;
+  sale_date: string;
+  gross_sale_price: string;
+  proceeds_account_id?: string;
+  selling_expense_rate?: string;
+}): Promise<RealEstateSale> {
+  return request<RealEstateSale>('/real-estate/sales', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRealEstateSale(saleId: string): Promise<void> {
+  return request<void>(`/real-estate/sales/${saleId}`, { method: 'DELETE' });
+}
+
 export function listMortgageProfiles(householdId: string): Promise<MortgageProfile[]> {
   return request<MortgageProfile[]>(`/mortgages?household_id=${householdId}`);
 }
@@ -601,13 +623,6 @@ export function createAnnualTaxRecord(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-}
-
-export function getAnnualExpenseEstimate(
-  householdId: string,
-  taxYear: number,
-): Promise<AnnualExpenseEstimate> {
-  return request<AnnualExpenseEstimate>(`/dashboard/${householdId}/expense-estimates/${taxYear}`);
 }
 
 export function getNetWorthProjection(

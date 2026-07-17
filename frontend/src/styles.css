@@ -425,15 +425,15 @@ code {
   z-index: 2;
 }
 
-.table-frame th:last-child,
-.table-frame td:last-child {
+.sticky-actions th:last-child,
+.sticky-actions td:last-child {
   background: white;
   position: sticky;
   right: 0;
   z-index: 1;
 }
 
-.table-frame th:last-child {
+.sticky-actions th:last-child {
   background: #f8fafc;
   z-index: 3;
 }
@@ -628,6 +628,100 @@ code {
   min-width: 960px;
 }
 
+.projection-table-frame {
+  max-height: 460px;
+}
+
+.cash-flow-table-frame {
+  max-height: 420px;
+}
+
+.projection-year-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.projection-year-header {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.projection-year-header > div:last-child {
+  text-align: right;
+}
+
+.projection-year-header span,
+.projection-year-header strong {
+  display: block;
+}
+
+.projection-year-header strong {
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.projection-metric-list {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.projection-metric-list div {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.65rem;
+}
+
+.projection-metric-list dt {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.projection-metric-list dd {
+  font-weight: 800;
+  margin: 0.2rem 0 0;
+}
+
+.cash-flow-card-list {
+  margin-top: 1rem;
+}
+
+.cash-flow-card {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem;
+}
+
+.cash-flow-card span,
+.cash-flow-card strong {
+  display: block;
+}
+
+.cash-flow-card span {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-top: 0.15rem;
+}
+
+.cash-flow-card > strong {
+  white-space: nowrap;
+}
+
 .cash-flow-details {
   margin-top: 1rem;
 }
@@ -746,6 +840,7 @@ code {
     margin-top: 1rem;
   }
 
+  .projection-metric-list,
   .event-editor-grid,
   .projection-panels,
   .projection-form,

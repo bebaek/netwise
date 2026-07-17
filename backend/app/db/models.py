@@ -133,6 +133,7 @@ class Account(Base):
     category: Mapped[str] = mapped_column(String(80), nullable=False)
     liquidity_class: Mapped[str] = mapped_column(String(80), nullable=False)
     expected_annual_yield: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    liquidation_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -234,6 +235,28 @@ class RealEstateProperty(Base):
     __table_args__ = (
         UniqueConstraint("account_id", name="uq_real_estate_properties_account"),
         Index("ix_real_estate_properties_household_id", "household_id"),
+    )
+
+
+class RealEstateSale(Base):
+    __tablename__ = "real_estate_sales"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    property_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    sale_date: Mapped[date] = mapped_column(Date, nullable=False)
+    gross_sale_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    proceeds_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    selling_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    __table_args__ = (
+        UniqueConstraint("property_account_id", name="uq_real_estate_sales_property_account"),
+        Index("ix_real_estate_sales_household_date", "household_id", "sale_date"),
+        Index("ix_real_estate_sales_proceeds_account_id", "proceeds_account_id"),
     )
 
 

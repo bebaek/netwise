@@ -1,6 +1,6 @@
 # Netwise
 
-Netwise is a privacy-conscious personal finance planning app focused on balance snapshots, asset categorization, expense estimation, and long-term projections without transaction tracking.
+Netwise is a privacy-conscious personal finance planning app focused on balance snapshots, asset categorization, and long-term projections without transaction tracking.
 
 This repository contains the open-source, self-host-oriented application.
 
@@ -11,7 +11,6 @@ Netwise helps a household answer:
 - What is our current financial status?
 - How are our assets distributed across liquidity and retirement categories?
 - How has our net worth changed over time?
-- What are our estimated living expenses without classifying every transaction?
 - Where are our assets likely to be in future scenarios?
 
 ## Product principles

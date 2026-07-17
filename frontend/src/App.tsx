@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Account,
   AccountEvent,
-  AnnualExpenseEstimate,
   AnnualTaxRecord,
   FintrackImportResult,
   Household,
@@ -16,6 +15,7 @@ import {
   NetWorthProjection,
   ProjectionSettings,
   RealEstateProperty,
+  RealEstateSale,
   User,
   addHouseholdMember,
   createAccount,
@@ -25,13 +25,14 @@ import {
   createIncomeSource,
   createMortgageProfile,
   createRealEstateProperty,
+  createRealEstateSale,
   createSnapshot,
   createSnapshotBatch,
   createUser,
   deleteAccountEvent,
   deleteSnapshot,
+  deleteRealEstateSale,
   exportHousehold,
-  getAnnualExpenseEstimate,
   getCapabilities,
   getHistoricalTrend,
   getNetWorth,
@@ -48,6 +49,7 @@ import {
   listIncomeSources,
   listMortgageProfiles,
   listRealEstateProperties,
+  listRealEstateSales,
   listUsers,
   removeHouseholdMember,
   updateAccountEvent,
@@ -140,6 +142,13 @@ function eventTypeLabel(value: string): string {
 
 function projectionBehaviorLabel(value: string): string {
   return PROJECTION_BEHAVIOR_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
+}
+
+function readableLabel(value: string): string {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function dateMs(value: string): number {
@@ -243,10 +252,10 @@ function App() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [breakdownHistory, setBreakdownHistory] = useState<NetWorthBreakdownHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
+  const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
-  const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
@@ -327,6 +336,7 @@ function App() {
       netWorthResult,
       historyResult,
       propertyList,
+      realEstateSaleList,
       mortgageList,
       incomeSourceList,
       taxRecordList,
@@ -339,6 +349,7 @@ function App() {
       getNetWorth(householdId),
       getHistoricalTrend(householdId, showInterpolatedHistory),
       listRealEstateProperties(householdId),
+      listRealEstateSales(householdId),
       listMortgageProfiles(householdId),
       listIncomeSources(householdId),
       listAnnualTaxRecords(householdId),
@@ -358,6 +369,7 @@ function App() {
     setHistory(historyResult);
     setBreakdownHistory(breakdownResult);
     setProperties(propertyList);
+    setRealEstateSales(realEstateSaleList);
     setMortgages(mortgageList);
     setIncomeSources(incomeSourceList);
     setTaxRecords(taxRecordList);
@@ -382,7 +394,6 @@ function App() {
 
   useEffect(() => {
     if (!selectedHouseholdId) return;
-    setExpenseEstimate(null);
     setProjection(null);
     setProjectionSettings(null);
     setFintrackImportResult(null);
@@ -688,6 +699,39 @@ function App() {
     }
   }
 
+  async function handleCreateRealEstateSale(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createRealEstateSale({
+        property_account_id: requiredString(form, 'property_account_id'),
+        sale_date: requiredString(form, 'sale_date'),
+        gross_sale_price: requiredString(form, 'gross_sale_price'),
+        proceeds_account_id: optionalString(form, 'proceeds_account_id'),
+        selling_expense_rate: optionalString(form, 'selling_expense_rate'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteRealEstateSale(sale: RealEstateSale) {
+    if (!selectedHouseholdId) return;
+    if (!window.confirm(`Delete the planned sale on ${sale.sale_date}?`)) return;
+    setError('');
+    try {
+      await deleteRealEstateSale(sale.id);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateMortgage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
@@ -777,23 +821,6 @@ function App() {
       target.reset();
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleGetExpenseEstimate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(event.currentTarget);
-    try {
-      const result = await getAnnualExpenseEstimate(
-        selectedHouseholdId,
-        Number(requiredString(form, 'tax_year')),
-      );
-      setExpenseEstimate(result);
-    } catch (err: unknown) {
-      setExpenseEstimate(null);
       setError(String(err));
     }
   }
@@ -1463,8 +1490,8 @@ function App() {
 
             {projection?.points.length ? (
               <>
-                <div className="table-scroll">
-                  <table className="spaced-table projection-summary-table">
+                <div className="desktop-table table-frame projection-table-frame">
+                  <table className="spaced-table projection-summary-table compact-table">
                     <thead>
                       <tr>
                         <th>Year</th>
@@ -1493,10 +1520,54 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="mobile-card-list projection-year-list">
+                  {projection.points.map((point) => (
+                    <article className="projection-year-card" key={point.year}>
+                      <div className="projection-year-header">
+                        <div>
+                          <span className="muted">Year</span>
+                          <strong>{point.year}</strong>
+                        </div>
+                        <div>
+                          <span className="muted">Net worth</span>
+                          <strong>{formatMoney(point.net_worth)}</strong>
+                        </div>
+                      </div>
+                      <dl className="projection-metric-list">
+                        <div>
+                          <dt>Assets</dt>
+                          <dd>{formatMoney(point.assets_total)}</dd>
+                        </div>
+                        <div>
+                          <dt>Liabilities</dt>
+                          <dd>{formatMoney(point.liabilities_total)}</dd>
+                        </div>
+                        <div>
+                          <dt>Income</dt>
+                          <dd>{formatMoney(point.projected_income)}</dd>
+                        </div>
+                        <div>
+                          <dt>Taxes</dt>
+                          <dd>{formatMoney(point.projected_taxes)}</dd>
+                        </div>
+                        <div>
+                          <dt>Spending</dt>
+                          <dd>{formatMoney(point.projected_spending)}</dd>
+                        </div>
+                        <div>
+                          <dt>Net cash flow</dt>
+                          <dd>{formatMoney(point.net_cash_flow)}</dd>
+                        </div>
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+
                 <details className="cash-flow-details">
                   <summary>Show projected account cash flows</summary>
-                  <div className="table-scroll">
-                    <table className="spaced-table">
+                  <div className="desktop-table table-frame cash-flow-table-frame">
+                    <table className="spaced-table compact-table">
                       <thead>
                         <tr>
                           <th>Year</th>
@@ -1511,13 +1582,26 @@ function App() {
                             <tr key={`${point.year}-${cashFlow.account_id}-${cashFlow.cash_flow_type}-${index}`}>
                               <td>{point.year}</td>
                               <td>{cashFlow.account_name}</td>
-                              <td>{cashFlow.cash_flow_type}</td>
+                              <td>{readableLabel(cashFlow.cash_flow_type)}</td>
                               <td>{formatMoney(cashFlow.amount)}</td>
                             </tr>
                           )),
                         )}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="mobile-card-list cash-flow-card-list">
+                    {projection.points.flatMap((point) =>
+                      point.cash_flows.map((cashFlow, index) => (
+                        <article className="cash-flow-card" key={`${point.year}-${cashFlow.account_id}-${cashFlow.cash_flow_type}-${index}`}>
+                          <div>
+                            <strong>{cashFlow.account_name}</strong>
+                            <span>{point.year} · {readableLabel(cashFlow.cash_flow_type)}</span>
+                          </div>
+                          <strong>{formatMoney(cashFlow.amount)}</strong>
+                        </article>
+                      )),
+                    )}
                   </div>
                 </details>
               </>
@@ -1633,37 +1717,6 @@ function App() {
                 <button type="submit">Add tax record</button>
               </form>
             </div>
-          </section>
-
-          <section className="card">
-            <h2>Expense estimate</h2>
-            <p className="muted">Estimate annual living expense from gross income, taxes, and net worth change.</p>
-            <form onSubmit={handleGetExpenseEstimate} className="form-row">
-              <input
-                name="tax_year"
-                inputMode="numeric"
-                placeholder="Tax year"
-                defaultValue={taxRecords[0]?.tax_year ?? new Date().getFullYear() - 1}
-                required
-              />
-              <button type="submit">Estimate expenses</button>
-            </form>
-            {expenseEstimate && (
-              <section className="summary-grid compact-summary">
-                <div className="metric-card">
-                  <span>Estimated expense</span>
-                  <strong>{formatMoney(expenseEstimate.estimated_living_expense)}</strong>
-                </div>
-                <div className="metric-card">
-                  <span>Net worth change</span>
-                  <strong>{formatMoney(expenseEstimate.net_worth_change)}</strong>
-                </div>
-                <div className="metric-card">
-                  <span>Adjustments</span>
-                  <strong>{formatMoney(expenseEstimate.adjustment_total)}</strong>
-                </div>
-              </section>
-            )}
           </section>
 
           <section className="grid two-column">
@@ -1791,6 +1844,54 @@ function App() {
                   <input name="balance_date" type="date" />
                 </label>
                 <button type="submit">Add mortgage</button>
+              </form>
+            </div>
+          </section>
+
+          <section className="grid two-column">
+            <div className="card">
+              <h2>Planned property sales</h2>
+              <p className="muted">A sale pays off its linked mortgage, deducts selling costs, and transfers net proceeds to the selected account.</p>
+              {realEstateSales.length ? (
+                <table>
+                  <thead>
+                    <tr><th>Property</th><th>Date</th><th>Price</th><th>Proceeds account</th><th /></tr>
+                  </thead>
+                  <tbody>
+                    {realEstateSales.map((sale) => (
+                      <tr key={sale.id}>
+                        <td>{accountNameById.get(sale.property_account_id) ?? sale.property_account_id}</td>
+                        <td>{sale.sale_date}</td>
+                        <td>{formatMoney(sale.gross_sale_price)}</td>
+                        <td>{accountNameById.get(sale.proceeds_account_id) ?? sale.proceeds_account_id}</td>
+                        <td><button type="button" className="danger-button" onClick={() => handleDeleteRealEstateSale(sale)}>Delete</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="muted">No property sales planned.</p>}
+            </div>
+
+            <div className="card">
+              <h2>Plan property sale</h2>
+              <form onSubmit={handleCreateRealEstateSale} className="stacked-form">
+                <select name="property_account_id" defaultValue="" required>
+                  <option value="" disabled>Select property</option>
+                  {propertyAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </select>
+                <label>Sale date<input name="sale_date" type="date" required /></label>
+                <input name="gross_sale_price" inputMode="decimal" placeholder="Gross sale price" required />
+                <label>
+                  Proceeds account
+                  <select name="proceeds_account_id" defaultValue="">
+                    <option value="">Default non-retirement liquid account</option>
+                    {assetAccounts.filter((account) => account.category !== 'real_estate').map((account) => (
+                      <option key={account.id} value={account.id}>{account.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <input name="selling_expense_rate" inputMode="decimal" placeholder="Selling expense rate, e.g. 0.06" />
+                <button type="submit" disabled={!propertyAccounts.length}>Plan sale</button>
               </form>
             </div>
           </section>
@@ -1942,7 +2043,7 @@ function App() {
 
             {accountEvents.length ? (
               <>
-                <div className="desktop-table table-frame">
+                <div className="desktop-table table-frame sticky-actions">
                   <table className="editable-table compact-table">
                     <thead>
                       <tr>

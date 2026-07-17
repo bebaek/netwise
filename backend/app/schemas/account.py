@@ -15,6 +15,7 @@ class AccountCreate(BaseModel):
     category: str
     liquidity_class: str
     expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 
@@ -27,6 +28,7 @@ class AccountRead(BaseModel):
     category: str
     liquidity_class: str
     expected_annual_yield: Decimal | None
+    liquidation_expense_rate: Decimal | None
     currency: str
     is_active: bool
     created_at: datetime

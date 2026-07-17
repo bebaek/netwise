@@ -30,6 +30,7 @@ class ProjectionPointRead(BaseModel):
     projected_income: Decimal
     projected_taxes: Decimal
     projected_spending: Decimal
+    projected_liquidation_expenses: Decimal
     net_cash_flow: Decimal
     cash_flows: list[ProjectionCashFlowRead]
     accounts: list[ProjectionAccountRead]

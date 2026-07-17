@@ -4,7 +4,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.analytics.expense_estimation import ExpenseEstimateError, estimate_annual_living_expense
 from app.analytics.historical_trend import calculate_historical_trend
 from app.analytics.net_worth import (
     calculate_net_worth,
@@ -15,7 +14,6 @@ from app.analytics.projections import calculate_net_worth_projection
 from app.db.models import Household
 from app.db.session import get_db
 from app.schemas.dashboard import (
-    AnnualExpenseEstimateRead,
     HistoricalTrendRead,
     NetWorthBreakdownHistoryRead,
     NetWorthHistoryRead,
@@ -92,21 +90,4 @@ def get_net_worth_projection(
             tax_account_id=tax_account_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.get(
-    "/{household_id}/expense-estimates/{tax_year}",
-    response_model=AnnualExpenseEstimateRead,
-)
-def get_annual_expense_estimate(
-    household_id: UUID,
-    tax_year: int,
-    db: Session = Depends(get_db),
-) -> dict:
-    if db.get(Household, household_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
-    try:
-        return estimate_annual_living_expense(db, household_id=household_id, tax_year=tax_year)
-    except ExpenseEstimateError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

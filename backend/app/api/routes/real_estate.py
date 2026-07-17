@@ -1,19 +1,140 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountKind, MortgageProfile, RealEstateProperty
+from app.db.models import Account, AccountKind, MortgageProfile, RealEstateProperty, RealEstateSale
 from app.db.session import get_db
 from app.schemas.real_estate import (
     MortgageProfileCreate,
     MortgageProfileRead,
     RealEstatePropertyCreate,
     RealEstatePropertyRead,
+    RealEstateSaleCreate,
+    RealEstateSaleRead,
 )
 
 router = APIRouter(tags=["real-estate"])
+
+BANK_CATEGORIES = {"cash", "checking", "savings"}
+LIQUIDITY_CLASSES = {"cash", "liquid", "marketable", "retirement_liquid"}
+
+
+def _default_sale_proceeds_account(db: Session, household_id: UUID) -> Account | None:
+    accounts = db.scalars(
+        select(Account)
+        .where(Account.household_id == household_id, Account.is_active.is_(True))
+        .order_by(Account.name)
+    ).all()
+    return next(
+        (
+            account
+            for account in accounts
+            if account.account_kind == AccountKind.asset
+            and account.category not in BANK_CATEGORIES | {"retirement", "real_estate"}
+            and account.liquidity_class in LIQUIDITY_CLASSES
+        ),
+        None,
+    )
+
+
+def _validate_sale_proceeds_account(
+    db: Session, household_id: UUID, property_account_id: UUID, proceeds_account_id: UUID
+) -> Account:
+    account = db.get(Account, proceeds_account_id)
+    if (
+        account is None
+        or account.household_id != household_id
+        or not account.is_active
+        or account.account_kind != AccountKind.asset
+        or account.id == property_account_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sale proceeds account must be a different active asset account in the household",
+        )
+    return account
+
+
+@router.post(
+    "/real-estate/sales",
+    response_model=RealEstateSaleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_real_estate_sale(
+    payload: RealEstateSaleCreate,
+    db: Session = Depends(get_db),
+) -> RealEstateSale:
+    property_account = db.get(Account, payload.property_account_id)
+    if property_account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property account not found")
+    if (
+        property_account.account_kind != AccountKind.asset
+        or property_account.category != "real_estate"
+        or not property_account.is_active
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Property sale must be linked to an active real estate asset account",
+        )
+    if db.scalars(
+        select(RealEstateSale).where(RealEstateSale.property_account_id == property_account.id)
+    ).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A sale is already planned for this property account",
+        )
+
+    proceeds_account_id = payload.proceeds_account_id
+    if proceeds_account_id is None:
+        proceeds_account = _default_sale_proceeds_account(db, property_account.household_id)
+        if proceeds_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a sale proceeds account; no non-retirement liquid account is available",
+            )
+        proceeds_account_id = proceeds_account.id
+
+    _validate_sale_proceeds_account(
+        db, property_account.household_id, property_account.id, proceeds_account_id
+    )
+    sale = RealEstateSale(
+        household_id=property_account.household_id,
+        property_account_id=property_account.id,
+        sale_date=payload.sale_date,
+        gross_sale_price=payload.gross_sale_price,
+        proceeds_account_id=proceeds_account_id,
+        selling_expense_rate=payload.selling_expense_rate,
+    )
+    db.add(sale)
+    db.commit()
+    db.refresh(sale)
+    return sale
+
+
+@router.get("/real-estate/sales", response_model=list[RealEstateSaleRead])
+def list_real_estate_sales(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[RealEstateSale]:
+    return list(
+        db.scalars(
+            select(RealEstateSale)
+            .where(RealEstateSale.household_id == household_id)
+            .order_by(RealEstateSale.sale_date)
+        ).all()
+    )
+
+
+@router.delete("/real-estate/sales/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_real_estate_sale(sale_id: UUID, db: Session = Depends(get_db)) -> Response:
+    sale = db.get(RealEstateSale, sale_id)
+    if sale is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property sale not found")
+    db.delete(sale)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

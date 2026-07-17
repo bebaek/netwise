@@ -1,11 +1,11 @@
+from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analytics.expense_estimation import ExpenseEstimateError, estimate_annual_living_expense
 from app.analytics.mortgage import estimate_mortgage_balance
 from app.db.models import (
     Account,
@@ -20,6 +20,7 @@ from app.db.models import (
     ProjectionBehavior,
     ProjectionSettings,
     RealEstateProperty,
+    RealEstateSale,
 )
 
 DEFAULT_CATEGORY_YIELDS = {
@@ -36,6 +37,29 @@ DEFAULT_CATEGORY_YIELDS = {
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
 DEFAULT_INCOME_GROWTH_RATE = Decimal("0.020000")
 
+DEFAULT_LIQUIDATION_EXPENSE_RATES = {
+    "taxable_investment": Decimal("0.010000"),
+    "brokerage": Decimal("0.010000"),
+    "retirement": Decimal("0.100000"),
+    "real_estate": Decimal("0.060000"),
+}
+
+
+@dataclass
+class WithdrawalResult:
+    net_amount: Decimal = Decimal("0.00")
+    taxable_amount: Decimal = Decimal("0.00")
+    liquidation_expenses: Decimal = Decimal("0.00")
+
+    def add(self, other: "WithdrawalResult") -> None:
+        self.net_amount = (self.net_amount + other.net_amount).quantize(Decimal("0.01"))
+        self.taxable_amount = (self.taxable_amount + other.taxable_amount).quantize(
+            Decimal("0.01")
+        )
+        self.liquidation_expenses = (
+            self.liquidation_expenses + other.liquidation_expenses
+        ).quantize(Decimal("0.01"))
+
 
 CASH_FLOW_CATEGORY_PRIORITY = {
     "cash": 0,
@@ -44,8 +68,10 @@ CASH_FLOW_CATEGORY_PRIORITY = {
     "taxable_investment": 2,
     "brokerage": 2,
     "retirement": 3,
-    "real_estate": 4,
 }
+
+BANK_CATEGORIES = {"cash", "checking", "savings"}
+LIQUIDITY_CLASSES = {"cash", "liquid", "marketable", "retirement_liquid"}
 
 
 AccountEventOutflowTypes = {
@@ -100,6 +126,22 @@ def calculate_net_worth_projection(
         for profile in db.scalars(
             select(RealEstateProperty).where(RealEstateProperty.household_id == household_id)
         ).all()
+    }
+    real_estate_sales = list(
+        db.scalars(
+            select(RealEstateSale)
+            .where(
+                RealEstateSale.household_id == household_id,
+                RealEstateSale.sale_date >= start_date,
+                RealEstateSale.sale_date <= date(end_year, 12, 31),
+            )
+            .order_by(RealEstateSale.sale_date)
+        ).all()
+    )
+    mortgage_profiles_by_property = {
+        profile.property_account_id: profile
+        for profile in mortgage_profiles.values()
+        if profile.property_account_id is not None
     }
     projection_events = list(
         db.scalars(
@@ -158,17 +200,21 @@ def calculate_net_worth_projection(
     spending_baseline = (
         (start_year, effective_annual_spending.quantize(Decimal("0.01")))
         if effective_annual_spending is not None
-        else _latest_living_expense_estimate(db, household_id)
+        else None
     )
     tax_rate = _latest_effective_tax_rate(db, household_id)
 
     points = []
+    sold_mortgage_account_ids: set[UUID] = set()
     for year in range(start_year, end_year + 1):
         as_of_date = date(year, 12, 31)
         year_start = date(year, 1, 1)
 
         for account in accounts:
             if account.id in mortgage_profiles:
+                if account.id in sold_mortgage_account_ids:
+                    balances[account.id] = Decimal("0.00")
+                    continue
                 balances[account.id] = estimate_mortgage_balance(
                     mortgage_profiles[account.id], as_of_date
                 )
@@ -180,9 +226,36 @@ def calculate_net_worth_projection(
             )
 
         cash_flows = []
-        for event in projection_events:
-            if year_start <= event.event_date <= as_of_date:
-                _apply_projection_event(accounts_by_id, balances, cash_flows, event)
+        withdrawal_result = WithdrawalResult()
+        year_operations = [
+            (sale.sale_date, 0, sale)
+            for sale in real_estate_sales
+            if year_start <= sale.sale_date <= as_of_date
+        ] + [
+            (event.event_date, 1, event)
+            for event in projection_events
+            if year_start <= event.event_date <= as_of_date
+        ]
+        for _, operation_kind, operation in sorted(year_operations, key=lambda item: (item[0], item[1])):
+            if operation_kind == 0:
+                withdrawal_result.add(
+                    _apply_real_estate_sale(
+                        accounts,
+                        accounts_by_id,
+                        balances,
+                        cash_flows,
+                        operation,
+                        mortgage_profiles_by_property.get(operation.property_account_id),
+                        sold_mortgage_account_ids,
+                        tax_rate,
+                    )
+                )
+            else:
+                withdrawal_result.add(
+                    _apply_projection_event(
+                        accounts_by_id, balances, cash_flows, operation, tax_rate
+                    )
+                )
 
         projected_income = Decimal("0.00")
         for income_source in income_sources:
@@ -198,33 +271,48 @@ def calculate_net_worth_projection(
                     )
 
         projected_income = projected_income.quantize(Decimal("0.01"))
-        projected_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
+        income_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
         projected_spending = _projected_spending_for_year(
             spending_baseline,
             year,
             effective_spending_inflation_rate,
         )
-        if projected_taxes != Decimal("0.00"):
-            _withdraw_from_assets(
+        if projected_spending != Decimal("0.00"):
+            withdrawal_result.add(
+                _withdraw_from_assets(
+                    accounts,
+                    accounts_by_id,
+                    balances,
+                    cash_flows,
+                    projected_spending,
+                    "spending",
+                    effective_spending_account_id,
+                    tax_rate,
+                )
+            )
+        withdrawal_taxes = (withdrawal_result.taxable_amount * tax_rate).quantize(Decimal("0.01"))
+        projected_taxes = (income_taxes + withdrawal_taxes).quantize(Decimal("0.01"))
+        projected_liquidation_expenses = withdrawal_result.liquidation_expenses
+        if income_taxes != Decimal("0.00"):
+            tax_payment_result = _withdraw_from_assets(
                 accounts,
                 accounts_by_id,
                 balances,
                 cash_flows,
-                projected_taxes,
+                income_taxes,
                 "tax_payment",
                 effective_tax_account_id,
+                tax_rate,
             )
-        if projected_spending != Decimal("0.00"):
-            _withdraw_from_assets(
-                accounts,
-                accounts_by_id,
-                balances,
-                cash_flows,
-                projected_spending,
-                "spending",
-                effective_spending_account_id,
-            )
-        net_cash_flow = (projected_income - projected_taxes - projected_spending).quantize(
+            projected_taxes = (
+                projected_taxes + (tax_payment_result.taxable_amount * tax_rate)
+            ).quantize(Decimal("0.01"))
+            projected_liquidation_expenses = (
+                projected_liquidation_expenses + tax_payment_result.liquidation_expenses
+            ).quantize(Decimal("0.01"))
+        net_cash_flow = (
+            projected_income - projected_taxes - projected_spending - projected_liquidation_expenses
+        ).quantize(
             Decimal("0.01")
         )
 
@@ -257,6 +345,7 @@ def calculate_net_worth_projection(
                 "projected_income": projected_income,
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
+                "projected_liquidation_expenses": projected_liquidation_expenses,
                 "net_cash_flow": net_cash_flow,
                 "cash_flows": cash_flows,
                 "accounts": account_points,
@@ -269,21 +358,6 @@ def calculate_net_worth_projection(
         "end_year": end_year,
         "points": points,
     }
-
-
-def _latest_living_expense_estimate(db: Session, household_id: UUID) -> tuple[int, Decimal] | None:
-    tax_years = db.scalars(
-        select(AnnualTaxRecord.tax_year)
-        .where(AnnualTaxRecord.household_id == household_id)
-        .order_by(AnnualTaxRecord.tax_year.desc())
-    ).all()
-    for tax_year in tax_years:
-        try:
-            estimate = estimate_annual_living_expense(db, household_id, tax_year)
-        except ExpenseEstimateError:
-            continue
-        return tax_year, estimate["estimated_living_expense"].quantize(Decimal("0.01"))
-    return None
 
 
 def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
@@ -383,22 +457,97 @@ def _apply_account_cash_flow(
     )
 
 
+def _apply_real_estate_sale(
+    accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    sale: RealEstateSale,
+    mortgage_profile: MortgageProfile | None,
+    sold_mortgage_account_ids: set[UUID],
+    tax_rate: Decimal,
+) -> WithdrawalResult:
+    property_account = accounts_by_id.get(sale.property_account_id)
+    proceeds_account = accounts_by_id.get(sale.proceeds_account_id)
+    if property_account is None or proceeds_account is None:
+        raise ValueError("Property sale accounts must be active accounts in the household")
+
+    property_balance = max(balances[property_account.id], Decimal("0.00"))
+    if property_balance != Decimal("0.00"):
+        _apply_account_cash_flow(
+            balances, cash_flows, property_account, "property_sale_removal", -property_balance
+        )
+
+    mortgage_payoff = Decimal("0.00")
+    if mortgage_profile is not None:
+        mortgage_account = accounts_by_id.get(mortgage_profile.liability_account_id)
+        if mortgage_account is not None:
+            mortgage_payoff = max(balances[mortgage_account.id], Decimal("0.00"))
+            if mortgage_payoff != Decimal("0.00"):
+                _apply_account_cash_flow(
+                    balances, cash_flows, mortgage_account, "mortgage_payoff", -mortgage_payoff
+                )
+            sold_mortgage_account_ids.add(mortgage_account.id)
+
+    selling_expense_rate = (
+        sale.selling_expense_rate
+        if sale.selling_expense_rate is not None
+        else _liquidation_expense_rate(property_account)
+    )
+    selling_expense = (sale.gross_sale_price * selling_expense_rate).quantize(Decimal("0.01"))
+    if selling_expense != Decimal("0.00"):
+        cash_flows.append(
+            {
+                "account_id": property_account.id,
+                "account_name": property_account.name,
+                "cash_flow_type": "property_sale_expense",
+                "amount": -selling_expense,
+            }
+        )
+
+    net_proceeds = (sale.gross_sale_price - mortgage_payoff - selling_expense).quantize(
+        Decimal("0.01")
+    )
+    if net_proceeds >= Decimal("0.00"):
+        if net_proceeds != Decimal("0.00"):
+            _apply_account_cash_flow(
+                balances, cash_flows, proceeds_account, "property_sale_proceeds", net_proceeds
+            )
+        return WithdrawalResult(liquidation_expenses=selling_expense)
+
+    shortfall_result = _withdraw_from_assets(
+        [account for account in accounts if account.id != property_account.id],
+        accounts_by_id,
+        balances,
+        cash_flows,
+        abs(net_proceeds),
+        "property_sale_shortfall",
+        None,
+        tax_rate,
+    )
+    shortfall_result.liquidation_expenses = (
+        shortfall_result.liquidation_expenses + selling_expense
+    ).quantize(Decimal("0.01"))
+    return shortfall_result
+
+
 def _apply_projection_event(
     accounts_by_id: dict[UUID, Account],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     event: AccountEvent,
-) -> None:
+    tax_rate: Decimal,
+) -> WithdrawalResult:
     account = accounts_by_id.get(event.account_id)
     if account is None:
-        return
+        return WithdrawalResult()
 
     amount = _projection_event_amount(event)
     if amount == Decimal("0.00"):
-        return
+        return WithdrawalResult()
 
     if account.account_kind == AccountKind.asset and amount < Decimal("0.00"):
-        _withdraw_from_assets(
+        return _withdraw_from_assets(
             list(accounts_by_id.values()),
             accounts_by_id,
             balances,
@@ -406,10 +555,11 @@ def _apply_projection_event(
             abs(amount),
             event.event_type,
             event.account_id,
+            tax_rate,
         )
-        return
 
     _apply_account_cash_flow(balances, cash_flows, account, event.event_type, amount)
+    return WithdrawalResult()
 
 
 def _projection_event_amount(event: AccountEvent) -> Decimal:
@@ -428,25 +578,94 @@ def _withdraw_from_assets(
     amount: Decimal,
     cash_flow_type: str,
     preferred_account_id: UUID | None,
-) -> None:
-    remaining = amount.quantize(Decimal("0.01"))
-    if remaining == Decimal("0.00"):
-        return
+    tax_rate: Decimal,
+) -> WithdrawalResult:
+    remaining_net = amount.quantize(Decimal("0.01"))
+    result = WithdrawalResult()
+    if remaining_net == Decimal("0.00"):
+        return result
 
     asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
     if not asset_accounts:
-        return
+        return result
 
     ordered_accounts = _withdrawal_order(asset_accounts, accounts_by_id, preferred_account_id)
     for account in ordered_accounts:
         available = max(balances[account.id], Decimal("0.00"))
-        deduction = min(available, remaining)
-        if deduction == Decimal("0.00"):
+        if available == Decimal("0.00"):
             continue
-        _apply_account_cash_flow(balances, cash_flows, account, cash_flow_type, -deduction)
-        remaining = (remaining - deduction).quantize(Decimal("0.01"))
-        if remaining == Decimal("0.00"):
-            return
+
+        taxes_apply = _withdrawal_has_tax_consequences(account)
+        effective_tax_rate = tax_rate if taxes_apply else Decimal("0.00")
+        liquidation_expense_rate = _liquidation_expense_rate(account)
+        drag_rate = effective_tax_rate + liquidation_expense_rate
+        if drag_rate >= Decimal("1.00"):
+            continue
+
+        gross_needed = (remaining_net / (Decimal("1.00") - drag_rate)).quantize(
+            Decimal("0.01"), rounding=ROUND_UP
+        )
+        gross_deduction = min(available, gross_needed)
+        if gross_deduction == Decimal("0.00"):
+            continue
+
+        tax_amount = (gross_deduction * effective_tax_rate).quantize(Decimal("0.01"))
+        liquidation_expense = (gross_deduction * liquidation_expense_rate).quantize(
+            Decimal("0.01")
+        )
+        net_amount = (gross_deduction - tax_amount - liquidation_expense).quantize(
+            Decimal("0.01")
+        )
+        if net_amount == Decimal("0.00"):
+            continue
+
+        _apply_account_cash_flow(balances, cash_flows, account, cash_flow_type, -net_amount)
+        if tax_amount != Decimal("0.00"):
+            _apply_account_cash_flow(balances, cash_flows, account, "tax_payment", -tax_amount)
+        if liquidation_expense != Decimal("0.00"):
+            _apply_account_cash_flow(
+                balances, cash_flows, account, "liquidation_expense", -liquidation_expense
+            )
+
+        result.net_amount = (result.net_amount + net_amount).quantize(Decimal("0.01"))
+        if taxes_apply:
+            result.taxable_amount = (result.taxable_amount + gross_deduction).quantize(
+                Decimal("0.01")
+            )
+        result.liquidation_expenses = (
+            result.liquidation_expenses + liquidation_expense
+        ).quantize(Decimal("0.01"))
+        remaining_net = (remaining_net - net_amount).quantize(Decimal("0.01"))
+        # Rounding gross withdrawals up can satisfy the requested net amount by
+        # a cent. Treat that as fully funded instead of running a second,
+        # negative withdrawal that creates compensating micro cash flows.
+        if remaining_net <= Decimal("0.00"):
+            return result
+
+    return result
+
+
+def _withdrawal_has_tax_consequences(account: Account) -> bool:
+    return account.category not in {"cash", "checking", "savings"}
+
+
+def _liquidation_expense_rate(account: Account) -> Decimal:
+    if account.liquidation_expense_rate is not None:
+        return account.liquidation_expense_rate
+    return DEFAULT_LIQUIDATION_EXPENSE_RATES.get(account.category, Decimal("0.000000"))
+
+
+def _funding_priority(account: Account) -> tuple[int, str] | None:
+    if account.category in BANK_CATEGORIES:
+        return (0, account.name)
+    if (
+        account.category not in {"retirement", "real_estate"}
+        and account.liquidity_class in LIQUIDITY_CLASSES
+    ):
+        return (1, account.name)
+    if account.category == "retirement" and account.liquidity_class in LIQUIDITY_CLASSES:
+        return (3, account.name)
+    return None
 
 
 def _withdrawal_order(
@@ -454,7 +673,10 @@ def _withdrawal_order(
     accounts_by_id: dict[UUID, Account],
     preferred_account_id: UUID | None,
 ) -> list[Account]:
-    ordered_accounts = sorted(asset_accounts, key=_cash_flow_priority)
+    ordered_accounts = sorted(
+        (account for account in asset_accounts if _funding_priority(account) is not None),
+        key=_funding_priority,
+    )
     if preferred_account_id is None:
         return ordered_accounts
     preferred_account = accounts_by_id[preferred_account_id]
