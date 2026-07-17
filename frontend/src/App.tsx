@@ -1,20 +1,28 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Account,
+  AnnualExpenseEstimate,
+  AnnualTaxRecord,
   Household,
+  IncomeSource,
   MortgageProfile,
   NetWorth,
   NetWorthHistory,
   RealEstateProperty,
   createAccount,
+  createAnnualTaxRecord,
   createHousehold,
+  createIncomeSource,
   createMortgageProfile,
   createRealEstateProperty,
   createSnapshot,
+  getAnnualExpenseEstimate,
   getNetWorth,
   getNetWorthHistory,
   listAccounts,
+  listAnnualTaxRecords,
   listHouseholds,
+  listIncomeSources,
   listMortgageProfiles,
   listRealEstateProperties,
 } from './api';
@@ -46,6 +54,9 @@ function App() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
+  const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -72,18 +83,30 @@ function App() {
   }
 
   async function refreshDashboard(householdId: string) {
-    const [accountList, netWorthResult, historyResult, propertyList, mortgageList] = await Promise.all([
+    const [
+      accountList,
+      netWorthResult,
+      historyResult,
+      propertyList,
+      mortgageList,
+      incomeSourceList,
+      taxRecordList,
+    ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
       getNetWorthHistory(householdId),
       listRealEstateProperties(householdId),
       listMortgageProfiles(householdId),
+      listIncomeSources(householdId),
+      listAnnualTaxRecords(householdId),
     ]);
     setAccounts(accountList);
     setNetWorth(netWorthResult);
     setHistory(historyResult);
     setProperties(propertyList);
     setMortgages(mortgageList);
+    setIncomeSources(incomeSourceList);
+    setTaxRecords(taxRecordList);
   }
 
   useEffect(() => {
@@ -94,6 +117,7 @@ function App() {
 
   useEffect(() => {
     if (!selectedHouseholdId) return;
+    setExpenseEstimate(null);
     refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
   }, [selectedHouseholdId]);
 
@@ -243,6 +267,70 @@ function App() {
     }
   }
 
+  async function handleCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createIncomeSource({
+        household_id: selectedHouseholdId,
+        name: requiredString(form, 'income_name'),
+        income_type: optionalString(form, 'income_type') ?? 'other',
+        amount: requiredString(form, 'amount'),
+        currency: 'USD',
+        frequency: requiredString(form, 'frequency'),
+        start_date: requiredString(form, 'start_date'),
+        end_date: optionalString(form, 'end_date'),
+        growth_rate: optionalString(form, 'growth_rate'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateTaxRecord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createAnnualTaxRecord({
+        household_id: selectedHouseholdId,
+        tax_year: Number(requiredString(form, 'tax_year')),
+        gross_income: optionalString(form, 'gross_income'),
+        total_taxes_paid: requiredString(form, 'total_taxes_paid'),
+        refund_or_amount_due: optionalString(form, 'refund_or_amount_due'),
+        notes: optionalString(form, 'notes'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleGetExpenseEstimate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await getAnnualExpenseEstimate(
+        selectedHouseholdId,
+        Number(requiredString(form, 'tax_year')),
+      );
+      setExpenseEstimate(result);
+    } catch (err: unknown) {
+      setExpenseEstimate(null);
+      setError(String(err));
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -294,6 +382,136 @@ function App() {
               <span>Liabilities</span>
               <strong>{formatMoney(netWorth?.liabilities_total)}</strong>
             </div>
+          </section>
+
+          <section className="grid two-column">
+            <div className="card">
+              <h2>Income sources</h2>
+              {incomeSources.length ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Frequency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeSources.map((source) => (
+                      <tr key={source.id}>
+                        <td>{source.name}</td>
+                        <td>{source.income_type}</td>
+                        <td>{formatMoney(source.amount)}</td>
+                        <td>{source.frequency}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No income sources yet.</p>
+              )}
+            </div>
+
+            <div className="card">
+              <h2>Annual tax records</h2>
+              {taxRecords.length ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Gross income</th>
+                      <th>Taxes paid</th>
+                      <th>Effective rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {taxRecords.map((record) => (
+                      <tr key={record.id}>
+                        <td>{record.tax_year}</td>
+                        <td>{formatMoney(record.gross_income)}</td>
+                        <td>{formatMoney(record.total_taxes_paid)}</td>
+                        <td>{record.effective_tax_rate ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No tax records yet.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="grid two-column">
+            <div className="card">
+              <h2>Add income source</h2>
+              <form onSubmit={handleCreateIncomeSource} className="stacked-form">
+                <input name="income_name" placeholder="Salary" required />
+                <input name="income_type" placeholder="salary / bonus / other" />
+                <input name="amount" inputMode="decimal" placeholder="Amount per pay period" required />
+                <select name="frequency" defaultValue="monthly" required>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly</option>
+                  <option value="semimonthly">Semimonthly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                </select>
+                <label>
+                  Start date
+                  <input name="start_date" type="date" defaultValue={today()} required />
+                </label>
+                <label>
+                  End date
+                  <input name="end_date" type="date" />
+                </label>
+                <input name="growth_rate" inputMode="decimal" placeholder="Growth rate, e.g. 0.03" />
+                <button type="submit">Add income source</button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h2>Add tax record</h2>
+              <form onSubmit={handleCreateTaxRecord} className="stacked-form">
+                <input name="tax_year" inputMode="numeric" placeholder="Tax year" required />
+                <input name="gross_income" inputMode="decimal" placeholder="Gross income" />
+                <input name="total_taxes_paid" inputMode="decimal" placeholder="Total taxes paid" required />
+                <input name="refund_or_amount_due" inputMode="decimal" placeholder="Refund or amount due" />
+                <input name="notes" placeholder="Notes" />
+                <button type="submit">Add tax record</button>
+              </form>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2>Expense estimate</h2>
+            <p className="muted">Estimate annual living expense from gross income, taxes, and net worth change.</p>
+            <form onSubmit={handleGetExpenseEstimate} className="form-row">
+              <input
+                name="tax_year"
+                inputMode="numeric"
+                placeholder="Tax year"
+                defaultValue={taxRecords[0]?.tax_year ?? new Date().getFullYear() - 1}
+                required
+              />
+              <button type="submit">Estimate expenses</button>
+            </form>
+            {expenseEstimate && (
+              <section className="summary-grid compact-summary">
+                <div className="metric-card">
+                  <span>Estimated expense</span>
+                  <strong>{formatMoney(expenseEstimate.estimated_living_expense)}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Net worth change</span>
+                  <strong>{formatMoney(expenseEstimate.net_worth_change)}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Adjustments</span>
+                  <strong>{formatMoney(expenseEstimate.adjustment_total)}</strong>
+                </div>
+              </section>
+            )}
           </section>
 
           <section className="grid two-column">

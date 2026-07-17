@@ -73,6 +73,48 @@ export type MortgageProfile = {
   updated_at: string;
 };
 
+export type IncomeSource = {
+  id: string;
+  household_id: string;
+  name: string;
+  income_type: string;
+  amount: string;
+  currency: string;
+  frequency: string;
+  start_date: string;
+  end_date: string | null;
+  growth_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnnualTaxRecord = {
+  id: string;
+  household_id: string;
+  tax_year: number;
+  gross_income: string | null;
+  total_taxes_paid: string;
+  refund_or_amount_due: string | null;
+  effective_tax_rate: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnnualExpenseEstimate = {
+  household_id: string;
+  tax_year: number;
+  period_start: string;
+  period_end: string;
+  gross_income: string;
+  taxes_paid: string;
+  net_worth_start: string;
+  net_worth_end: string;
+  net_worth_change: string;
+  adjustment_total: string;
+  estimated_living_expense: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -177,4 +219,50 @@ export function createMortgageProfile(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function listIncomeSources(householdId: string): Promise<IncomeSource[]> {
+  return request<IncomeSource[]>(`/income-sources?household_id=${householdId}`);
+}
+
+export function createIncomeSource(payload: {
+  household_id: string;
+  name: string;
+  income_type?: string;
+  amount: string;
+  currency: string;
+  frequency: string;
+  start_date: string;
+  end_date?: string;
+  growth_rate?: string;
+}): Promise<IncomeSource> {
+  return request<IncomeSource>('/income-sources', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAnnualTaxRecords(householdId: string): Promise<AnnualTaxRecord[]> {
+  return request<AnnualTaxRecord[]>(`/annual-tax-records?household_id=${householdId}`);
+}
+
+export function createAnnualTaxRecord(payload: {
+  household_id: string;
+  tax_year: number;
+  gross_income?: string;
+  total_taxes_paid: string;
+  refund_or_amount_due?: string;
+  notes?: string;
+}): Promise<AnnualTaxRecord> {
+  return request<AnnualTaxRecord>('/annual-tax-records', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getAnnualExpenseEstimate(
+  householdId: string,
+  taxYear: number,
+): Promise<AnnualExpenseEstimate> {
+  return request<AnnualExpenseEstimate>(`/dashboard/${householdId}/expense-estimates/${taxYear}`);
 }
