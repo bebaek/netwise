@@ -546,8 +546,13 @@ export function getNetWorthProjection(
   householdId: string,
   startYear: number,
   endYear: number,
+  options: { annualSpending?: string; spendingInflationRate?: string } = {},
 ): Promise<NetWorthProjection> {
-  return request<NetWorthProjection>(
-    `/dashboard/${householdId}/projection?start_year=${startYear}&end_year=${endYear}`,
-  );
+  const params = new URLSearchParams({
+    start_year: String(startYear),
+    end_year: String(endYear),
+  });
+  if (options.annualSpending) params.set('annual_spending', options.annualSpending);
+  if (options.spendingInflationRate) params.set('spending_inflation_rate', options.spendingInflationRate);
+  return request<NetWorthProjection>(`/dashboard/${householdId}/projection?${params.toString()}`);
 }

@@ -167,6 +167,40 @@ def test_projection_models_estimated_spending_income_and_taxes(client: TestClien
     assert point["net_worth"] == "117900.00"
 
 
+def test_projection_accepts_explicit_spending_assumption(client: TestClient):
+    household = client.post("/households", json={"name": "Spending Assumption"}).json()
+    household_id = household["id"]
+
+    cash = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Cash",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{cash['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "100000.00"},
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2027&annual_spending=12000.00&spending_inflation_rate=0.100000"
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert points[0]["projected_spending"] == "12000.00"
+    assert points[0]["net_worth"] == "88000.00"
+    assert points[1]["projected_spending"] == "13200.00"
+    assert points[1]["net_worth"] == "74800.00"
+
+
 def test_projection_rejects_invalid_year_range(client: TestClient):
     household = client.post("/households", json={"name": "Invalid Projection"}).json()
 

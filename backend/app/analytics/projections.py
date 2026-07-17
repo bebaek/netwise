@@ -52,6 +52,8 @@ def calculate_net_worth_projection(
     *,
     start_year: int,
     end_year: int,
+    annual_spending: Decimal | None = None,
+    spending_inflation_rate: Decimal = DEFAULT_SPENDING_INFLATION_RATE,
 ) -> dict:
     if end_year < start_year:
         raise ValueError("end_year must be greater than or equal to start_year")
@@ -95,7 +97,11 @@ def calculate_net_worth_projection(
     income_sources = list(
         db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
     )
-    spending_baseline = _latest_living_expense_estimate(db, household_id)
+    spending_baseline = (
+        (start_year, annual_spending.quantize(Decimal("0.01")))
+        if annual_spending is not None
+        else _latest_living_expense_estimate(db, household_id)
+    )
     tax_rate = _latest_effective_tax_rate(db, household_id)
 
     points = []
@@ -123,7 +129,11 @@ def calculate_net_worth_projection(
 
         projected_income = _projected_income_for_year(income_sources, year)
         projected_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
-        projected_spending = _projected_spending_for_year(spending_baseline, year)
+        projected_spending = _projected_spending_for_year(
+            spending_baseline,
+            year,
+            spending_inflation_rate,
+        )
         net_cash_flow = (projected_income - projected_taxes - projected_spending).quantize(Decimal("0.01"))
         _apply_cash_flow_to_assets(accounts, balances, net_cash_flow)
 
@@ -196,12 +206,16 @@ def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
     return Decimal("0.00")
 
 
-def _projected_spending_for_year(spending_baseline: tuple[int, Decimal] | None, year: int) -> Decimal:
+def _projected_spending_for_year(
+    spending_baseline: tuple[int, Decimal] | None,
+    year: int,
+    spending_inflation_rate: Decimal,
+) -> Decimal:
     if spending_baseline is None:
         return Decimal("0.00")
     baseline_year, baseline_amount = spending_baseline
     years_elapsed = max(year - baseline_year, 0)
-    return (baseline_amount * ((Decimal("1") + DEFAULT_SPENDING_INFLATION_RATE) ** years_elapsed)).quantize(
+    return (baseline_amount * ((Decimal("1") + spending_inflation_rate) ** years_elapsed)).quantize(
         Decimal("0.01")
     )
 

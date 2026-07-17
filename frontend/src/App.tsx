@@ -701,6 +701,10 @@ function App() {
         selectedHouseholdId,
         Number(requiredString(form, 'start_year')),
         Number(requiredString(form, 'end_year')),
+        {
+          annualSpending: optionalString(form, 'annual_spending'),
+          spendingInflationRate: optionalString(form, 'spending_inflation_rate'),
+        },
       );
       setProjection(result);
     } catch (err: unknown) {
@@ -1222,6 +1226,17 @@ function App() {
                 placeholder="End year"
                 defaultValue={new Date().getFullYear() + 10}
                 required
+              />
+              <input
+                name="annual_spending"
+                inputMode="decimal"
+                placeholder="Annual spending override"
+              />
+              <input
+                name="spending_inflation_rate"
+                inputMode="decimal"
+                placeholder="Spending inflation, e.g. 0.03"
+                defaultValue="0.03"
               />
               <button type="submit">Run projection</button>
             </form>
