@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import AnnualTaxRecord, Household, IncomeSource
+from app.db.models import Account, AccountKind, AnnualTaxRecord, Household, IncomeSource
 from app.db.session import get_db
 from app.schemas.planning import (
     AnnualTaxRecordCreate,
@@ -27,6 +27,17 @@ def create_income_source(
 ) -> IncomeSource:
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    if payload.deposit_account_id is not None:
+        account = db.get(Account, payload.deposit_account_id)
+        if (
+            account is None
+            or account.household_id != payload.household_id
+            or account.account_kind != AccountKind.asset
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Deposit account must be an asset account in the household",
+            )
 
     income_source = IncomeSource(**payload.model_dump())
     db.add(income_source)

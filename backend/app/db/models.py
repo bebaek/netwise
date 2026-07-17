@@ -277,14 +277,19 @@ class IncomeSource(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date)
     growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    deposit_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
 
     household: Mapped[Household] = relationship(back_populates="income_sources")
+    deposit_account: Mapped[Account | None] = relationship(foreign_keys=[deposit_account_id])
 
-    __table_args__ = (Index("ix_income_sources_household_id", "household_id"),)
+    __table_args__ = (
+        Index("ix_income_sources_household_id", "household_id"),
+        Index("ix_income_sources_deposit_account_id", "deposit_account_id"),
+    )
 
 
 class AnnualTaxRecord(Base):

@@ -14,6 +14,13 @@ class ProjectionAccountRead(BaseModel):
     projected_balance: Decimal
 
 
+class ProjectionCashFlowRead(BaseModel):
+    account_id: UUID
+    account_name: str
+    cash_flow_type: str
+    amount: Decimal
+
+
 class ProjectionPointRead(BaseModel):
     year: int
     as_of_date: date
@@ -24,6 +31,7 @@ class ProjectionPointRead(BaseModel):
     projected_taxes: Decimal
     projected_spending: Decimal
     net_cash_flow: Decimal
+    cash_flows: list[ProjectionCashFlowRead]
     accounts: list[ProjectionAccountRead]
 
 

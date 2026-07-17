@@ -54,6 +54,8 @@ def calculate_net_worth_projection(
     end_year: int,
     annual_spending: Decimal | None = None,
     spending_inflation_rate: Decimal = DEFAULT_SPENDING_INFLATION_RATE,
+    spending_account_id: UUID | None = None,
+    tax_account_id: UUID | None = None,
 ) -> dict:
     if end_year < start_year:
         raise ValueError("end_year must be greater than or equal to start_year")
@@ -97,6 +99,13 @@ def calculate_net_worth_projection(
     income_sources = list(
         db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
     )
+    accounts_by_id = {account.id: account for account in accounts}
+    _validate_cash_flow_account(accounts_by_id, spending_account_id, "Spending account")
+    _validate_cash_flow_account(accounts_by_id, tax_account_id, "Tax account")
+    for income_source in income_sources:
+        _validate_cash_flow_account(
+            accounts_by_id, income_source.deposit_account_id, "Income deposit account"
+        )
     spending_baseline = (
         (start_year, annual_spending.quantize(Decimal("0.01")))
         if annual_spending is not None
@@ -123,19 +132,54 @@ def calculate_net_worth_projection(
 
         for event in projection_events:
             if year_start <= event.event_date <= as_of_date:
-                balances[event.account_id] = (balances.get(event.account_id, Decimal("0.00")) + event.amount).quantize(
-                    Decimal("0.01")
-                )
+                balances[event.account_id] = (
+                    balances.get(event.account_id, Decimal("0.00")) + event.amount
+                ).quantize(Decimal("0.01"))
 
-        projected_income = _projected_income_for_year(income_sources, year)
+        cash_flows = []
+        projected_income = Decimal("0.00")
+        for income_source in income_sources:
+            income_amount = _projected_income_source_for_year(income_source, year)
+            projected_income += income_amount
+            if income_amount != Decimal("0.00"):
+                target_account = _cash_flow_target_account(
+                    accounts, accounts_by_id, income_source.deposit_account_id
+                )
+                if target_account is not None:
+                    _apply_account_cash_flow(
+                        balances, cash_flows, target_account, "income", income_amount
+                    )
+
+        projected_income = projected_income.quantize(Decimal("0.01"))
         projected_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
         projected_spending = _projected_spending_for_year(
             spending_baseline,
             year,
             spending_inflation_rate,
         )
-        net_cash_flow = (projected_income - projected_taxes - projected_spending).quantize(Decimal("0.01"))
-        _apply_cash_flow_to_assets(accounts, balances, net_cash_flow)
+        if projected_taxes != Decimal("0.00"):
+            _withdraw_from_assets(
+                accounts,
+                accounts_by_id,
+                balances,
+                cash_flows,
+                projected_taxes,
+                "tax_payment",
+                tax_account_id,
+            )
+        if projected_spending != Decimal("0.00"):
+            _withdraw_from_assets(
+                accounts,
+                accounts_by_id,
+                balances,
+                cash_flows,
+                projected_spending,
+                "spending",
+                spending_account_id,
+            )
+        net_cash_flow = (projected_income - projected_taxes - projected_spending).quantize(
+            Decimal("0.01")
+        )
 
         account_points = [
             {
@@ -167,6 +211,7 @@ def calculate_net_worth_projection(
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
                 "net_cash_flow": net_cash_flow,
+                "cash_flows": cash_flows,
                 "accounts": account_points,
             }
         )
@@ -221,7 +266,10 @@ def _projected_spending_for_year(
 
 
 def _projected_income_for_year(income_sources: list[IncomeSource], year: int) -> Decimal:
-    return sum((_projected_income_source_for_year(source, year) for source in income_sources), Decimal("0.00"))
+    return sum(
+        (_projected_income_source_for_year(source, year) for source in income_sources),
+        Decimal("0.00"),
+    )
 
 
 def _projected_income_source_for_year(source: IncomeSource, year: int) -> Decimal:
@@ -248,34 +296,94 @@ def _annualize_income(amount: Decimal, frequency: str) -> Decimal:
     return amount * multipliers.get(frequency, Decimal("1"))
 
 
-def _apply_cash_flow_to_assets(
-    accounts: list[Account],
-    balances: dict[UUID, Decimal],
-    net_cash_flow: Decimal,
+def _validate_cash_flow_account(
+    accounts_by_id: dict[UUID, Account], account_id: UUID | None, label: str
 ) -> None:
-    if net_cash_flow == Decimal("0.00"):
+    if account_id is None:
+        return
+    account = accounts_by_id.get(account_id)
+    if account is None or account.account_kind != AccountKind.asset:
+        raise ValueError(f"{label} must be an active asset account in the household")
+
+
+def _cash_flow_target_account(
+    accounts: list[Account], accounts_by_id: dict[UUID, Account], account_id: UUID | None
+) -> Account | None:
+    if account_id is not None:
+        return accounts_by_id[account_id]
+    asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
+    if not asset_accounts:
+        return None
+    return min(asset_accounts, key=_cash_flow_priority)
+
+
+def _apply_account_cash_flow(
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    account: Account,
+    cash_flow_type: str,
+    amount: Decimal,
+) -> None:
+    amount = amount.quantize(Decimal("0.01"))
+    balances[account.id] = (balances[account.id] + amount).quantize(Decimal("0.01"))
+    cash_flows.append(
+        {
+            "account_id": account.id,
+            "account_name": account.name,
+            "cash_flow_type": cash_flow_type,
+            "amount": amount,
+        }
+    )
+
+
+def _withdraw_from_assets(
+    accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    amount: Decimal,
+    cash_flow_type: str,
+    preferred_account_id: UUID | None,
+) -> None:
+    remaining = amount.quantize(Decimal("0.01"))
+    if remaining == Decimal("0.00"):
         return
 
     asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
     if not asset_accounts:
         return
 
-    if net_cash_flow > Decimal("0.00"):
-        target = min(asset_accounts, key=_cash_flow_priority)
-        balances[target.id] = (balances[target.id] + net_cash_flow).quantize(Decimal("0.01"))
-        return
-
-    remaining_spend = -net_cash_flow
-    for account in sorted(asset_accounts, key=_cash_flow_priority):
+    ordered_accounts = _withdrawal_order(asset_accounts, accounts_by_id, preferred_account_id)
+    for account in ordered_accounts:
         available = max(balances[account.id], Decimal("0.00"))
-        deduction = min(available, remaining_spend)
-        balances[account.id] = (balances[account.id] - deduction).quantize(Decimal("0.01"))
-        remaining_spend -= deduction
-        if remaining_spend == Decimal("0.00"):
+        deduction = min(available, remaining)
+        if deduction == Decimal("0.00"):
+            continue
+        _apply_account_cash_flow(balances, cash_flows, account, cash_flow_type, -deduction)
+        remaining = (remaining - deduction).quantize(Decimal("0.01"))
+        if remaining == Decimal("0.00"):
             return
 
-    target = min(asset_accounts, key=_cash_flow_priority)
-    balances[target.id] = (balances[target.id] - remaining_spend).quantize(Decimal("0.01"))
+    fallback_account = (
+        accounts_by_id[preferred_account_id]
+        if preferred_account_id is not None
+        else min(asset_accounts, key=_cash_flow_priority)
+    )
+    _apply_account_cash_flow(balances, cash_flows, fallback_account, cash_flow_type, -remaining)
+
+
+def _withdrawal_order(
+    asset_accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    preferred_account_id: UUID | None,
+) -> list[Account]:
+    ordered_accounts = sorted(asset_accounts, key=_cash_flow_priority)
+    if preferred_account_id is None:
+        return ordered_accounts
+    preferred_account = accounts_by_id[preferred_account_id]
+    return [preferred_account] + [
+        account for account in ordered_accounts if account.id != preferred_account_id
+    ]
 
 
 def _cash_flow_priority(account: Account) -> tuple[int, str]:

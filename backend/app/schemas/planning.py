@@ -17,6 +17,7 @@ class IncomeSourceCreate(BaseModel):
     start_date: date
     end_date: date | None = None
     growth_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    deposit_account_id: UUID | None = None
 
 
 class IncomeSourceRead(BaseModel):
@@ -30,6 +31,7 @@ class IncomeSourceRead(BaseModel):
     start_date: date
     end_date: date | None
     growth_rate: Decimal | None
+    deposit_account_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
