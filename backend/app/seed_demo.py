@@ -62,6 +62,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="asset",
             category="cash",
             liquidity_class="liquid",
+            expected_annual_yield=Decimal("0.010000"),
             institution_name="Demo Bank",
         ),
         "brokerage": _get_or_create_account(
@@ -72,6 +73,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="asset",
             category="taxable_investment",
             liquidity_class="marketable",
+            expected_annual_yield=Decimal("0.060000"),
             institution_name="Demo Brokerage",
         ),
         "retirement": _get_or_create_account(
@@ -82,6 +84,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="asset",
             category="retirement",
             liquidity_class="retirement",
+            expected_annual_yield=Decimal("0.065000"),
             institution_name="Demo 401k Provider",
         ),
         "home": _get_or_create_account(
@@ -92,6 +95,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="asset",
             category="real_estate",
             liquidity_class="illiquid",
+            expected_annual_yield=Decimal("0.035000"),
         ),
         "mortgage": _get_or_create_account(
             db,
@@ -101,6 +105,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="liability",
             category="mortgage",
             liquidity_class="debt",
+            expected_annual_yield=Decimal("0.000000"),
             institution_name="Demo Mortgage Co",
         ),
         "credit_card": _get_or_create_account(
@@ -111,6 +116,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="liability",
             category="credit_card",
             liquidity_class="debt",
+            expected_annual_yield=Decimal("0.000000"),
             institution_name="Demo Card",
         ),
     }
@@ -160,6 +166,7 @@ def _get_or_create_account(
     account_kind: str,
     category: str,
     liquidity_class: str,
+    expected_annual_yield: Decimal | None = None,
     institution_name: str | None = None,
 ) -> Account:
     account = db.scalars(
@@ -178,6 +185,7 @@ def _get_or_create_account(
         account_kind=account_kind,
         category=category,
         liquidity_class=liquidity_class,
+        expected_annual_yield=expected_annual_yield,
         currency="USD",
     )
     db.add(account)

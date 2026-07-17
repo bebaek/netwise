@@ -159,6 +159,7 @@ function App() {
         account_kind: String(form.get('account_kind')) as 'asset' | 'liability',
         category: String(form.get('category') ?? ''),
         liquidity_class: String(form.get('liquidity_class') ?? ''),
+        expected_annual_yield: optionalString(form, 'expected_annual_yield'),
         currency: 'USD',
       });
       target.reset();
@@ -225,6 +226,7 @@ function App() {
         account_kind: 'asset',
         category: 'real_estate',
         liquidity_class: 'illiquid',
+        expected_annual_yield: optionalString(form, 'expected_appreciation_rate'),
         currency: 'USD',
       });
       await createRealEstateProperty({
@@ -271,6 +273,7 @@ function App() {
         account_kind: 'liability',
         category: 'mortgage',
         liquidity_class: 'debt',
+        expected_annual_yield: '0.000000',
         currency: 'USD',
       });
       await createMortgageProfile({
@@ -683,6 +686,7 @@ function App() {
                       <th>Name</th>
                       <th>Kind</th>
                       <th>Category</th>
+                      <th>Yield</th>
                       <th>Balance</th>
                     </tr>
                   </thead>
@@ -692,6 +696,7 @@ function App() {
                         <td>{account.name}</td>
                         <td>{account.account_kind}</td>
                         <td>{account.category}</td>
+                        <td>{accounts.find((item) => item.id === account.account_id)?.expected_annual_yield ?? '—'}</td>
                         <td>{formatMoney(account.balance)}</td>
                       </tr>
                     ))}
@@ -812,6 +817,7 @@ function App() {
                 </select>
                 <input name="category" placeholder="retirement / real_estate / mortgage" required />
                 <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
+                <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield, e.g. 0.05" />
                 <button type="submit">Add account</button>
               </form>
             </div>

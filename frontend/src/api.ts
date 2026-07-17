@@ -11,6 +11,7 @@ export type Account = {
   account_kind: 'asset' | 'liability';
   category: string;
   liquidity_class: string;
+  expected_annual_yield: string | null;
   currency: string;
   is_active: boolean;
 };
@@ -168,6 +169,7 @@ export function createAccount(payload: {
   account_kind: 'asset' | 'liability';
   category: string;
   liquidity_class: string;
+  expected_annual_yield?: string;
   currency: string;
 }): Promise<Account> {
   return request<Account>('/accounts', {

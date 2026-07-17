@@ -14,6 +14,7 @@ class AccountCreate(BaseModel):
     account_kind: AccountKind
     category: str
     liquidity_class: str
+    expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 
@@ -25,6 +26,7 @@ class AccountRead(BaseModel):
     account_kind: str
     category: str
     liquidity_class: str
+    expected_annual_yield: Decimal | None
     currency: str
     is_active: bool
     created_at: datetime

@@ -84,6 +84,7 @@ class Account(Base):
     account_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     category: Mapped[str] = mapped_column(String(80), nullable=False)
     liquidity_class: Mapped[str] = mapped_column(String(80), nullable=False)
+    expected_annual_yield: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
