@@ -9,6 +9,7 @@ import {
   MortgageProfile,
   NetWorth,
   NetWorthHistory,
+  NetWorthProjection,
   RealEstateProperty,
   createAccount,
   createAccountEvent,
@@ -21,6 +22,7 @@ import {
   getAnnualExpenseEstimate,
   getNetWorth,
   getNetWorthHistory,
+  getNetWorthProjection,
   listAccounts,
   listAccountEvents,
   listAnnualTaxRecords,
@@ -61,6 +63,7 @@ function App() {
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [expenseEstimate, setExpenseEstimate] = useState<AnnualExpenseEstimate | null>(null);
+  const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -126,6 +129,7 @@ function App() {
   useEffect(() => {
     if (!selectedHouseholdId) return;
     setExpenseEstimate(null);
+    setProjection(null);
     refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
   }, [selectedHouseholdId]);
 
@@ -364,6 +368,24 @@ function App() {
     }
   }
 
+  async function handleGetProjection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await getNetWorthProjection(
+        selectedHouseholdId,
+        Number(requiredString(form, 'start_year')),
+        Number(requiredString(form, 'end_year')),
+      );
+      setProjection(result);
+    } catch (err: unknown) {
+      setProjection(null);
+      setError(String(err));
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -415,6 +437,52 @@ function App() {
               <span>Liabilities</span>
               <strong>{formatMoney(netWorth?.liabilities_total)}</strong>
             </div>
+          </section>
+
+          <section className="card">
+            <h2>Projection</h2>
+            <p className="muted">Project net worth from current balances, account yields, mortgages, and future projection events.</p>
+            <form onSubmit={handleGetProjection} className="form-row">
+              <input
+                name="start_year"
+                inputMode="numeric"
+                placeholder="Start year"
+                defaultValue={new Date().getFullYear()}
+                required
+              />
+              <input
+                name="end_year"
+                inputMode="numeric"
+                placeholder="End year"
+                defaultValue={new Date().getFullYear() + 10}
+                required
+              />
+              <button type="submit">Run projection</button>
+            </form>
+            {projection?.points.length ? (
+              <table className="spaced-table">
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    <th>Net worth</th>
+                    <th>Assets</th>
+                    <th>Liabilities</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projection.points.map((point) => (
+                    <tr key={point.year}>
+                      <td>{point.year}</td>
+                      <td>{formatMoney(point.net_worth)}</td>
+                      <td>{formatMoney(point.assets_total)}</td>
+                      <td>{formatMoney(point.liabilities_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">Run a projection to see future net worth points.</p>
+            )}
           </section>
 
           <section className="grid two-column">

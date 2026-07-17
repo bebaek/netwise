@@ -118,6 +118,10 @@ th {
   margin-top: 1rem;
 }
 
+.spaced-table {
+  margin-top: 1rem;
+}
+
 .two-column {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

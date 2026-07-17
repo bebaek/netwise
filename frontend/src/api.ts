@@ -131,6 +131,27 @@ export type AnnualExpenseEstimate = {
   estimated_living_expense: string;
 };
 
+export type NetWorthProjection = {
+  household_id: string;
+  start_year: number;
+  end_year: number;
+  points: Array<{
+    year: number;
+    as_of_date: string;
+    net_worth: string;
+    assets_total: string;
+    liabilities_total: string;
+    accounts: Array<{
+      account_id: string;
+      name: string;
+      account_kind: string;
+      category: string;
+      liquidity_class: string;
+      projected_balance: string;
+    }>;
+  }>;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -303,4 +324,14 @@ export function getAnnualExpenseEstimate(
   taxYear: number,
 ): Promise<AnnualExpenseEstimate> {
   return request<AnnualExpenseEstimate>(`/dashboard/${householdId}/expense-estimates/${taxYear}`);
+}
+
+export function getNetWorthProjection(
+  householdId: string,
+  startYear: number,
+  endYear: number,
+): Promise<NetWorthProjection> {
+  return request<NetWorthProjection>(
+    `/dashboard/${householdId}/projection?start_year=${startYear}&end_year=${endYear}`,
+  );
 }
