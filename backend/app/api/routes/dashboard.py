@@ -5,13 +5,18 @@ from sqlalchemy.orm import Session
 
 from app.analytics.expense_estimation import ExpenseEstimateError, estimate_annual_living_expense
 from app.analytics.historical_trend import calculate_historical_trend
-from app.analytics.net_worth import calculate_net_worth, calculate_net_worth_history
+from app.analytics.net_worth import (
+    calculate_net_worth,
+    calculate_net_worth_breakdown_history,
+    calculate_net_worth_history,
+)
 from app.analytics.projections import calculate_net_worth_projection
 from app.db.models import Household
 from app.db.session import get_db
 from app.schemas.dashboard import (
     AnnualExpenseEstimateRead,
     HistoricalTrendRead,
+    NetWorthBreakdownHistoryRead,
     NetWorthHistoryRead,
     NetWorthRead,
 )
@@ -32,6 +37,13 @@ def get_net_worth_history(household_id: UUID, db: Session = Depends(get_db)) -> 
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
     return calculate_net_worth_history(db, household_id)
+
+
+@router.get("/{household_id}/breakdown-history", response_model=NetWorthBreakdownHistoryRead)
+def get_net_worth_breakdown_history(household_id: UUID, db: Session = Depends(get_db)) -> dict:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    return calculate_net_worth_breakdown_history(db, household_id)
 
 
 @router.get("/{household_id}/historical-trend", response_model=HistoricalTrendRead)

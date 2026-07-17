@@ -44,6 +44,18 @@ export type NetWorthHistory = {
   }>;
 };
 
+export type NetWorthBreakdownHistory = {
+  household_id: string;
+  points: Array<{
+    as_of_date: string;
+    net_worth: string;
+    assets_total: string;
+    liabilities_total: string;
+    asset_categories: Array<{ category: string; balance: string }>;
+    liability_categories: Array<{ category: string; balance: string }>;
+  }>;
+};
+
 export type SnapshotBatch = {
   household_id: string;
   as_of_date: string;
@@ -308,6 +320,10 @@ export function getHistoricalTrend(
   return request<NetWorthHistory>(
     `/dashboard/${householdId}/historical-trend?interpolate=${interpolate ? 'true' : 'false'}`,
   );
+}
+
+export function getNetWorthBreakdownHistory(householdId: string): Promise<NetWorthBreakdownHistory> {
+  return request<NetWorthBreakdownHistory>(`/dashboard/${householdId}/breakdown-history`);
 }
 
 export function getNetWorthHistory(householdId: string): Promise<NetWorthHistory> {

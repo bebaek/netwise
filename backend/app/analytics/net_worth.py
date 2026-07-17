@@ -112,6 +112,61 @@ def calculate_net_worth_history(db: Session, household_id: UUID) -> dict:
     return {"household_id": household_id, "points": points}
 
 
+def calculate_net_worth_breakdown_history(db: Session, household_id: UUID) -> dict:
+    accounts = db.scalars(
+        select(Account)
+        .where(Account.household_id == household_id, Account.is_active.is_(True))
+        .order_by(Account.name)
+    ).all()
+    if not accounts:
+        return {"household_id": household_id, "points": []}
+
+    snapshot_dates = list(
+        db.scalars(
+            select(BalanceSnapshot.as_of_date)
+            .where(BalanceSnapshot.household_id == household_id)
+            .distinct()
+            .order_by(BalanceSnapshot.as_of_date)
+        ).all()
+    )
+
+    points = []
+    for as_of_date in snapshot_dates:
+        assets_total = Decimal("0.00")
+        liabilities_total = Decimal("0.00")
+        asset_categories: dict[str, Decimal] = {}
+        liability_categories: dict[str, Decimal] = {}
+        for account in accounts:
+            balance = _latest_balance_on_or_before(db, account.id, as_of_date)
+            if balance is None:
+                continue
+            if account.account_kind == AccountKind.liability:
+                liabilities_total += balance
+                liability_categories[account.category] = liability_categories.get(account.category, Decimal("0.00")) + balance
+            else:
+                assets_total += balance
+                asset_categories[account.category] = asset_categories.get(account.category, Decimal("0.00")) + balance
+        points.append(
+            {
+                "as_of_date": as_of_date,
+                "net_worth": assets_total - liabilities_total,
+                "assets_total": assets_total,
+                "liabilities_total": liabilities_total,
+                "asset_categories": _category_rows(asset_categories),
+                "liability_categories": _category_rows(liability_categories),
+            }
+        )
+
+    return {"household_id": household_id, "points": points}
+
+
+def _category_rows(categories: dict[str, Decimal]) -> list[dict]:
+    return [
+        {"category": category, "balance": balance}
+        for category, balance in sorted(categories.items(), key=lambda item: item[0])
+    ]
+
+
 def _latest_balance_on_or_before(
     db: Session,
     account_id: UUID,

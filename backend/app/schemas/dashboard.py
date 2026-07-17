@@ -49,6 +49,25 @@ class NetWorthHistoryRead(BaseModel):
     points: list[NetWorthHistoryPointRead]
 
 
+class CategoryBalanceRead(BaseModel):
+    category: str
+    balance: Decimal
+
+
+class NetWorthBreakdownHistoryPointRead(BaseModel):
+    as_of_date: date
+    net_worth: Decimal
+    assets_total: Decimal
+    liabilities_total: Decimal
+    asset_categories: list[CategoryBalanceRead]
+    liability_categories: list[CategoryBalanceRead]
+
+
+class NetWorthBreakdownHistoryRead(BaseModel):
+    household_id: UUID
+    points: list[NetWorthBreakdownHistoryPointRead]
+
+
 class AnnualExpenseEstimateRead(BaseModel):
     household_id: UUID
     tax_year: int

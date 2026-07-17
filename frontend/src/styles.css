@@ -132,6 +132,14 @@ th {
   margin-top: 1rem;
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
+
+.breakdown-table {
+  min-width: 720px;
+}
+
 .spaced-table input {
   box-sizing: border-box;
   max-width: 180px;

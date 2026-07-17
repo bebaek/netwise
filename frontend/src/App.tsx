@@ -9,6 +9,7 @@ import {
   IncomeSource,
   MortgageProfile,
   NetWorth,
+  NetWorthBreakdownHistory,
   NetWorthHistory,
   NetWorthProjection,
   RealEstateProperty,
@@ -25,6 +26,7 @@ import {
   getAnnualExpenseEstimate,
   getHistoricalTrend,
   getNetWorth,
+  getNetWorthBreakdownHistory,
   getNetWorthProjection,
   listAccounts,
   listAccountEvents,
@@ -54,6 +56,13 @@ function optionalString(form: FormData, key: string): string | undefined {
 
 function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
+}
+
+function categoryBalance(
+  categories: Array<{ category: string; balance: string }>,
+  category: string,
+): string | null {
+  return categories.find((item) => item.category === category)?.balance ?? null;
 }
 
 type TrajectoryProjectionPoint = Pick<NetWorthProjection['points'][number], 'as_of_date' | 'net_worth'>;
@@ -153,6 +162,7 @@ function App() {
   } | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
+  const [breakdownHistory, setBreakdownHistory] = useState<NetWorthBreakdownHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
@@ -180,6 +190,19 @@ function App() {
     [netWorth],
   );
 
+  const breakdownCategories = useMemo(() => {
+    const assetCategories = new Set<string>();
+    const liabilityCategories = new Set<string>();
+    for (const point of breakdownHistory?.points ?? []) {
+      point.asset_categories.forEach((item) => assetCategories.add(item.category));
+      point.liability_categories.forEach((item) => liabilityCategories.add(item.category));
+    }
+    return {
+      assetCategories: [...assetCategories].sort(),
+      liabilityCategories: [...liabilityCategories].sort(),
+    };
+  }, [breakdownHistory]);
+
   const propertyAccounts = accounts.filter(
     (account) => account.account_kind === 'asset' && account.category === 'real_estate',
   );
@@ -202,6 +225,7 @@ function App() {
       incomeSourceList,
       taxRecordList,
       snapshotList,
+      breakdownResult,
     ] = await Promise.all([
       listAccounts(householdId),
       getNetWorth(householdId),
@@ -211,6 +235,7 @@ function App() {
       listIncomeSources(householdId),
       listAnnualTaxRecords(householdId),
       listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
+      getNetWorthBreakdownHistory(householdId),
     ]);
     const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
       .flat()
@@ -220,6 +245,7 @@ function App() {
     setHouseholdSnapshots(snapshotList);
     setNetWorth(netWorthResult);
     setHistory(historyResult);
+    setBreakdownHistory(breakdownResult);
     setProperties(propertyList);
     setMortgages(mortgageList);
     setIncomeSources(incomeSourceList);
@@ -672,6 +698,49 @@ function App() {
               </>
             ) : (
               <p className="muted">Add snapshots to see historical trend.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <h2>What changed?</h2>
+            <p className="muted">Break down each snapshot date by asset and liability category.</p>
+            {breakdownHistory?.points.length ? (
+              <div className="table-scroll">
+                <table className="spaced-table breakdown-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      {breakdownCategories.assetCategories.map((category) => (
+                        <th key={`asset-${category}`}>{category}</th>
+                      ))}
+                      {breakdownCategories.liabilityCategories.map((category) => (
+                        <th key={`liability-${category}`}>{category} debt</th>
+                      ))}
+                      <th>Net worth</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breakdownHistory.points.map((point) => (
+                      <tr key={point.as_of_date}>
+                        <td>{point.as_of_date}</td>
+                        {breakdownCategories.assetCategories.map((category) => (
+                          <td key={`${point.as_of_date}-asset-${category}`}>
+                            {formatMoney(categoryBalance(point.asset_categories, category))}
+                          </td>
+                        ))}
+                        {breakdownCategories.liabilityCategories.map((category) => (
+                          <td key={`${point.as_of_date}-liability-${category}`}>
+                            {formatMoney(categoryBalance(point.liability_categories, category))}
+                          </td>
+                        ))}
+                        <td>{formatMoney(point.net_worth)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="muted">Add snapshots to see category changes over time.</p>
             )}
           </section>
 
