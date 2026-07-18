@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Account,
   AccountEvent,
@@ -63,7 +64,14 @@ import {
   upsertProjectionSettings,
   upsertRealEstateLiquidationStrategy,
 } from './api';
-import { AppHeader, AppNavigation, ViewHeading, type AppView } from './components/AppShell';
+import {
+  AppHeader,
+  AppNavigation,
+  ViewHeading,
+  appViewFromPath,
+  appViewPath,
+  type AppView,
+} from './components/AppShell';
 import { AssetsPage, type AccountEditDraft } from './pages/AssetsPage';
 import { HouseholdSettingsPage } from './pages/HouseholdSettingsPage';
 import { OverviewPage } from './pages/OverviewPage';
@@ -105,7 +113,10 @@ function downloadJson(filename: string, value: unknown): void {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<AppView>('overview');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routedView = appViewFromPath(location.pathname);
+  const activeView: AppView = routedView ?? 'overview';
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -138,6 +149,14 @@ function App() {
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!routedView) navigate(appViewPath('overview'), { replace: true });
+  }, [navigate, routedView]);
+
+  function selectView(view: AppView) {
+    navigate(appViewPath(view));
+  }
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId),
@@ -908,7 +927,7 @@ function App() {
         onSelectHousehold={setSelectedHouseholdId}
       />
 
-      {selectedHousehold && <AppNavigation activeView={activeView} onSelectView={setActiveView} />}
+      {selectedHousehold && <AppNavigation />}
 
       {error && <div className="error" role="alert">{error}</div>}
       {loading && <div className="card">Loading…</div>}
@@ -938,7 +957,7 @@ function App() {
 
       {selectedHousehold && (
         <>
-          <ViewHeading activeView={activeView} onSelectView={setActiveView} />
+          <ViewHeading activeView={activeView} onSelectView={selectView} />
 
           <PlanningPage
             active={activeView === 'plan'}

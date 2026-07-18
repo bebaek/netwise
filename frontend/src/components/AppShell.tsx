@@ -1,3 +1,4 @@
+import { NavLink } from 'react-router-dom';
 import type { Household, User } from '../api';
 
 export type AppView = 'overview' | 'update' | 'plan' | 'assets' | 'settings';
@@ -15,6 +16,15 @@ export const APP_VIEWS: ViewDetails[] = [
   { id: 'assets', label: 'Assets', description: 'Manage accounts, properties, mortgages, and assumptions.' },
   { id: 'settings', label: 'Settings', description: 'Manage household access, imports, and exports.' },
 ];
+
+export function appViewPath(view: AppView): string {
+  return `/${view}`;
+}
+
+export function appViewFromPath(pathname: string): AppView | null {
+  const segment = pathname.replace(/^\/+|\/+$/g, '');
+  return APP_VIEWS.some((view) => view.id === segment) ? segment as AppView : null;
+}
 
 export function AppHeader({
   users,
@@ -74,25 +84,17 @@ export function AppHeader({
   );
 }
 
-export function AppNavigation({
-  activeView,
-  onSelectView,
-}: {
-  activeView: AppView;
-  onSelectView: (view: AppView) => void;
-}) {
+export function AppNavigation() {
   return (
     <nav className="app-nav" aria-label="Primary navigation">
       {APP_VIEWS.map((view) => (
-        <button
+        <NavLink
           key={view.id}
-          type="button"
-          className={`app-nav-button${activeView === view.id ? ' active' : ''}`}
-          aria-current={activeView === view.id ? 'page' : undefined}
-          onClick={() => onSelectView(view.id)}
+          to={appViewPath(view.id)}
+          className={({ isActive }) => `app-nav-button${isActive ? ' active' : ''}`}
         >
           {view.label}
-        </button>
+        </NavLink>
       ))}
     </nav>
   );

@@ -151,10 +151,14 @@ th {
 
 .app-nav-button {
   background: transparent;
+  border-radius: var(--radius-sm);
   color: #475569;
   flex: 1;
+  font-weight: 700;
   min-width: max-content;
   padding: 0.65rem 1rem;
+  text-align: center;
+  text-decoration: none;
 }
 
 .app-nav-button:hover:not(:disabled) {
