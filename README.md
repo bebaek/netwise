@@ -102,7 +102,7 @@ cd /Users/burm/code/netwise/backend
 uv run alembic revision --autogenerate -m "describe change"
 ```
 
-Run frontend type checks locally:
+Run frontend type checks and builds locally:
 
 ```bash
 cd /Users/burm/code/netwise/frontend
@@ -110,6 +110,15 @@ npm install
 npm run lint
 npm run build
 ```
+
+Run Chromium end-to-end checks against the Docker Compose application:
+
+```bash
+cd /Users/burm/code/netwise
+npm --prefix frontend run test:e2e:demo
+```
+
+The demo command resets and seeds the local Netwise database before running the desktop and mobile Playwright projects. Use `npm --prefix frontend run test:e2e` to preserve existing local data. Install the browser once with `cd frontend && npx playwright install chromium`; generated screenshots, traces, and HTML reports are written to ignored test output directories.
 
 Seed realistic demo data for manual testing:
 

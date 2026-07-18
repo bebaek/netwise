@@ -13,6 +13,8 @@ dist/
 build/
 .next/
 out/
+playwright-report/
+test-results/
 
 # Local config and secrets
 .env

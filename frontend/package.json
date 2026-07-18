@@ -7,16 +7,22 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "lint": "tsc -b --noEmit"
+    "lint": "tsc -b --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:demo": "npm run test:e2e:seed && playwright test",
+    "test:e2e:seed": "docker compose -f ../docker-compose.yml exec -T backend python -m app.seed_demo --reset",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "typescript": "latest",
+    "vite": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
 }
