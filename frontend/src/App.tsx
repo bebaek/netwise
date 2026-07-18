@@ -1,4 +1,4 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
@@ -70,13 +70,21 @@ import {
   ViewHeading,
   type AppView,
 } from './components/AppShell';
-import { AssetsPage, type AccountEditDraft } from './pages/AssetsPage';
-import { HouseholdSettingsPage } from './pages/HouseholdSettingsPage';
-import { OverviewPage } from './pages/OverviewPage';
-import { PlanningPage, type AccountEventDraft } from './pages/PlanningPage';
-import { UpdateBalancesPage, type SnapshotEditDraft } from './pages/UpdateBalancesPage';
+import type { AccountEditDraft } from './pages/AssetsPage';
+import type { AccountEventDraft } from './pages/PlanningPage';
+import type { SnapshotEditDraft } from './pages/UpdateBalancesPage';
 import { formatMoney } from './utils/format';
 import './styles.css';
+
+const AssetsPage = lazy(() => import('./pages/AssetsPage').then((module) => ({ default: module.AssetsPage })));
+const HouseholdSettingsPage = lazy(() =>
+  import('./pages/HouseholdSettingsPage').then((module) => ({ default: module.HouseholdSettingsPage })),
+);
+const OverviewPage = lazy(() => import('./pages/OverviewPage').then((module) => ({ default: module.OverviewPage })));
+const PlanningPage = lazy(() => import('./pages/PlanningPage').then((module) => ({ default: module.PlanningPage })));
+const UpdateBalancesPage = lazy(() =>
+  import('./pages/UpdateBalancesPage').then((module) => ({ default: module.UpdateBalancesPage })),
+);
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -114,7 +122,9 @@ function WorkspaceView({ view, children }: { view: AppView; children: ReactNode 
   return (
     <>
       <ViewHeading activeView={view} />
-      {children}
+      <Suspense fallback={<div className="card" role="status">Loading page…</div>}>
+        {children}
+      </Suspense>
     </>
   );
 }
