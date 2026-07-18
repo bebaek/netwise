@@ -86,6 +86,29 @@ const UpdateBalancesPage = lazy(() =>
   import('./pages/UpdateBalancesPage').then((module) => ({ default: module.UpdateBalancesPage })),
 );
 
+const SELECTED_USER_STORAGE_KEY = 'netwise.selectedUserId';
+const SELECTED_HOUSEHOLD_STORAGE_KEY = 'netwise.selectedHouseholdId';
+
+function storedSelection(key: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function persistSelection(key: string, value: string): void {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Selection persistence is optional when storage is unavailable.
+  }
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -131,9 +154,11 @@ function WorkspaceView({ view, children }: { view: AppView; children: ReactNode 
 
 function App() {
   const [users, setUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedUserId, setSelectedUserId] = useState<string>(() => storedSelection(SELECTED_USER_STORAGE_KEY));
   const [households, setHouseholds] = useState<Household[]>([]);
-  const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>('');
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
+    storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
+  );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
@@ -196,7 +221,11 @@ function App() {
   async function refreshUsers() {
     const userList = await listUsers();
     setUsers(userList);
-    if (!selectedUserId && userList.length > 0) {
+    if (userList.length === 0) {
+      setSelectedUserId('');
+      return;
+    }
+    if (!userList.some((user) => user.id === selectedUserId)) {
       setSelectedUserId(userList[0].id);
     }
   }
@@ -261,6 +290,14 @@ function App() {
     setTaxRecords(taxRecordList);
     setProjectionSettings(projectionSettingsResult);
   }
+
+  useEffect(() => {
+    persistSelection(SELECTED_USER_STORAGE_KEY, selectedUserId);
+  }, [selectedUserId]);
+
+  useEffect(() => {
+    persistSelection(SELECTED_HOUSEHOLD_STORAGE_KEY, selectedHouseholdId);
+  }, [selectedHouseholdId]);
 
   useEffect(() => {
     Promise.all([refreshUsers(), getCapabilities()])

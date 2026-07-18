@@ -86,6 +86,20 @@ test('supports direct routes and reload persistence', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Assets', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
+test('preserves the selected user and household across reloads', async ({ page }) => {
+  const selectedUser = page.getByLabel('Selected user');
+  const selectedHousehold = page.getByLabel('Selected household');
+  const userId = await selectedUser.inputValue();
+  const householdId = await selectedHousehold.inputValue();
+
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('netwise.selectedUserId'))).toBe(userId);
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('netwise.selectedHouseholdId'))).toBe(householdId);
+
+  await page.reload();
+  await expect(selectedUser).toHaveValue(userId);
+  await expect(selectedHousehold).toHaveValue(householdId);
+});
+
 test('keeps workspace navigation in browser history', async ({ page }) => {
   await page.getByRole('link', { name: 'Plan', exact: true }).click();
   await page.getByRole('link', { name: 'Assets', exact: true }).click();
