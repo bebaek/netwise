@@ -20,8 +20,10 @@ from app.db.models import (
     MortgageProfile,
     ProjectionBehavior,
     ProjectionSettings,
+    RealEstateLiquidationStrategy,
     RealEstateProperty,
     RealEstateSale,
+    RetirementTaxTreatment,
 )
 
 DEFAULT_CATEGORY_YIELDS = {
@@ -47,19 +49,85 @@ DEFAULT_LIQUIDATION_EXPENSE_RATES = {
 
 
 @dataclass
+class ProjectionData:
+    accounts: list[Account]
+    initial_balances: dict[UUID, Decimal]
+    mortgage_profiles: dict[UUID, MortgageProfile]
+    property_profiles: dict[UUID, RealEstateProperty]
+    real_estate_sales: list[RealEstateSale]
+    automatic_sale_strategies: list[RealEstateLiquidationStrategy]
+    projection_events: list[AccountEvent]
+    income_sources: list[IncomeSource]
+    projection_settings: ProjectionSettings | None
+    tax_rate: Decimal
+
+
+@dataclass
 class WithdrawalResult:
     net_amount: Decimal = Decimal("0.00")
     taxable_amount: Decimal = Decimal("0.00")
     liquidation_expenses: Decimal = Decimal("0.00")
+    explicit_taxes: Decimal = Decimal("0.00")
+    unfunded_amount: Decimal = Decimal("0.00")
 
     def add(self, other: "WithdrawalResult") -> None:
         self.net_amount = (self.net_amount + other.net_amount).quantize(Decimal("0.01"))
-        self.taxable_amount = (self.taxable_amount + other.taxable_amount).quantize(
-            Decimal("0.01")
-        )
+        self.taxable_amount = (self.taxable_amount + other.taxable_amount).quantize(Decimal("0.01"))
         self.liquidation_expenses = (
             self.liquidation_expenses + other.liquidation_expenses
         ).quantize(Decimal("0.01"))
+        self.explicit_taxes = (self.explicit_taxes + other.explicit_taxes).quantize(Decimal("0.01"))
+        self.unfunded_amount = (self.unfunded_amount + other.unfunded_amount).quantize(
+            Decimal("0.01")
+        )
+
+
+@dataclass
+class ProjectedPropertySale:
+    property_account_id: UUID
+    gross_sale_price: Decimal
+    proceeds_account_id: UUID
+    selling_expense_rate: Decimal | None
+    estimated_tax_rate: Decimal
+
+
+@dataclass
+class AutomaticPropertySaleContext:
+    strategies: list[RealEstateLiquidationStrategy]
+    fixed_sale_property_ids: set[UUID]
+    mortgage_profiles_by_property: dict[UUID, MortgageProfile]
+    sold_mortgage_account_ids: set[UUID]
+    used_property_ids: set[UUID]
+    as_of_date: date
+
+    def next_strategy(
+        self,
+        accounts_by_id: dict[UUID, Account],
+        balances: dict[UUID, Decimal],
+    ) -> RealEstateLiquidationStrategy | None:
+        eligible = [
+            strategy
+            for strategy in self.strategies
+            if strategy.enabled
+            and strategy.property_account_id not in self.fixed_sale_property_ids
+            and strategy.property_account_id not in self.used_property_ids
+            and (
+                strategy.earliest_sale_date is None
+                or strategy.earliest_sale_date <= self.as_of_date
+            )
+            and strategy.property_account_id in accounts_by_id
+            and strategy.proceeds_account_id in accounts_by_id
+            and balances[strategy.property_account_id] > Decimal("0.00")
+        ]
+        if not eligible:
+            return None
+        return min(
+            eligible,
+            key=lambda strategy: (
+                strategy.priority,
+                accounts_by_id[strategy.property_account_id].name.lower(),
+            ),
+        )
 
 
 CASH_FLOW_CATEGORY_PRIORITY = {
@@ -106,70 +174,106 @@ def calculate_net_worth_projection(
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
     interval: str = "annual",
+    _projection_data: ProjectionData | None = None,
+    _scheduled_sales: dict[UUID, date | None] | None = None,
+    _skip_optimization: bool = False,
 ) -> dict:
     if end_year < start_year:
         raise ValueError("end_year must be greater than or equal to start_year")
     if interval not in {"annual", "quarterly", "monthly"}:
         raise ValueError("interval must be one of: annual, quarterly, monthly")
 
-    accounts = list(
-        db.scalars(
-            select(Account)
-            .where(Account.household_id == household_id, Account.is_active.is_(True))
-            .order_by(Account.name)
-        ).all()
-    )
     start_date = date(start_year, 1, 1)
-    balances = {
-        account.id: _latest_balance_on_or_before(db, account.id, start_date) or Decimal("0.00")
-        for account in accounts
-    }
-    mortgage_profiles = {
-        profile.liability_account_id: profile
-        for profile in db.scalars(
-            select(MortgageProfile).where(MortgageProfile.household_id == household_id)
-        ).all()
-    }
-    property_profiles = {
-        profile.account_id: profile
-        for profile in db.scalars(
-            select(RealEstateProperty).where(RealEstateProperty.household_id == household_id)
-        ).all()
-    }
-    real_estate_sales = list(
-        db.scalars(
-            select(RealEstateSale)
-            .where(
-                RealEstateSale.household_id == household_id,
-                RealEstateSale.sale_date >= start_date,
-                RealEstateSale.sale_date <= date(end_year, 12, 31),
-            )
-            .order_by(RealEstateSale.sale_date)
-        ).all()
-    )
+    if _projection_data is None:
+        accounts = list(
+            db.scalars(
+                select(Account)
+                .where(Account.household_id == household_id, Account.is_active.is_(True))
+                .order_by(Account.name)
+            ).all()
+        )
+        initial_balances = {
+            account.id: _latest_balance_on_or_before(db, account.id, start_date) or Decimal("0.00")
+            for account in accounts
+        }
+        mortgage_profiles = {
+            profile.liability_account_id: profile
+            for profile in db.scalars(
+                select(MortgageProfile).where(MortgageProfile.household_id == household_id)
+            ).all()
+        }
+        property_profiles = {
+            profile.account_id: profile
+            for profile in db.scalars(
+                select(RealEstateProperty).where(RealEstateProperty.household_id == household_id)
+            ).all()
+        }
+        real_estate_sales = list(
+            db.scalars(
+                select(RealEstateSale)
+                .where(RealEstateSale.household_id == household_id)
+                .order_by(RealEstateSale.sale_date)
+            ).all()
+        )
+        automatic_sale_strategies = list(
+            db.scalars(
+                select(RealEstateLiquidationStrategy)
+                .where(RealEstateLiquidationStrategy.household_id == household_id)
+                .order_by(
+                    RealEstateLiquidationStrategy.priority,
+                    RealEstateLiquidationStrategy.created_at,
+                )
+            ).all()
+        )
+        projection_events = list(
+            db.scalars(
+                select(AccountEvent)
+                .where(
+                    AccountEvent.household_id == household_id,
+                    AccountEvent.projection_behavior != ProjectionBehavior.historical_only,
+                    AccountEvent.event_date >= start_date,
+                    AccountEvent.event_date <= date(end_year, 12, 31),
+                )
+                .order_by(AccountEvent.event_date)
+            ).all()
+        )
+        income_sources = list(
+            db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
+        )
+        projection_settings = db.scalars(
+            select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+        ).first()
+        tax_rate = _latest_effective_tax_rate(db, household_id)
+        _projection_data = ProjectionData(
+            accounts=accounts,
+            initial_balances=initial_balances,
+            mortgage_profiles=mortgage_profiles,
+            property_profiles=property_profiles,
+            real_estate_sales=real_estate_sales,
+            automatic_sale_strategies=automatic_sale_strategies,
+            projection_events=projection_events,
+            income_sources=income_sources,
+            projection_settings=projection_settings,
+            tax_rate=tax_rate,
+        )
+    else:
+        accounts = _projection_data.accounts
+        initial_balances = _projection_data.initial_balances
+        mortgage_profiles = _projection_data.mortgage_profiles
+        property_profiles = _projection_data.property_profiles
+        real_estate_sales = _projection_data.real_estate_sales
+        automatic_sale_strategies = _projection_data.automatic_sale_strategies
+        projection_events = _projection_data.projection_events
+        income_sources = _projection_data.income_sources
+        projection_settings = _projection_data.projection_settings
+        tax_rate = _projection_data.tax_rate
+
+    balances = dict(initial_balances)
     mortgage_profiles_by_property = {
         profile.property_account_id: profile
         for profile in mortgage_profiles.values()
         if profile.property_account_id is not None
     }
-    projection_events = list(
-        db.scalars(
-            select(AccountEvent)
-            .where(
-                AccountEvent.household_id == household_id,
-                AccountEvent.projection_behavior != ProjectionBehavior.historical_only,
-                AccountEvent.event_date >= start_date,
-                AccountEvent.event_date <= date(end_year, 12, 31),
-            )
-            .order_by(AccountEvent.event_date)
-        ).all()
-    )
-    income_sources = list(
-        db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
-    )
-    projection_settings = db.scalars(
-        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
-    ).first()
     effective_annual_spending = (
         annual_spending
         if annual_spending is not None
@@ -211,7 +315,26 @@ def calculate_net_worth_projection(
         if effective_annual_spending is not None
         else None
     )
-    tax_rate = _latest_effective_tax_rate(db, household_id)
+    if _scheduled_sales is None and not _skip_optimization:
+        optimization_strategies = [
+            strategy
+            for strategy in automatic_sale_strategies
+            if strategy.enabled and strategy.optimization_mode == "maximize_liquid_runway"
+        ]
+        if optimization_strategies:
+            return _optimize_liquid_runway_sales(
+                db,
+                household_id,
+                start_year=start_year,
+                end_year=end_year,
+                annual_spending=annual_spending,
+                spending_inflation_rate=spending_inflation_rate,
+                spending_account_id=spending_account_id,
+                tax_account_id=tax_account_id,
+                interval=interval,
+                projection_data=_projection_data,
+                strategies=optimization_strategies,
+            )
 
     points = []
     months_per_period = {"annual": 12, "quarterly": 3, "monthly": 1}[interval]
@@ -221,6 +344,16 @@ def calculate_net_worth_projection(
         for month in range(months_per_period, 13, months_per_period)
     ]
     sold_mortgage_account_ids: set[UUID] = set()
+    automatically_sold_property_ids: set[UUID] = set()
+    scheduled_sales = _scheduled_sales or {}
+    optimized_property_ids = {
+        strategy.property_account_id
+        for strategy in automatic_sale_strategies
+        if strategy.enabled and strategy.optimization_mode == "maximize_liquid_runway"
+    }
+    fixed_sale_property_ids = {
+        sale.property_account_id for sale in real_estate_sales
+    } | optimized_property_ids
     for as_of_date in period_ends:
         year = as_of_date.year
         period_start = date(year, as_of_date.month - months_per_period + 1, 1)
@@ -248,16 +381,35 @@ def calculate_net_worth_projection(
 
         cash_flows = []
         withdrawal_result = WithdrawalResult()
-        year_operations = [
-            (sale.sale_date, 0, sale)
-            for sale in real_estate_sales
-            if period_start <= sale.sale_date <= as_of_date
-        ] + [
-            (event.event_date, 1, event)
-            for event in projection_events
-            if period_start <= event.event_date <= as_of_date
-        ]
-        for _, operation_kind, operation in sorted(year_operations, key=lambda item: (item[0], item[1])):
+        automatic_sale_context = AutomaticPropertySaleContext(
+            strategies=automatic_sale_strategies,
+            fixed_sale_property_ids=fixed_sale_property_ids,
+            mortgage_profiles_by_property=mortgage_profiles_by_property,
+            sold_mortgage_account_ids=sold_mortgage_account_ids,
+            used_property_ids=automatically_sold_property_ids,
+            as_of_date=as_of_date,
+        )
+        year_operations = (
+            [
+                (sale.sale_date, 0, sale)
+                for sale in real_estate_sales
+                if period_start <= sale.sale_date <= as_of_date
+            ]
+            + [
+                (scheduled_date, 1, strategy)
+                for strategy in automatic_sale_strategies
+                if (scheduled_date := scheduled_sales.get(strategy.property_account_id)) is not None
+                and period_start <= scheduled_date <= as_of_date
+            ]
+            + [
+                (event.event_date, 2, event)
+                for event in projection_events
+                if period_start <= event.event_date <= as_of_date
+            ]
+        )
+        for _, operation_kind, operation in sorted(
+            year_operations, key=lambda item: (item[0], item[1])
+        ):
             if operation_kind == 0:
                 withdrawal_result.add(
                     _apply_real_estate_sale(
@@ -271,10 +423,35 @@ def calculate_net_worth_projection(
                         tax_rate,
                     )
                 )
+            elif operation_kind == 1:
+                projected_sale = ProjectedPropertySale(
+                    property_account_id=operation.property_account_id,
+                    gross_sale_price=balances[operation.property_account_id],
+                    proceeds_account_id=operation.proceeds_account_id,
+                    selling_expense_rate=operation.selling_expense_rate,
+                    estimated_tax_rate=operation.estimated_tax_rate,
+                )
+                withdrawal_result.add(
+                    _apply_real_estate_sale(
+                        accounts,
+                        accounts_by_id,
+                        balances,
+                        cash_flows,
+                        projected_sale,
+                        mortgage_profiles_by_property.get(operation.property_account_id),
+                        sold_mortgage_account_ids,
+                        tax_rate,
+                    )
+                )
             else:
                 withdrawal_result.add(
                     _apply_projection_event(
-                        accounts_by_id, balances, cash_flows, operation, tax_rate
+                        accounts_by_id,
+                        balances,
+                        cash_flows,
+                        operation,
+                        tax_rate,
+                        automatic_sale_context,
                     )
                 )
 
@@ -282,26 +459,34 @@ def calculate_net_worth_projection(
         projected_rental_income = Decimal("0.00")
         projected_rental_expenses = Decimal("0.00")
         for property_profile in property_profiles.values():
-            rental_income, rental_expenses = _apply_rental_cash_flow(
+            rental_income, rental_expenses, rental_withdrawal_result = _apply_rental_cash_flow(
                 property_profile,
                 accounts,
                 accounts_by_id,
                 balances,
                 cash_flows,
                 period_start,
-                months_per_period,
-            )
-            rental_mortgage_debt_service = _apply_rental_mortgage_debt_service(
-                property_profile,
-                mortgage_profiles_by_property.get(property_profile.account_id),
-                accounts,
-                accounts_by_id,
-                balances,
-                cash_flows,
                 as_of_date,
-                months_per_period,
-                sold_mortgage_account_ids,
+                tax_rate,
+                automatic_sale_context,
             )
+            withdrawal_result.add(rental_withdrawal_result)
+            rental_mortgage_debt_service, mortgage_withdrawal_result = (
+                _apply_rental_mortgage_debt_service(
+                    property_profile,
+                    mortgage_profiles_by_property.get(property_profile.account_id),
+                    accounts,
+                    accounts_by_id,
+                    balances,
+                    cash_flows,
+                    period_start,
+                    as_of_date,
+                    sold_mortgage_account_ids,
+                    tax_rate,
+                    automatic_sale_context,
+                )
+            )
+            withdrawal_result.add(mortgage_withdrawal_result)
             projected_rental_income += rental_income
             projected_rental_expenses += rental_expenses + rental_mortgage_debt_service
         for income_source in income_sources:
@@ -342,11 +527,15 @@ def calculate_net_worth_projection(
                     "spending",
                     effective_spending_account_id,
                     tax_rate,
+                    automatic_sale_context,
                 )
             )
         withdrawal_taxes = (withdrawal_result.taxable_amount * tax_rate).quantize(Decimal("0.01"))
-        projected_taxes = (income_taxes + withdrawal_taxes).quantize(Decimal("0.01"))
+        projected_taxes = (
+            income_taxes + withdrawal_taxes + withdrawal_result.explicit_taxes
+        ).quantize(Decimal("0.01"))
         projected_liquidation_expenses = withdrawal_result.liquidation_expenses
+        projected_unfunded_cash_flow = withdrawal_result.unfunded_amount
         if income_taxes != Decimal("0.00"):
             tax_payment_result = _withdraw_from_assets(
                 accounts,
@@ -357,12 +546,18 @@ def calculate_net_worth_projection(
                 "tax_payment",
                 effective_tax_account_id,
                 tax_rate,
+                automatic_sale_context,
             )
             projected_taxes = (
-                projected_taxes + (tax_payment_result.taxable_amount * tax_rate)
+                projected_taxes
+                + (tax_payment_result.taxable_amount * tax_rate)
+                + tax_payment_result.explicit_taxes
             ).quantize(Decimal("0.01"))
             projected_liquidation_expenses = (
                 projected_liquidation_expenses + tax_payment_result.liquidation_expenses
+            ).quantize(Decimal("0.01"))
+            projected_unfunded_cash_flow = (
+                projected_unfunded_cash_flow + tax_payment_result.unfunded_amount
             ).quantize(Decimal("0.01"))
         net_cash_flow = (
             projected_income
@@ -371,9 +566,7 @@ def calculate_net_worth_projection(
             - projected_taxes
             - projected_spending
             - projected_liquidation_expenses
-        ).quantize(
-            Decimal("0.01")
-        )
+        ).quantize(Decimal("0.01"))
 
         account_points = [
             {
@@ -387,11 +580,19 @@ def calculate_net_worth_projection(
             for account in accounts
         ]
         assets_total = sum(
-            (balances[account.id] for account in accounts if account.account_kind == AccountKind.asset),
+            (
+                balances[account.id]
+                for account in accounts
+                if account.account_kind == AccountKind.asset
+            ),
             Decimal("0.00"),
         )
         liabilities_total = sum(
-            (balances[account.id] for account in accounts if account.account_kind == AccountKind.liability),
+            (
+                balances[account.id]
+                for account in accounts
+                if account.account_kind == AccountKind.liability
+            ),
             Decimal("0.00"),
         )
         points.append(
@@ -407,6 +608,7 @@ def calculate_net_worth_projection(
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
                 "projected_liquidation_expenses": projected_liquidation_expenses,
+                "projected_unfunded_cash_flow": projected_unfunded_cash_flow,
                 "net_cash_flow": net_cash_flow,
                 "cash_flows": cash_flows,
                 "accounts": account_points,
@@ -420,6 +622,211 @@ def calculate_net_worth_projection(
         "interval": interval,
         "points": points,
     }
+
+
+def _optimize_liquid_runway_sales(
+    db: Session,
+    household_id: UUID,
+    *,
+    start_year: int,
+    end_year: int,
+    annual_spending: Decimal | None,
+    spending_inflation_rate: Decimal | None,
+    spending_account_id: UUID | None,
+    tax_account_id: UUID | None,
+    interval: str,
+    projection_data: ProjectionData,
+    strategies: list[RealEstateLiquidationStrategy],
+) -> dict:
+    """Choose ordered March 1 property sales that delay retirement withdrawals longest."""
+    ordered_strategies = sorted(
+        strategies,
+        key=lambda strategy: (
+            strategy.priority,
+            next(
+                account.name.lower()
+                for account in projection_data.accounts
+                if account.id == strategy.property_account_id
+            ),
+        ),
+    )
+    best_result: dict | None = None
+    best_score: tuple[int, int, Decimal, Decimal] | None = None
+    best_schedule: dict[UUID, date | None] = {}
+    schedules_evaluated = 0
+    evaluated_schedules: set[tuple[date | None, ...]] = set()
+
+    def evaluate(schedule: dict[UUID, date | None]) -> None:
+        nonlocal best_result, best_score, best_schedule, schedules_evaluated
+        schedule_key = tuple(
+            schedule[strategy.property_account_id] for strategy in ordered_strategies
+        )
+        if schedule_key in evaluated_schedules:
+            return
+        evaluated_schedules.add(schedule_key)
+        result = calculate_net_worth_projection(
+            db,
+            household_id,
+            start_year=start_year,
+            end_year=end_year,
+            annual_spending=annual_spending,
+            spending_inflation_rate=spending_inflation_rate,
+            spending_account_id=spending_account_id,
+            tax_account_id=tax_account_id,
+            interval=interval,
+            _projection_data=projection_data,
+            _scheduled_sales=schedule,
+            _skip_optimization=True,
+        )
+        schedules_evaluated += 1
+        score = _liquid_runway_score(result, projection_data.accounts)
+        if best_score is None or score > best_score:
+            best_result = result
+            best_score = score
+            best_schedule = dict(schedule)
+
+    never_schedule = {strategy.property_account_id: None for strategy in ordered_strategies}
+    evaluate(never_schedule)
+    if best_result is None:
+        raise ValueError("Unable to evaluate property sale schedules")
+
+    first_retirement_date = _first_retirement_withdrawal_date(best_result, projection_data.accounts)
+    candidate_end_year = first_retirement_date.year if first_retirement_date else end_year
+    while True:
+        for schedule in _ordered_march_sale_schedules(
+            ordered_strategies,
+            start_year=start_year,
+            end_year=candidate_end_year,
+        ):
+            evaluate(schedule)
+
+        if best_result is None:
+            raise ValueError("Unable to evaluate property sale schedules")
+        expanded_retirement_date = _first_retirement_withdrawal_date(
+            best_result, projection_data.accounts
+        )
+        expanded_end_year = expanded_retirement_date.year if expanded_retirement_date else end_year
+        if expanded_end_year <= candidate_end_year or candidate_end_year == end_year:
+            break
+        candidate_end_year = min(expanded_end_year, end_year)
+
+    accounts_by_id = {account.id: account for account in projection_data.accounts}
+    first_retirement_date = _first_retirement_withdrawal_date(best_result, projection_data.accounts)
+    best_result["property_sale_optimization"] = {
+        "mode": "maximize_liquid_runway",
+        "candidate_month": 3,
+        "candidate_day": 1,
+        "schedules_evaluated": schedules_evaluated,
+        "first_retirement_withdrawal_date": first_retirement_date,
+        "selected_sales": [
+            {
+                "property_account_id": strategy.property_account_id,
+                "property_name": accounts_by_id[strategy.property_account_id].name,
+                "sale_date": best_schedule[strategy.property_account_id],
+            }
+            for strategy in ordered_strategies
+        ],
+    }
+    return best_result
+
+
+def _ordered_march_sale_schedules(
+    strategies: list[RealEstateLiquidationStrategy],
+    *,
+    start_year: int,
+    end_year: int,
+) -> list[dict[UUID, date | None]]:
+    schedules: list[dict[UUID, date | None]] = []
+
+    def build(
+        index: int,
+        previous_date: date | None,
+        previous_was_never: bool,
+        schedule: dict[UUID, date | None],
+    ) -> None:
+        if index == len(strategies):
+            schedules.append(dict(schedule))
+            return
+        strategy = strategies[index]
+        if previous_was_never:
+            choices: list[date | None] = [None]
+        else:
+            choices = [
+                date(year, 3, 1)
+                for year in range(start_year, end_year + 1)
+                if (
+                    strategy.earliest_sale_date is None
+                    or date(year, 3, 1) >= strategy.earliest_sale_date
+                )
+                and (previous_date is None or date(year, 3, 1) >= previous_date)
+            ]
+            choices.append(None)
+        for choice in choices:
+            schedule[strategy.property_account_id] = choice
+            build(index + 1, choice, choice is None, schedule)
+        schedule.pop(strategy.property_account_id, None)
+
+    build(0, None, False, {})
+    return schedules
+
+
+def _liquid_runway_score(
+    result: dict,
+    accounts: list[Account],
+) -> tuple[int, int, Decimal, Decimal]:
+    points = result["points"]
+    retirement_ids = {account.id for account in accounts if account.category == "retirement"}
+    retirement_index = len(points) + 1
+    for index, point in enumerate(points):
+        if any(
+            cash_flow["account_id"] in retirement_ids and cash_flow["amount"] < Decimal("0.00")
+            for cash_flow in point["cash_flows"]
+        ):
+            retirement_index = index
+            break
+
+    unfunded_index = len(points) + 1
+    for index, point in enumerate(points):
+        if point["projected_unfunded_cash_flow"] > Decimal("0.00"):
+            unfunded_index = index
+            break
+
+    balance_point_index = min(max(retirement_index - 1, 0), len(points) - 1)
+    liquid_account_ids = {
+        account.id
+        for account in accounts
+        if account.account_kind == AccountKind.asset
+        and account.category != "retirement"
+        and account.liquidity_class in LIQUIDITY_CLASSES
+    }
+    liquid_balance = sum(
+        (
+            account_point["projected_balance"]
+            for account_point in points[balance_point_index]["accounts"]
+            if account_point["account_id"] in liquid_account_ids
+        ),
+        Decimal("0.00"),
+    )
+    return (
+        retirement_index,
+        unfunded_index,
+        liquid_balance,
+        points[-1]["net_worth"],
+    )
+
+
+def _first_retirement_withdrawal_date(
+    result: dict,
+    accounts: list[Account],
+) -> date | None:
+    retirement_ids = {account.id for account in accounts if account.category == "retirement"}
+    for point in result["points"]:
+        if any(
+            cash_flow["account_id"] in retirement_ids and cash_flow["amount"] < Decimal("0.00")
+            for cash_flow in point["cash_flows"]
+        ):
+            return point["as_of_date"]
+    return None
 
 
 def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
@@ -495,13 +902,19 @@ def _projected_income_source_for_period(
 def _projected_income_source_for_year(source: IncomeSource, year: int) -> Decimal:
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
-    if source.start_date > year_end or (source.end_date is not None and source.end_date < year_start):
+    if source.start_date > year_end or (
+        source.end_date is not None and source.end_date < year_start
+    ):
         return Decimal("0.00")
 
     annual_amount = _annualize_income(source.amount, source.frequency)
-    growth_rate = source.growth_rate if source.growth_rate is not None else DEFAULT_INCOME_GROWTH_RATE
+    growth_rate = (
+        source.growth_rate if source.growth_rate is not None else DEFAULT_INCOME_GROWTH_RATE
+    )
     years_elapsed = max(year - source.start_date.year, 0)
-    return (annual_amount * ((Decimal("1") + growth_rate) ** years_elapsed)).quantize(Decimal("0.01"))
+    return (annual_amount * ((Decimal("1") + growth_rate) ** years_elapsed)).quantize(
+        Decimal("0.01")
+    )
 
 
 def _annualize_income(amount: Decimal, frequency: str) -> Decimal:
@@ -537,6 +950,24 @@ def _cash_flow_target_account(
     return min(asset_accounts, key=_cash_flow_priority)
 
 
+def _active_months_in_period(
+    rental_start_date: date | None, period_start: date, period_end: date
+) -> int:
+    """Count active rental months in a period, including a partial starting month."""
+    if rental_start_date is None or rental_start_date <= period_start:
+        first_active_month = period_start
+    elif rental_start_date > period_end:
+        return 0
+    else:
+        first_active_month = rental_start_date
+    return (
+        (period_end.year - first_active_month.year) * 12
+        + period_end.month
+        - first_active_month.month
+        + 1
+    )
+
+
 def _apply_rental_cash_flow(
     property_profile: RealEstateProperty,
     accounts: list[Account],
@@ -544,20 +975,22 @@ def _apply_rental_cash_flow(
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     period_start: date,
-    months_per_period: int,
-) -> tuple[Decimal, Decimal]:
-    """Apply non-debt rental operating cash flow and return income and expenses."""
+    period_end: date,
+    tax_rate: Decimal,
+    automatic_sale_context: AutomaticPropertySaleContext | None = None,
+) -> tuple[Decimal, Decimal, WithdrawalResult]:
+    """Apply non-debt rental operating cash flow and return income, expenses, and funding."""
     property_account = accounts_by_id.get(property_profile.account_id)
+    active_months = _active_months_in_period(
+        property_profile.rental_start_date, period_start, period_end
+    )
     if (
         not property_profile.is_rental
         or property_account is None
         or balances[property_account.id] <= Decimal("0.00")
-        or (
-            property_profile.rental_start_date is not None
-            and property_profile.rental_start_date > period_start
-        )
+        or active_months == 0
     ):
-        return Decimal("0.00"), Decimal("0.00")
+        return Decimal("0.00"), Decimal("0.00"), WithdrawalResult()
 
     years_elapsed = max(
         period_start.year - (property_profile.rental_start_date or period_start).year, 0
@@ -566,11 +999,15 @@ def _apply_rental_cash_flow(
     monthly_rent = (property_profile.monthly_market_rent or Decimal("0.00")) * (
         (Decimal("1") + rent_growth) ** years_elapsed
     )
-    scheduled_rent = monthly_rent * Decimal(months_per_period)
-    effective_rent = scheduled_rent * (Decimal("1") - (property_profile.vacancy_rate or Decimal("0.00")))
-    other_income = (property_profile.other_monthly_income or Decimal("0.00")) * Decimal(months_per_period)
+    scheduled_rent = monthly_rent * Decimal(active_months)
+    effective_rent = scheduled_rent * (
+        Decimal("1") - (property_profile.vacancy_rate or Decimal("0.00"))
+    )
+    other_income = (property_profile.other_monthly_income or Decimal("0.00")) * Decimal(
+        active_months
+    )
     income = (effective_rent + other_income).quantize(Decimal("0.01"))
-    annual_prorate = Decimal(months_per_period) / Decimal("12")
+    annual_prorate = Decimal(active_months) / Decimal("12")
     expenses = (
         (
             property_profile.tax_and_insurance_annual
@@ -581,9 +1018,12 @@ def _apply_rental_cash_flow(
         * annual_prorate
         + (property_profile.utilities_annual or Decimal("0.00")) * annual_prorate
         + (property_profile.other_operating_expense_annual or Decimal("0.00")) * annual_prorate
-        + (property_profile.hoa_monthly or Decimal("0.00")) * Decimal(months_per_period)
+        + (property_profile.hoa_monthly or Decimal("0.00")) * Decimal(active_months)
         + balances[property_account.id]
-        * ((property_profile.maintenance_rate or Decimal("0.00")) + (property_profile.capital_reserve_rate or Decimal("0.00")))
+        * (
+            (property_profile.maintenance_rate or Decimal("0.00"))
+            + (property_profile.capital_reserve_rate or Decimal("0.00"))
+        )
         * annual_prorate
         + effective_rent * (property_profile.management_fee_rate or Decimal("0.00"))
     ).quantize(Decimal("0.01"))
@@ -592,9 +1032,20 @@ def _apply_rental_cash_flow(
         deposit_account = _cash_flow_target_account(accounts, accounts_by_id, None)
     if deposit_account is not None and income != Decimal("0.00"):
         _apply_account_cash_flow(balances, cash_flows, deposit_account, "rental_income", income)
-    if deposit_account is not None and expenses != Decimal("0.00"):
-        _apply_account_cash_flow(balances, cash_flows, deposit_account, "rental_expense", -expenses)
-    return income, expenses
+    funding_result = WithdrawalResult()
+    if expenses != Decimal("0.00"):
+        funding_result = _withdraw_from_assets(
+            accounts,
+            accounts_by_id,
+            balances,
+            cash_flows,
+            expenses,
+            "rental_expense",
+            deposit_account.id if deposit_account is not None else None,
+            tax_rate,
+            automatic_sale_context,
+        )
+    return income, expenses, funding_result
 
 
 def _apply_rental_mortgage_debt_service(
@@ -604,42 +1055,57 @@ def _apply_rental_mortgage_debt_service(
     accounts_by_id: dict[UUID, Account],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
+    period_start: date,
     period_end: date,
-    months_per_period: int,
     sold_mortgage_account_ids: set[UUID],
-) -> Decimal:
+    tax_rate: Decimal,
+    automatic_sale_context: AutomaticPropertySaleContext | None = None,
+) -> tuple[Decimal, WithdrawalResult]:
     """Deduct a linked rental's scheduled mortgage payment from rental cash flow.
 
     Only rentals are included. A property sale marks its linked mortgage as paid off,
     so future periods automatically stop this debt-service outflow.
     """
     if not property_profile.is_rental or mortgage_profile is None:
-        return Decimal("0.00")
+        return Decimal("0.00"), WithdrawalResult()
     if mortgage_profile.liability_account_id in sold_mortgage_account_ids:
-        return Decimal("0.00")
+        return Decimal("0.00"), WithdrawalResult()
     property_account = accounts_by_id.get(property_profile.account_id)
     mortgage_account = accounts_by_id.get(mortgage_profile.liability_account_id)
+    active_months = _active_months_in_period(
+        property_profile.rental_start_date, period_start, period_end
+    )
     if (
         property_account is None
         or mortgage_account is None
         or balances[property_account.id] <= Decimal("0.00")
         or balances[mortgage_account.id] <= Decimal("0.00")
         or mortgage_profile.start_date > period_end
+        or active_months == 0
     ):
-        return Decimal("0.00")
+        return Decimal("0.00"), WithdrawalResult()
 
-    monthly_payment = mortgage_profile.monthly_payment or _amortized_monthly_payment(mortgage_profile)
-    debt_service = (monthly_payment * Decimal(months_per_period)).quantize(Decimal("0.01"))
+    monthly_payment = mortgage_profile.monthly_payment or _amortized_monthly_payment(
+        mortgage_profile
+    )
+    debt_service = (monthly_payment * Decimal(active_months)).quantize(Decimal("0.01"))
     if debt_service <= Decimal("0.00"):
-        return Decimal("0.00")
+        return Decimal("0.00"), WithdrawalResult()
     deposit_account = accounts_by_id.get(property_profile.rental_deposit_account_id)
     if deposit_account is None:
         deposit_account = _cash_flow_target_account(accounts, accounts_by_id, None)
-    if deposit_account is not None:
-        _apply_account_cash_flow(
-            balances, cash_flows, deposit_account, "rental_mortgage_debt_service", -debt_service
-        )
-    return debt_service
+    funding_result = _withdraw_from_assets(
+        accounts,
+        accounts_by_id,
+        balances,
+        cash_flows,
+        debt_service,
+        "rental_mortgage_debt_service",
+        deposit_account.id if deposit_account is not None else None,
+        tax_rate,
+        automatic_sale_context,
+    )
+    return debt_service, funding_result
 
 
 def _amortized_monthly_payment(profile: MortgageProfile) -> Decimal:
@@ -660,7 +1126,10 @@ def _apply_account_cash_flow(
     amount: Decimal,
 ) -> None:
     amount = amount.quantize(Decimal("0.01"))
-    balances[account.id] = (balances[account.id] + amount).quantize(Decimal("0.01"))
+    projected_balance = (balances[account.id] + amount).quantize(Decimal("0.01"))
+    if projected_balance < Decimal("0.00"):
+        raise ValueError(f"Projection cash flow would make account '{account.name}' negative")
+    balances[account.id] = projected_balance
     cash_flows.append(
         {
             "account_id": account.id,
@@ -676,7 +1145,7 @@ def _apply_real_estate_sale(
     accounts_by_id: dict[UUID, Account],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
-    sale: RealEstateSale,
+    sale: RealEstateSale | ProjectedPropertySale,
     mortgage_profile: MortgageProfile | None,
     sold_mortgage_account_ids: set[UUID],
     tax_rate: Decimal,
@@ -686,10 +1155,16 @@ def _apply_real_estate_sale(
     if property_account is None or proceeds_account is None:
         raise ValueError("Property sale accounts must be active accounts in the household")
 
+    automatic_sale = isinstance(sale, ProjectedPropertySale)
+    cash_flow_prefix = "automatic_property_sale" if automatic_sale else "property_sale"
     property_balance = max(balances[property_account.id], Decimal("0.00"))
     if property_balance != Decimal("0.00"):
         _apply_account_cash_flow(
-            balances, cash_flows, property_account, "property_sale_removal", -property_balance
+            balances,
+            cash_flows,
+            property_account,
+            f"{cash_flow_prefix}_removal",
+            -property_balance,
         )
 
     mortgage_payoff = Decimal("0.00")
@@ -714,20 +1189,38 @@ def _apply_real_estate_sale(
             {
                 "account_id": property_account.id,
                 "account_name": property_account.name,
-                "cash_flow_type": "property_sale_expense",
+                "cash_flow_type": f"{cash_flow_prefix}_expense",
                 "amount": -selling_expense,
             }
         )
 
-    net_proceeds = (sale.gross_sale_price - mortgage_payoff - selling_expense).quantize(
-        Decimal("0.01")
-    )
+    estimated_sale_tax = (sale.gross_sale_price * sale.estimated_tax_rate).quantize(Decimal("0.01"))
+    if estimated_sale_tax != Decimal("0.00"):
+        cash_flows.append(
+            {
+                "account_id": property_account.id,
+                "account_name": property_account.name,
+                "cash_flow_type": f"{cash_flow_prefix}_tax",
+                "amount": -estimated_sale_tax,
+            }
+        )
+
+    net_proceeds = (
+        sale.gross_sale_price - mortgage_payoff - selling_expense - estimated_sale_tax
+    ).quantize(Decimal("0.01"))
     if net_proceeds >= Decimal("0.00"):
         if net_proceeds != Decimal("0.00"):
             _apply_account_cash_flow(
-                balances, cash_flows, proceeds_account, "property_sale_proceeds", net_proceeds
+                balances,
+                cash_flows,
+                proceeds_account,
+                f"{cash_flow_prefix}_proceeds",
+                net_proceeds,
             )
-        return WithdrawalResult(liquidation_expenses=selling_expense)
+        return WithdrawalResult(
+            liquidation_expenses=selling_expense,
+            explicit_taxes=estimated_sale_tax,
+        )
 
     shortfall_result = _withdraw_from_assets(
         [account for account in accounts if account.id != property_account.id],
@@ -742,6 +1235,9 @@ def _apply_real_estate_sale(
     shortfall_result.liquidation_expenses = (
         shortfall_result.liquidation_expenses + selling_expense
     ).quantize(Decimal("0.01"))
+    shortfall_result.explicit_taxes = (
+        shortfall_result.explicit_taxes + estimated_sale_tax
+    ).quantize(Decimal("0.01"))
     return shortfall_result
 
 
@@ -751,6 +1247,7 @@ def _apply_projection_event(
     cash_flows: list[dict],
     event: AccountEvent,
     tax_rate: Decimal,
+    automatic_sale_context: AutomaticPropertySaleContext | None = None,
 ) -> WithdrawalResult:
     account = accounts_by_id.get(event.account_id)
     if account is None:
@@ -770,6 +1267,7 @@ def _apply_projection_event(
             event.event_type,
             event.account_id,
             tax_rate,
+            automatic_sale_context,
         )
 
     _apply_account_cash_flow(balances, cash_flows, account, event.event_type, amount)
@@ -793,6 +1291,117 @@ def _withdraw_from_assets(
     cash_flow_type: str,
     preferred_account_id: UUID | None,
     tax_rate: Decimal,
+    automatic_sale_context: AutomaticPropertySaleContext | None = None,
+) -> WithdrawalResult:
+    amount = amount.quantize(Decimal("0.01"))
+    if automatic_sale_context is None:
+        return _withdraw_from_account_pool(
+            accounts,
+            accounts_by_id,
+            balances,
+            cash_flows,
+            amount,
+            cash_flow_type,
+            preferred_account_id,
+            tax_rate,
+        )
+
+    result = WithdrawalResult()
+    non_retirement_accounts = [account for account in accounts if account.category != "retirement"]
+    non_retirement_preference = (
+        preferred_account_id
+        if any(account.id == preferred_account_id for account in non_retirement_accounts)
+        else None
+    )
+    funding_attempt = _withdraw_from_account_pool(
+        non_retirement_accounts,
+        accounts_by_id,
+        balances,
+        cash_flows,
+        amount,
+        cash_flow_type,
+        non_retirement_preference,
+        tax_rate,
+    )
+    remaining = funding_attempt.unfunded_amount
+    funding_attempt.unfunded_amount = Decimal("0.00")
+    result.add(funding_attempt)
+    additional_unfunded = Decimal("0.00")
+
+    while remaining > Decimal("0.00"):
+        strategy = automatic_sale_context.next_strategy(accounts_by_id, balances)
+        if strategy is None:
+            break
+        automatic_sale_context.used_property_ids.add(strategy.property_account_id)
+        projected_sale = ProjectedPropertySale(
+            property_account_id=strategy.property_account_id,
+            gross_sale_price=balances[strategy.property_account_id],
+            proceeds_account_id=strategy.proceeds_account_id,
+            selling_expense_rate=strategy.selling_expense_rate,
+            estimated_tax_rate=strategy.estimated_tax_rate,
+        )
+        sale_result = _apply_real_estate_sale(
+            accounts,
+            accounts_by_id,
+            balances,
+            cash_flows,
+            projected_sale,
+            automatic_sale_context.mortgage_profiles_by_property.get(strategy.property_account_id),
+            automatic_sale_context.sold_mortgage_account_ids,
+            tax_rate,
+        )
+        additional_unfunded += sale_result.unfunded_amount
+        sale_result.unfunded_amount = Decimal("0.00")
+        result.add(sale_result)
+
+        funding_attempt = _withdraw_from_account_pool(
+            non_retirement_accounts,
+            accounts_by_id,
+            balances,
+            cash_flows,
+            remaining,
+            cash_flow_type,
+            non_retirement_preference,
+            tax_rate,
+        )
+        remaining = funding_attempt.unfunded_amount
+        funding_attempt.unfunded_amount = Decimal("0.00")
+        result.add(funding_attempt)
+
+    if remaining > Decimal("0.00"):
+        retirement_accounts = [account for account in accounts if account.category == "retirement"]
+        retirement_preference = (
+            preferred_account_id
+            if any(account.id == preferred_account_id for account in retirement_accounts)
+            else None
+        )
+        funding_attempt = _withdraw_from_account_pool(
+            retirement_accounts,
+            accounts_by_id,
+            balances,
+            cash_flows,
+            remaining,
+            cash_flow_type,
+            retirement_preference,
+            tax_rate,
+        )
+        remaining = funding_attempt.unfunded_amount
+        funding_attempt.unfunded_amount = Decimal("0.00")
+        result.add(funding_attempt)
+
+    result.unfunded_amount = (additional_unfunded + remaining).quantize(Decimal("0.01"))
+    return result
+
+
+def _withdraw_from_account_pool(
+    accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    amount: Decimal,
+    cash_flow_type: str,
+    preferred_account_id: UUID | None,
+    tax_rate: Decimal,
 ) -> WithdrawalResult:
     remaining_net = amount.quantize(Decimal("0.01"))
     result = WithdrawalResult()
@@ -801,9 +1410,15 @@ def _withdraw_from_assets(
 
     asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
     if not asset_accounts:
+        result.unfunded_amount = remaining_net
         return result
 
-    ordered_accounts = _withdrawal_order(asset_accounts, accounts_by_id, preferred_account_id)
+    effective_preference = (
+        preferred_account_id
+        if any(account.id == preferred_account_id for account in asset_accounts)
+        else None
+    )
+    ordered_accounts = _withdrawal_order(asset_accounts, accounts_by_id, effective_preference)
     for account in ordered_accounts:
         available = max(balances[account.id], Decimal("0.00"))
         if available == Decimal("0.00"):
@@ -824,12 +1439,8 @@ def _withdraw_from_assets(
             continue
 
         tax_amount = (gross_deduction * effective_tax_rate).quantize(Decimal("0.01"))
-        liquidation_expense = (gross_deduction * liquidation_expense_rate).quantize(
-            Decimal("0.01")
-        )
-        net_amount = (gross_deduction - tax_amount - liquidation_expense).quantize(
-            Decimal("0.01")
-        )
+        liquidation_expense = (gross_deduction * liquidation_expense_rate).quantize(Decimal("0.01"))
+        net_amount = (gross_deduction - tax_amount - liquidation_expense).quantize(Decimal("0.01"))
         if net_amount == Decimal("0.00"):
             continue
 
@@ -846,9 +1457,9 @@ def _withdraw_from_assets(
             result.taxable_amount = (result.taxable_amount + gross_deduction).quantize(
                 Decimal("0.01")
             )
-        result.liquidation_expenses = (
-            result.liquidation_expenses + liquidation_expense
-        ).quantize(Decimal("0.01"))
+        result.liquidation_expenses = (result.liquidation_expenses + liquidation_expense).quantize(
+            Decimal("0.01")
+        )
         remaining_net = (remaining_net - net_amount).quantize(Decimal("0.01"))
         # Rounding gross withdrawals up can satisfy the requested net amount by
         # a cent. Treat that as fully funded instead of running a second,
@@ -856,11 +1467,19 @@ def _withdraw_from_assets(
         if remaining_net <= Decimal("0.00"):
             return result
 
+    result.unfunded_amount = remaining_net
     return result
 
 
 def _withdrawal_has_tax_consequences(account: Account) -> bool:
-    return account.category not in {"cash", "checking", "savings"}
+    if account.category in {"cash", "checking", "savings"}:
+        return False
+    if (
+        account.category == "retirement"
+        and account.retirement_tax_treatment == RetirementTaxTreatment.roth
+    ):
+        return False
+    return True
 
 
 def _liquidation_expense_rate(account: Account) -> Decimal:
@@ -880,7 +1499,10 @@ def _funding_priority(account: Account) -> tuple[int, str] | None:
         and account.liquidity_class in LIQUIDITY_CLASSES
     ):
         return (2, account_name)
-    if account.category == "retirement" and "roth" in account_name:
+    if (
+        account.category == "retirement"
+        and account.retirement_tax_treatment == RetirementTaxTreatment.roth
+    ):
         return (3, account_name)
     if account.category == "retirement" and account.liquidity_class in LIQUIDITY_CLASSES:
         return (4, account_name)
@@ -901,9 +1523,16 @@ def _withdrawal_order(
     if preferred_account_id is None:
         return ordered_accounts
     preferred_account = accounts_by_id[preferred_account_id]
-    return [preferred_account] + [
-        account for account in ordered_accounts if account.id != preferred_account_id
-    ]
+    if _funding_priority(preferred_account) is None:
+        return [preferred_account] + [
+            account for account in ordered_accounts if account.id != preferred_account_id
+        ]
+    preferred_index = next(
+        index
+        for index, account in enumerate(ordered_accounts)
+        if account.id == preferred_account_id
+    )
+    return ordered_accounts[preferred_index:]
 
 
 def _cash_flow_priority(account: Account) -> tuple[int, str]:

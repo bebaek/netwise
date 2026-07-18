@@ -19,6 +19,7 @@ from app.db.models import (
     MortgageProfile,
     ProjectionBehavior,
     RealEstateProperty,
+    RetirementTaxTreatment,
     SnapshotSource,
 )
 
@@ -294,7 +295,10 @@ def _read_value_csv(path: Path) -> list[tuple[date, Decimal]]:
 
 
 def _looks_like_real_estate(condition: dict) -> bool:
-    return any(key in condition for key in ("loan", "start_date", "term", "term_months", "rate", "interest_rate"))
+    return any(
+        key in condition
+        for key in ("loan", "start_date", "term", "term_months", "rate", "interest_rate")
+    )
 
 
 def _condition_yield(condition: dict) -> Decimal | None:
@@ -320,6 +324,17 @@ def _infer_liquid_category(name: str) -> str:
     return "taxable_investment"
 
 
+def _infer_retirement_tax_treatment(name: str, category: str) -> RetirementTaxTreatment | None:
+    if category != "retirement":
+        return None
+    lowered = name.casefold()
+    if "roth" in lowered:
+        return RetirementTaxTreatment.roth
+    if "after tax" in lowered or "after-tax" in lowered:
+        return RetirementTaxTreatment.after_tax
+    return RetirementTaxTreatment.traditional
+
+
 def _get_or_create_account(
     db: Session,
     *,
@@ -339,6 +354,10 @@ def _get_or_create_account(
         account.category = category
         account.liquidity_class = liquidity_class
         account.expected_annual_yield = expected_annual_yield
+        if category != "retirement":
+            account.retirement_tax_treatment = None
+        elif account.retirement_tax_treatment is None:
+            account.retirement_tax_treatment = _infer_retirement_tax_treatment(name, category)
         account.currency = currency
         return account, False
 
@@ -348,6 +367,7 @@ def _get_or_create_account(
         account_kind=account_kind,
         category=category,
         liquidity_class=liquidity_class,
+        retirement_tax_treatment=_infer_retirement_tax_treatment(name, category),
         expected_annual_yield=expected_annual_yield,
         currency=currency,
     )

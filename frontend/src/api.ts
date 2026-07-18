@@ -73,6 +73,8 @@ export type FintrackImportResult = {
   }>;
 };
 
+export type RetirementTaxTreatment = 'traditional' | 'roth' | 'after_tax';
+
 export type Account = {
   id: string;
   household_id: string;
@@ -81,6 +83,7 @@ export type Account = {
   account_kind: 'asset' | 'liability';
   category: string;
   liquidity_class: string;
+  retirement_tax_treatment: RetirementTaxTreatment | null;
   expected_annual_yield: string | null;
   liquidation_expense_rate: string | null;
   currency: string;
@@ -203,6 +206,22 @@ export type RealEstateSale = {
   gross_sale_price: string;
   proceeds_account_id: string;
   selling_expense_rate: string | null;
+  estimated_tax_rate: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RealEstateLiquidationStrategy = {
+  id: string;
+  household_id: string;
+  property_account_id: string;
+  enabled: boolean;
+  optimization_mode: 'liquidity_shortfall' | 'maximize_liquid_runway';
+  priority: number;
+  earliest_sale_date: string | null;
+  proceeds_account_id: string;
+  selling_expense_rate: string | null;
+  estimated_tax_rate: string;
   created_at: string;
   updated_at: string;
 };
@@ -279,6 +298,7 @@ export type NetWorthProjection = {
     projected_taxes: string;
     projected_spending: string;
     projected_liquidation_expenses: string;
+    projected_unfunded_cash_flow: string;
     net_cash_flow: string;
     cash_flows: Array<{
       account_id: string;
@@ -295,6 +315,18 @@ export type NetWorthProjection = {
       projected_balance: string;
     }>;
   }>;
+  property_sale_optimization?: {
+    mode: string;
+    candidate_month: number;
+    candidate_day: number;
+    schedules_evaluated: number;
+    first_retirement_withdrawal_date: string | null;
+    selected_sales: Array<{
+      property_account_id: string;
+      property_name: string;
+      sale_date: string | null;
+    }>;
+  } | null;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
@@ -386,6 +418,7 @@ export function createAccount(payload: {
   account_kind: 'asset' | 'liability';
   category: string;
   liquidity_class: string;
+  retirement_tax_treatment?: RetirementTaxTreatment;
   expected_annual_yield?: string;
   liquidation_expense_rate?: string;
   currency: string;
@@ -404,6 +437,7 @@ export function updateAccount(
     account_kind?: 'asset' | 'liability';
     category?: string;
     liquidity_class?: string;
+    retirement_tax_treatment?: RetirementTaxTreatment | null;
     expected_annual_yield?: string | null;
     liquidation_expense_rate?: string | null;
     currency?: string;
@@ -595,6 +629,7 @@ export function createRealEstateSale(payload: {
   gross_sale_price: string;
   proceeds_account_id?: string;
   selling_expense_rate?: string;
+  estimated_tax_rate?: string;
 }): Promise<RealEstateSale> {
   return request<RealEstateSale>('/real-estate/sales', {
     method: 'POST',
@@ -604,6 +639,38 @@ export function createRealEstateSale(payload: {
 
 export function deleteRealEstateSale(saleId: string): Promise<void> {
   return request<void>(`/real-estate/sales/${saleId}`, { method: 'DELETE' });
+}
+
+export function listRealEstateLiquidationStrategies(
+  householdId: string,
+): Promise<RealEstateLiquidationStrategy[]> {
+  return request<RealEstateLiquidationStrategy[]>(
+    `/real-estate/liquidation-strategies?household_id=${householdId}`,
+  );
+}
+
+export function upsertRealEstateLiquidationStrategy(
+  propertyAccountId: string,
+  payload: {
+    enabled: boolean;
+    optimization_mode: 'liquidity_shortfall' | 'maximize_liquid_runway';
+    priority: number;
+    earliest_sale_date?: string;
+    proceeds_account_id?: string;
+    selling_expense_rate?: string;
+    estimated_tax_rate: string;
+  },
+): Promise<RealEstateLiquidationStrategy> {
+  return request<RealEstateLiquidationStrategy>(
+    `/real-estate/liquidation-strategies/${propertyAccountId}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  );
+}
+
+export function deleteRealEstateLiquidationStrategy(propertyAccountId: string): Promise<void> {
+  return request<void>(`/real-estate/liquidation-strategies/${propertyAccountId}`, {
+    method: 'DELETE',
+  });
 }
 
 export function listMortgageProfiles(householdId: string): Promise<MortgageProfile[]> {

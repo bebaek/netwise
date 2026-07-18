@@ -4,7 +4,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import AccountEventType, AccountKind, ProjectionBehavior, SnapshotSource
+from app.db.models import (
+    AccountEventType,
+    AccountKind,
+    ProjectionBehavior,
+    RetirementTaxTreatment,
+    SnapshotSource,
+)
 
 
 class AccountCreate(BaseModel):
@@ -14,6 +20,7 @@ class AccountCreate(BaseModel):
     account_kind: AccountKind
     category: str
     liquidity_class: str
+    retirement_tax_treatment: RetirementTaxTreatment | None = None
     expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     currency: str = Field(default="USD", min_length=3, max_length=3)
@@ -25,6 +32,7 @@ class AccountUpdate(BaseModel):
     account_kind: AccountKind | None = None
     category: str | None = None
     liquidity_class: str | None = None
+    retirement_tax_treatment: RetirementTaxTreatment | None = None
     expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
@@ -39,6 +47,7 @@ class AccountRead(BaseModel):
     account_kind: str
     category: str
     liquidity_class: str
+    retirement_tax_treatment: str | None
     expected_annual_yield: Decimal | None
     liquidation_expense_rate: Decimal | None
     currency: str

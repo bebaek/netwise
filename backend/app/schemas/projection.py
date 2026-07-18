@@ -33,9 +33,25 @@ class ProjectionPointRead(BaseModel):
     projected_taxes: Decimal
     projected_spending: Decimal
     projected_liquidation_expenses: Decimal
+    projected_unfunded_cash_flow: Decimal
     net_cash_flow: Decimal
     cash_flows: list[ProjectionCashFlowRead]
     accounts: list[ProjectionAccountRead]
+
+
+class PropertySaleOptimizationSelectionRead(BaseModel):
+    property_account_id: UUID
+    property_name: str
+    sale_date: date | None
+
+
+class PropertySaleOptimizationRead(BaseModel):
+    mode: str
+    candidate_month: int
+    candidate_day: int
+    schedules_evaluated: int
+    first_retirement_withdrawal_date: date | None
+    selected_sales: list[PropertySaleOptimizationSelectionRead]
 
 
 class NetWorthProjectionRead(BaseModel):
@@ -44,3 +60,4 @@ class NetWorthProjectionRead(BaseModel):
     end_year: int
     interval: str
     points: list[ProjectionPointRead]
+    property_sale_optimization: PropertySaleOptimizationRead | None = None

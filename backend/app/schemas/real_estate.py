@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,19 +15,31 @@ class RealEstatePropertyCreate(BaseModel):
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    tax_and_insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    tax_and_insurance_annual: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
     maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     is_rental: bool = False
     rental_start_date: date | None = None
     monthly_market_rent: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    other_monthly_income: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    rent_growth_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    other_monthly_income: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    rent_growth_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     vacancy_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
-    management_fee_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    management_fee_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     utilities_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    other_operating_expense_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    capital_reserve_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    other_operating_expense_annual: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    capital_reserve_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     rental_deposit_account_id: UUID | None = None
 
 
@@ -35,19 +48,31 @@ class RealEstatePropertyUpdate(BaseModel):
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    tax_and_insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    tax_and_insurance_annual: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
     maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     is_rental: bool | None = None
     rental_start_date: date | None = None
     monthly_market_rent: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    other_monthly_income: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    rent_growth_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    other_monthly_income: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    rent_growth_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     vacancy_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
-    management_fee_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    management_fee_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     utilities_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    other_operating_expense_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    capital_reserve_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    other_operating_expense_annual: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    capital_reserve_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
     rental_deposit_account_id: UUID | None = None
 
 
@@ -90,6 +115,9 @@ class RealEstateSaleCreate(BaseModel):
     selling_expense_rate: Decimal | None = Field(
         default=None, ge=0, lt=1, max_digits=8, decimal_places=6
     )
+    estimated_tax_rate: Decimal = Field(
+        default=Decimal("0.150000"), ge=0, lt=1, max_digits=8, decimal_places=6
+    )
 
 
 class RealEstateSaleRead(BaseModel):
@@ -100,6 +128,40 @@ class RealEstateSaleRead(BaseModel):
     gross_sale_price: Decimal
     proceeds_account_id: UUID
     selling_expense_rate: Decimal | None
+    estimated_tax_rate: Decimal
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RealEstateLiquidationStrategyUpsert(BaseModel):
+    enabled: bool = True
+    optimization_mode: Literal["liquidity_shortfall", "maximize_liquid_runway"] = (
+        "liquidity_shortfall"
+    )
+    priority: int = Field(default=100, ge=0)
+    earliest_sale_date: date | None = None
+    proceeds_account_id: UUID | None = None
+    selling_expense_rate: Decimal | None = Field(
+        default=None, ge=0, lt=1, max_digits=8, decimal_places=6
+    )
+    estimated_tax_rate: Decimal = Field(
+        default=Decimal("0.150000"), ge=0, lt=1, max_digits=8, decimal_places=6
+    )
+
+
+class RealEstateLiquidationStrategyRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    property_account_id: UUID
+    enabled: bool
+    optimization_mode: str
+    priority: int
+    earliest_sale_date: date | None
+    proceeds_account_id: UUID
+    selling_expense_rate: Decimal | None
+    estimated_tax_rate: Decimal
     created_at: datetime
     updated_at: datetime
 

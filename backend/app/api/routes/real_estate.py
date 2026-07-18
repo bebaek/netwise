@@ -4,11 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountKind, MortgageProfile, RealEstateProperty, RealEstateSale
+from app.db.models import (
+    Account,
+    AccountKind,
+    MortgageProfile,
+    RealEstateLiquidationStrategy,
+    RealEstateProperty,
+    RealEstateSale,
+)
 from app.db.session import get_db
 from app.schemas.real_estate import (
     MortgageProfileCreate,
     MortgageProfileRead,
+    RealEstateLiquidationStrategyRead,
+    RealEstateLiquidationStrategyUpsert,
     RealEstatePropertyCreate,
     RealEstatePropertyRead,
     RealEstatePropertyUpdate,
@@ -58,6 +67,26 @@ def _validate_sale_proceeds_account(
     return account
 
 
+def _validate_automatic_sale_proceeds_account(
+    db: Session,
+    household_id: UUID,
+    property_account_id: UUID,
+    proceeds_account_id: UUID,
+) -> Account:
+    account = _validate_sale_proceeds_account(
+        db, household_id, property_account_id, proceeds_account_id
+    )
+    if (
+        account.category in {"retirement", "real_estate"}
+        or account.liquidity_class not in LIQUIDITY_CLASSES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Automatic sale proceeds account must be a non-retirement liquid asset",
+        )
+    return account
+
+
 @router.post(
     "/real-estate/sales",
     response_model=RealEstateSaleRead,
@@ -69,7 +98,9 @@ def create_real_estate_sale(
 ) -> RealEstateSale:
     property_account = db.get(Account, payload.property_account_id)
     if property_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property account not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Property account not found"
+        )
     if (
         property_account.account_kind != AccountKind.asset
         or property_account.category != "real_estate"
@@ -79,9 +110,12 @@ def create_real_estate_sale(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Property sale must be linked to an active real estate asset account",
         )
-    if db.scalars(
-        select(RealEstateSale).where(RealEstateSale.property_account_id == property_account.id)
-    ).first() is not None:
+    if (
+        db.scalars(
+            select(RealEstateSale).where(RealEstateSale.property_account_id == property_account.id)
+        ).first()
+        is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A sale is already planned for this property account",
@@ -107,6 +141,7 @@ def create_real_estate_sale(
         gross_sale_price=payload.gross_sale_price,
         proceeds_account_id=proceeds_account_id,
         selling_expense_rate=payload.selling_expense_rate,
+        estimated_tax_rate=payload.estimated_tax_rate,
     )
     db.add(sale)
     db.commit()
@@ -134,6 +169,108 @@ def delete_real_estate_sale(sale_id: UUID, db: Session = Depends(get_db)) -> Res
     if sale is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property sale not found")
     db.delete(sale)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/real-estate/liquidation-strategies",
+    response_model=list[RealEstateLiquidationStrategyRead],
+)
+def list_real_estate_liquidation_strategies(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[RealEstateLiquidationStrategy]:
+    return list(
+        db.scalars(
+            select(RealEstateLiquidationStrategy)
+            .where(RealEstateLiquidationStrategy.household_id == household_id)
+            .order_by(
+                RealEstateLiquidationStrategy.priority,
+                RealEstateLiquidationStrategy.created_at,
+            )
+        ).all()
+    )
+
+
+@router.put(
+    "/real-estate/liquidation-strategies/{property_account_id}",
+    response_model=RealEstateLiquidationStrategyRead,
+)
+def upsert_real_estate_liquidation_strategy(
+    property_account_id: UUID,
+    payload: RealEstateLiquidationStrategyUpsert,
+    db: Session = Depends(get_db),
+) -> RealEstateLiquidationStrategy:
+    property_account = db.get(Account, property_account_id)
+    if (
+        property_account is None
+        or property_account.account_kind != AccountKind.asset
+        or property_account.category != "real_estate"
+        or not property_account.is_active
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Automatic sale strategy requires an active real estate asset account",
+        )
+
+    proceeds_account_id = payload.proceeds_account_id
+    if proceeds_account_id is None:
+        proceeds_account = _default_sale_proceeds_account(db, property_account.household_id)
+        if proceeds_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a proceeds account; no non-retirement liquid account is available",
+            )
+        proceeds_account_id = proceeds_account.id
+    _validate_automatic_sale_proceeds_account(
+        db, property_account.household_id, property_account.id, proceeds_account_id
+    )
+
+    strategy = db.scalars(
+        select(RealEstateLiquidationStrategy).where(
+            RealEstateLiquidationStrategy.property_account_id == property_account.id
+        )
+    ).first()
+    if strategy is None:
+        strategy = RealEstateLiquidationStrategy(
+            household_id=property_account.household_id,
+            property_account_id=property_account.id,
+            proceeds_account_id=proceeds_account_id,
+        )
+        db.add(strategy)
+
+    strategy.enabled = payload.enabled
+    strategy.optimization_mode = payload.optimization_mode
+    strategy.priority = payload.priority
+    strategy.earliest_sale_date = payload.earliest_sale_date
+    strategy.proceeds_account_id = proceeds_account_id
+    strategy.selling_expense_rate = payload.selling_expense_rate
+    strategy.estimated_tax_rate = payload.estimated_tax_rate
+    db.commit()
+    db.refresh(strategy)
+    return strategy
+
+
+@router.delete(
+    "/real-estate/liquidation-strategies/{property_account_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_real_estate_liquidation_strategy(
+    property_account_id: UUID,
+    db: Session = Depends(get_db),
+) -> Response:
+    strategy = db.scalars(
+        select(RealEstateLiquidationStrategy).where(
+            RealEstateLiquidationStrategy.property_account_id == property_account_id
+        )
+    ).first()
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Automatic property sale strategy not found",
+        )
+    db.delete(strategy)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -251,7 +388,9 @@ def create_mortgage_profile(
 ) -> MortgageProfile:
     liability_account = db.get(Account, payload.liability_account_id)
     if liability_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Liability account not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Liability account not found"
+        )
     if liability_account.account_kind != AccountKind.liability:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -261,7 +400,9 @@ def create_mortgage_profile(
     if payload.property_account_id is not None:
         property_account = db.get(Account, payload.property_account_id)
         if property_account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property account not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property account not found"
+            )
         if property_account.household_id != liability_account.household_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -304,5 +445,7 @@ def get_mortgage_profile(
 ) -> MortgageProfile:
     mortgage_profile = db.get(MortgageProfile, mortgage_id)
     if mortgage_profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mortgage profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Mortgage profile not found"
+        )
     return mortgage_profile

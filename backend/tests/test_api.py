@@ -27,6 +27,7 @@ def test_update_account(client: TestClient):
         json={
             "category": "retirement",
             "liquidity_class": "retirement_liquid",
+            "retirement_tax_treatment": "roth",
             "liquidation_expense_rate": "0.100000",
         },
     )
@@ -36,6 +37,7 @@ def test_update_account(client: TestClient):
     assert updated["name"] == "Fidelity"
     assert updated["category"] == "retirement"
     assert updated["liquidity_class"] == "retirement_liquid"
+    assert updated["retirement_tax_treatment"] == "roth"
     assert updated["liquidation_expense_rate"] == "0.100000"
 
 
@@ -66,14 +68,20 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
         },
     ).json()
 
-    assert client.post(
-        f"/accounts/{home['id']}/snapshots",
-        json={"as_of_date": "2026-01-01", "balance": "700000.00"},
-    ).status_code == 201
-    assert client.post(
-        f"/accounts/{mortgage['id']}/snapshots",
-        json={"as_of_date": "2026-01-01", "balance": "450000.00"},
-    ).status_code == 201
+    assert (
+        client.post(
+            f"/accounts/{home['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": "700000.00"},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/accounts/{mortgage['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": "450000.00"},
+        ).status_code
+        == 201
+    )
 
     response = client.get(f"/dashboard/{household_id}/net-worth")
 
@@ -84,14 +92,20 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     assert payload["net_worth"] == "250000.00"
     assert len(payload["accounts"]) == 2
 
-    assert client.post(
-        f"/accounts/{home['id']}/snapshots",
-        json={"as_of_date": "2026-02-01", "balance": "710000.00"},
-    ).status_code == 201
-    assert client.post(
-        f"/accounts/{mortgage['id']}/snapshots",
-        json={"as_of_date": "2026-02-01", "balance": "448000.00"},
-    ).status_code == 201
+    assert (
+        client.post(
+            f"/accounts/{home['id']}/snapshots",
+            json={"as_of_date": "2026-02-01", "balance": "710000.00"},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/accounts/{mortgage['id']}/snapshots",
+            json={"as_of_date": "2026-02-01", "balance": "448000.00"},
+        ).status_code
+        == 201
+    )
 
     history_response = client.get(f"/dashboard/{household_id}/net-worth/history")
     assert history_response.status_code == 200
@@ -252,27 +266,36 @@ def test_net_worth_history_uses_mortgage_profile_when_no_liability_snapshot(clie
         },
     ).json()
 
-    assert client.post(
-        f"/accounts/{home['id']}/snapshots",
-        json={"as_of_date": "2019-12-01", "balance": "390000.00"},
-    ).status_code == 201
-    assert client.post(
-        f"/accounts/{home['id']}/snapshots",
-        json={"as_of_date": "2020-02-01", "balance": "400000.00"},
-    ).status_code == 201
+    assert (
+        client.post(
+            f"/accounts/{home['id']}/snapshots",
+            json={"as_of_date": "2019-12-01", "balance": "390000.00"},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/accounts/{home['id']}/snapshots",
+            json={"as_of_date": "2020-02-01", "balance": "400000.00"},
+        ).status_code
+        == 201
+    )
 
-    assert client.post(
-        "/mortgages",
-        json={
-            "liability_account_id": mortgage["id"],
-            "property_account_id": home["id"],
-            "original_principal": "300000.00",
-            "interest_rate": "0.000000",
-            "term_months": 300,
-            "start_date": "2020-01-01",
-            "rate_type": "fixed",
-        },
-    ).status_code == 201
+    assert (
+        client.post(
+            "/mortgages",
+            json={
+                "liability_account_id": mortgage["id"],
+                "property_account_id": home["id"],
+                "original_principal": "300000.00",
+                "interest_rate": "0.000000",
+                "term_months": 300,
+                "start_date": "2020-01-01",
+                "rate_type": "fixed",
+            },
+        ).status_code
+        == 201
+    )
 
     response = client.get(f"/dashboard/{household_id}/net-worth/history")
 

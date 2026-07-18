@@ -14,8 +14,10 @@ import {
   NetWorthHistory,
   NetWorthProjection,
   ProjectionSettings,
+  RealEstateLiquidationStrategy,
   RealEstateProperty,
   RealEstateSale,
+  RetirementTaxTreatment,
   User,
   addHouseholdMember,
   createAccount,
@@ -31,6 +33,7 @@ import {
   createUser,
   deleteAccountEvent,
   deleteSnapshot,
+  deleteRealEstateLiquidationStrategy,
   deleteRealEstateSale,
   exportHousehold,
   getCapabilities,
@@ -48,6 +51,7 @@ import {
   listHouseholdSnapshots,
   listIncomeSources,
   listMortgageProfiles,
+  listRealEstateLiquidationStrategies,
   listRealEstateProperties,
   listRealEstateSales,
   listUsers,
@@ -57,12 +61,17 @@ import {
   updateRealEstateProperty,
   updateSnapshot,
   upsertProjectionSettings,
+  upsertRealEstateLiquidationStrategy,
 } from './api';
 import './styles.css';
 
 function formatMoney(value: string | null | undefined): string {
   if (value == null) return '—';
   return Number(value).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
+function formatRate(value: string): string {
+  return `${(Number(value) * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 }
 
 function today(): string {
@@ -113,6 +122,7 @@ type AccountEditDraft = {
   account_kind: 'asset' | 'liability';
   category: string;
   liquidity_class: string;
+  retirement_tax_treatment: RetirementTaxTreatment | '';
   expected_annual_yield: string;
   liquidation_expense_rate: string;
   currency: string;
@@ -280,6 +290,7 @@ function App() {
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [propertyEditId, setPropertyEditId] = useState<string>('');
   const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
+  const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
@@ -364,6 +375,7 @@ function App() {
       historyResult,
       propertyList,
       realEstateSaleList,
+      liquidationStrategyList,
       mortgageList,
       incomeSourceList,
       taxRecordList,
@@ -377,6 +389,7 @@ function App() {
       getHistoricalTrend(householdId, showInterpolatedHistory),
       listRealEstateProperties(householdId),
       listRealEstateSales(householdId),
+      listRealEstateLiquidationStrategies(householdId),
       listMortgageProfiles(householdId),
       listIncomeSources(householdId),
       listAnnualTaxRecords(householdId),
@@ -397,6 +410,7 @@ function App() {
     setBreakdownHistory(breakdownResult);
     setProperties(propertyList);
     setRealEstateSales(realEstateSaleList);
+    setLiquidationStrategies(liquidationStrategyList);
     setMortgages(mortgageList);
     setIncomeSources(incomeSourceList);
     setTaxRecords(taxRecordList);
@@ -508,6 +522,7 @@ function App() {
       account_kind: account.account_kind,
       category: account.category,
       liquidity_class: account.liquidity_class,
+      retirement_tax_treatment: account.retirement_tax_treatment ?? '',
       expected_annual_yield: account.expected_annual_yield ?? '',
       liquidation_expense_rate: account.liquidation_expense_rate ?? '',
       currency: account.currency,
@@ -526,6 +541,7 @@ function App() {
         account_kind: accountEditDraft.account_kind,
         category: accountEditDraft.category.trim(),
         liquidity_class: accountEditDraft.liquidity_class.trim(),
+        retirement_tax_treatment: accountEditDraft.retirement_tax_treatment || null,
         expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
         liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
         currency: accountEditDraft.currency.trim().toUpperCase(),
@@ -551,6 +567,10 @@ function App() {
         account_kind: String(form.get('account_kind')) as 'asset' | 'liability',
         category: String(form.get('category') ?? ''),
         liquidity_class: String(form.get('liquidity_class') ?? ''),
+        retirement_tax_treatment: optionalString(
+          form,
+          'retirement_tax_treatment',
+        ) as RetirementTaxTreatment | undefined,
         expected_annual_yield: optionalString(form, 'expected_annual_yield'),
         currency: 'USD',
       });
@@ -820,6 +840,7 @@ function App() {
         gross_sale_price: requiredString(form, 'gross_sale_price'),
         proceeds_account_id: optionalString(form, 'proceeds_account_id'),
         selling_expense_rate: optionalString(form, 'selling_expense_rate'),
+        estimated_tax_rate: requiredString(form, 'estimated_tax_rate'),
       });
       target.reset();
       await refreshDashboard(selectedHouseholdId);
@@ -834,6 +855,42 @@ function App() {
     setError('');
     try {
       await deleteRealEstateSale(sale.id);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUpsertLiquidationStrategy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    const propertyAccountId = requiredString(form, 'automatic_property_account_id');
+    try {
+      await upsertRealEstateLiquidationStrategy(propertyAccountId, {
+        enabled: form.get('automatic_enabled') === 'on',
+        optimization_mode: requiredString(form, 'automatic_optimization_mode') as 'liquidity_shortfall' | 'maximize_liquid_runway',
+        priority: Number(requiredString(form, 'automatic_priority')),
+        earliest_sale_date: optionalString(form, 'automatic_earliest_sale_date'),
+        proceeds_account_id: optionalString(form, 'automatic_proceeds_account_id'),
+        selling_expense_rate: optionalString(form, 'automatic_selling_expense_rate'),
+        estimated_tax_rate: requiredString(form, 'automatic_estimated_tax_rate'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteLiquidationStrategy(strategy: RealEstateLiquidationStrategy) {
+    if (!selectedHouseholdId) return;
+    if (!window.confirm('Delete this automatic property sale strategy?')) return;
+    setError('');
+    try {
+      await deleteRealEstateLiquidationStrategy(strategy.property_account_id);
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -1083,6 +1140,69 @@ function App() {
 
       {selectedHousehold && (
         <>
+          <section className="grid two-column">
+            <div className="card">
+              <h2>Automatic property sale strategies</h2>
+              <p className="muted">Strategies either sell at a liquid-funding shortfall or jointly test annual March 1 sale schedules to delay retirement withdrawals as long as possible. Fixed-date sales take precedence.</p>
+              {liquidationStrategies.length ? (
+                <table>
+                  <thead>
+                    <tr><th>Property</th><th>Mode</th><th>Priority</th><th>Earliest date</th><th>Tax reserve</th><th>Status</th><th /></tr>
+                  </thead>
+                  <tbody>
+                    {liquidationStrategies.map((strategy) => (
+                      <tr key={strategy.id}>
+                        <td>{accountNameById.get(strategy.property_account_id) ?? strategy.property_account_id}</td>
+                        <td>{strategy.optimization_mode === 'maximize_liquid_runway' ? 'Maximize liquid runway' : 'Liquidity shortfall'}</td>
+                        <td>{strategy.priority}</td>
+                        <td>{strategy.earliest_sale_date ?? 'Any date'}</td>
+                        <td>{formatRate(strategy.estimated_tax_rate)}</td>
+                        <td>{strategy.enabled ? 'Enabled' : 'Disabled'}</td>
+                        <td><button type="button" className="danger-button" onClick={() => handleDeleteLiquidationStrategy(strategy)}>Delete</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="muted">No automatic property sales configured.</p>}
+            </div>
+
+            <div className="card">
+              <h2>Configure automatic sale</h2>
+              <form onSubmit={handleUpsertLiquidationStrategy} className="stacked-form">
+                <label>
+                  Property
+                  <select name="automatic_property_account_id" defaultValue="" required>
+                    <option value="" disabled>Select property</option>
+                    {propertyAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Trigger mode
+                  <select name="automatic_optimization_mode" defaultValue="liquidity_shortfall" required>
+                    <option value="liquidity_shortfall">Sell only at a liquid-funding shortfall</option>
+                    <option value="maximize_liquid_runway">Optimize annual March 1 sales for liquid runway</option>
+                  </select>
+                </label>
+                <label>Priority<input name="automatic_priority" type="number" min="0" defaultValue="100" required /></label>
+                <label>Earliest sale date<input name="automatic_earliest_sale_date" type="date" /></label>
+                <label>
+                  Proceeds account
+                  <select name="automatic_proceeds_account_id" defaultValue="">
+                    <option value="">Default non-retirement liquid account</option>
+                    {assetAccounts.filter((account) => account.category !== 'real_estate' && account.category !== 'retirement').map((account) => (
+                      <option key={account.id} value={account.id}>{account.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <input name="automatic_selling_expense_rate" inputMode="decimal" placeholder="Selling expense rate, default 0.06" />
+                <label>Estimated sale-tax reserve rate<input name="automatic_estimated_tax_rate" inputMode="decimal" defaultValue="0.15" required /></label>
+                <label><input name="automatic_enabled" type="checkbox" defaultChecked /> Enabled</label>
+                <p className="muted">Primary residences are never enrolled automatically. Runway optimization jointly evaluates enabled optimized properties in priority order and reports its selected schedule with the projection.</p>
+                <button type="submit" disabled={!propertyAccounts.length}>Save strategy</button>
+              </form>
+            </div>
+          </section>
+
           <section className="card">
             <div className="section-header">
               <div>
@@ -1607,6 +1727,15 @@ function App() {
 
             {projection?.points.length ? (
               <>
+                {projection.property_sale_optimization && (
+                  <div className="projection-note">
+                    <strong>Optimized March 1 property sales:</strong>{' '}
+                    {projection.property_sale_optimization.selected_sales
+                      .map((sale) => `${sale.property_name}: ${sale.sale_date ?? 'never'}`)
+                      .join(' · ')}
+                    {' '}({projection.property_sale_optimization.schedules_evaluated.toLocaleString()} schedules evaluated; first retirement withdrawal: {projection.property_sale_optimization.first_retirement_withdrawal_date ?? 'none in projection'})
+                  </div>
+                )}
                 <div className="desktop-table table-frame projection-table-frame">
                   <table className="spaced-table projection-summary-table compact-table">
                     <thead>
@@ -1618,6 +1747,7 @@ function App() {
                         <th>Income</th>
                         <th>Taxes</th>
                         <th>Spending</th>
+                        <th>Unfunded</th>
                         <th>Net cash flow</th>
                       </tr>
                     </thead>
@@ -1631,6 +1761,7 @@ function App() {
                           <td>{formatMoney(point.projected_income)}</td>
                           <td>{formatMoney(point.projected_taxes)}</td>
                           <td>{formatMoney(point.projected_spending)}</td>
+                          <td>{formatMoney(point.projected_unfunded_cash_flow)}</td>
                           <td>{formatMoney(point.net_cash_flow)}</td>
                         </tr>
                       ))}
@@ -1671,6 +1802,10 @@ function App() {
                         <div>
                           <dt>Spending</dt>
                           <dd>{formatMoney(point.projected_spending)}</dd>
+                        </div>
+                        <div>
+                          <dt>Unfunded</dt>
+                          <dd>{formatMoney(point.projected_unfunded_cash_flow)}</dd>
                         </div>
                         <div>
                           <dt>Net cash flow</dt>
@@ -2035,11 +2170,11 @@ function App() {
           <section className="grid two-column">
             <div className="card">
               <h2>Planned property sales</h2>
-              <p className="muted">A sale pays off its linked mortgage, deducts selling costs, and transfers net proceeds to the selected account.</p>
+              <p className="muted">A sale pays off its linked mortgage, deducts selling costs and an estimated tax reserve, and transfers net proceeds to the selected account.</p>
               {realEstateSales.length ? (
                 <table>
                   <thead>
-                    <tr><th>Property</th><th>Date</th><th>Price</th><th>Proceeds account</th><th /></tr>
+                    <tr><th>Property</th><th>Date</th><th>Price</th><th>Tax reserve</th><th>Proceeds account</th><th /></tr>
                   </thead>
                   <tbody>
                     {realEstateSales.map((sale) => (
@@ -2047,6 +2182,7 @@ function App() {
                         <td>{accountNameById.get(sale.property_account_id) ?? sale.property_account_id}</td>
                         <td>{sale.sale_date}</td>
                         <td>{formatMoney(sale.gross_sale_price)}</td>
+                        <td>{formatRate(sale.estimated_tax_rate)}</td>
                         <td>{accountNameById.get(sale.proceeds_account_id) ?? sale.proceeds_account_id}</td>
                         <td><button type="button" className="danger-button" onClick={() => handleDeleteRealEstateSale(sale)}>Delete</button></td>
                       </tr>
@@ -2075,6 +2211,11 @@ function App() {
                   </select>
                 </label>
                 <input name="selling_expense_rate" inputMode="decimal" placeholder="Selling expense rate, e.g. 0.06" />
+                <label>
+                  Estimated sale-tax reserve rate
+                  <input name="estimated_tax_rate" inputMode="decimal" defaultValue="0.15" required />
+                </label>
+                <p className="muted">Defaults to 15% of gross sale price when tax basis and depreciation details are unavailable.</p>
                 <button type="submit" disabled={!propertyAccounts.length}>Plan sale</button>
               </form>
             </div>
@@ -2116,11 +2257,42 @@ function App() {
                   </label>
                   <label>
                     Category
-                    <input required value={accountEditDraft.category} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, category: event.target.value })} />
+                    <input
+                      required
+                      value={accountEditDraft.category}
+                      onChange={(event) =>
+                        setAccountEditDraft({
+                          ...accountEditDraft,
+                          category: event.target.value,
+                          retirement_tax_treatment:
+                            event.target.value === 'retirement'
+                              ? accountEditDraft.retirement_tax_treatment || 'traditional'
+                              : '',
+                        })
+                      }
+                    />
                   </label>
                   <label>
                     Liquidity class
                     <input required value={accountEditDraft.liquidity_class} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidity_class: event.target.value })} />
+                  </label>
+                  <label>
+                    Retirement tax treatment
+                    <select
+                      disabled={accountEditDraft.category !== 'retirement'}
+                      value={accountEditDraft.retirement_tax_treatment}
+                      onChange={(event) =>
+                        setAccountEditDraft({
+                          ...accountEditDraft,
+                          retirement_tax_treatment: event.target.value as RetirementTaxTreatment | '',
+                        })
+                      }
+                    >
+                      <option value="">Not specified</option>
+                      <option value="traditional">Traditional / tax-deferred</option>
+                      <option value="roth">Roth / tax-free</option>
+                      <option value="after_tax">After-tax</option>
+                    </select>
                   </label>
                   <label>
                     Expected annual yield
@@ -2152,6 +2324,7 @@ function App() {
                     <th>Name</th>
                     <th>Kind</th>
                     <th>Category</th>
+                    <th>Retirement tax treatment</th>
                     <th>Yield</th>
                     <th>Balance</th>
                     <th>Actions</th>
@@ -2163,6 +2336,7 @@ function App() {
                       <td>{account.name}{!account.is_active && <span className="muted cell-detail">Inactive</span>}</td>
                       <td>{account.account_kind}</td>
                       <td>{account.category}</td>
+                      <td>{account.retirement_tax_treatment ?? 'Not applicable'}</td>
                       <td>{account.expected_annual_yield ?? '—'}</td>
                       <td>{formatMoney(latestBalanceByAccountId.get(account.id))}</td>
                       <td><button type="button" className="secondary-button" onClick={() => startEditAccount(account)}>Edit</button></td>
@@ -2388,6 +2562,12 @@ function App() {
                 </select>
                 <input name="category" placeholder="retirement / real_estate / mortgage" required />
                 <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
+                <select name="retirement_tax_treatment" defaultValue="">
+                  <option value="">Not a retirement account</option>
+                  <option value="traditional">Traditional / tax-deferred</option>
+                  <option value="roth">Roth / tax-free</option>
+                  <option value="after_tax">After-tax</option>
+                </select>
                 <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield, e.g. 0.05" />
                 <button type="submit">Add account</button>
               </form>

@@ -47,7 +47,9 @@ def validate_membership_role(role: str) -> str:
 
 def require_admin_tools_enabled(settings: Settings = Depends(get_settings)) -> None:
     if not settings.enable_admin_tools:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tools are disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin tools are disabled"
+        )
 
 
 def _model_export(model: object, fields: tuple[str, ...]) -> dict:
@@ -65,7 +67,9 @@ _ACCOUNT_FIELDS = (
     "account_kind",
     "category",
     "liquidity_class",
+    "retirement_tax_treatment",
     "expected_annual_yield",
+    "liquidation_expense_rate",
     "currency",
     "is_active",
     "created_at",
@@ -169,7 +173,9 @@ _ANNUAL_TAX_RECORD_FIELDS = (
 def create_household(payload: HouseholdCreate, db: Session = Depends(get_db)) -> Household:
     name = payload.name.strip()
     if not name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Household name is required")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Household name is required"
+        )
 
     if payload.owner_user_id is not None and db.get(User, payload.owner_user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Owner user not found")
@@ -221,7 +227,9 @@ def list_household_snapshots(
         select(BalanceSnapshot, Account)
         .join(Account, BalanceSnapshot.account_id == Account.id)
         .where(BalanceSnapshot.household_id == household_id)
-        .order_by(BalanceSnapshot.as_of_date.desc(), Account.name, BalanceSnapshot.created_at.desc())
+        .order_by(
+            BalanceSnapshot.as_of_date.desc(), Account.name, BalanceSnapshot.created_at.desc()
+        )
         .limit(min(max(limit, 1), 200))
     )
     if account_id is not None:
@@ -450,7 +458,9 @@ def create_snapshot_batch(
             )
         ).all()
     }
-    missing_account_ids = [str(account_id) for account_id in account_ids if account_id not in accounts]
+    missing_account_ids = [
+        str(account_id) for account_id in account_ids if account_id not in accounts
+    ]
     if missing_account_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

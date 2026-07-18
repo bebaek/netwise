@@ -128,6 +128,8 @@ The seed command creates a `Demo Household` with accounts, snapshots, real estat
 
 - [Product Design](docs/product-design.md)
 - [Technical Design](docs/technical-design.md)
+- [Projection Strategy Architecture](docs/projection-strategy-architecture.md)
+- [Property Sale Tax Strategy](docs/property-sale-tax-strategy.md)
 - [Self-Hosted Operations](docs/self-hosted-operations.md)
 - [Lessons from `fintrack`](docs/fintrack-lessons.md)
 

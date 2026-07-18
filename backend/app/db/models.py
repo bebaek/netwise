@@ -21,6 +21,12 @@ class AccountKind(StrEnum):
     liability = "liability"
 
 
+class RetirementTaxTreatment(StrEnum):
+    traditional = "traditional"
+    roth = "roth"
+    after_tax = "after_tax"
+
+
 class SnapshotSource(StrEnum):
     manual = "manual"
     guided_manual = "guided_manual"
@@ -132,6 +138,7 @@ class Account(Base):
     account_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     category: Mapped[str] = mapped_column(String(80), nullable=False)
     liquidity_class: Mapped[str] = mapped_column(String(80), nullable=False)
+    retirement_tax_treatment: Mapped[str | None] = mapped_column(String(32))
     expected_annual_yield: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     liquidation_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
@@ -264,6 +271,9 @@ class RealEstateSale(Base):
     gross_sale_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     proceeds_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     selling_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    estimated_tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(8, 6), nullable=False, default=Decimal("0.150000")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
@@ -273,6 +283,42 @@ class RealEstateSale(Base):
         UniqueConstraint("property_account_id", name="uq_real_estate_sales_property_account"),
         Index("ix_real_estate_sales_household_date", "household_id", "sale_date"),
         Index("ix_real_estate_sales_proceeds_account_id", "proceeds_account_id"),
+    )
+
+
+class RealEstateLiquidationStrategy(Base):
+    __tablename__ = "real_estate_liquidation_strategies"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    property_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    optimization_mode: Mapped[str] = mapped_column(nullable=False, default="liquidity_shortfall")
+    priority: Mapped[int] = mapped_column(nullable=False, default=100)
+    earliest_sale_date: Mapped[date | None] = mapped_column(Date)
+    proceeds_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    selling_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    estimated_tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(8, 6), nullable=False, default=Decimal("0.150000")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "property_account_id", name="uq_real_estate_liquidation_strategies_property"
+        ),
+        Index(
+            "ix_real_estate_liquidation_strategies_household_priority",
+            "household_id",
+            "priority",
+        ),
+        Index(
+            "ix_real_estate_liquidation_strategies_proceeds_account_id",
+            "proceeds_account_id",
+        ),
     )
 
 

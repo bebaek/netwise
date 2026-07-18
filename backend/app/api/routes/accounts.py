@@ -5,7 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountEvent, BalanceSnapshot, Household
+from app.db.models import (
+    Account,
+    AccountEvent,
+    BalanceSnapshot,
+    Household,
+    RetirementTaxTreatment,
+)
 from app.db.session import get_db
 from app.schemas.account import (
     AccountCreate,
@@ -72,7 +78,12 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)) -> Acc
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
 
-    account = Account(**payload.model_dump())
+    values = payload.model_dump()
+    if values["category"] != "retirement":
+        values["retirement_tax_treatment"] = None
+    elif values["retirement_tax_treatment"] is None:
+        values["retirement_tax_treatment"] = RetirementTaxTreatment.traditional
+    account = Account(**values)
     db.add(account)
     db.commit()
     db.refresh(account)
@@ -83,9 +94,7 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)) -> Acc
 def list_accounts(household_id: UUID, db: Session = Depends(get_db)) -> list[Account]:
     return list(
         db.scalars(
-            select(Account)
-            .where(Account.household_id == household_id)
-            .order_by(Account.name)
+            select(Account).where(Account.household_id == household_id).order_by(Account.name)
         ).all()
     )
 
@@ -110,6 +119,10 @@ def update_account(
 
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(account, key, value)
+    if account.category != "retirement":
+        account.retirement_tax_treatment = None
+    elif account.retirement_tax_treatment is None:
+        account.retirement_tax_treatment = RetirementTaxTreatment.traditional
     db.commit()
     db.refresh(account)
     return account
