@@ -730,8 +730,17 @@ function App() {
         is_rental: form.get('is_rental') === 'on',
         rental_start_date: optionalString(form, 'rental_start_date') || null,
         monthly_market_rent: optionalString(form, 'monthly_market_rent') || null,
+        other_monthly_income: optionalString(form, 'other_monthly_income') || null,
+        rent_growth_rate: optionalString(form, 'rent_growth_rate') || null,
         vacancy_rate: optionalString(form, 'vacancy_rate') || null,
         management_fee_rate: optionalString(form, 'management_fee_rate') || null,
+        property_tax_annual: optionalString(form, 'property_tax_annual') || null,
+        insurance_annual: optionalString(form, 'insurance_annual') || null,
+        maintenance_rate: optionalString(form, 'maintenance_rate') || null,
+        hoa_monthly: optionalString(form, 'hoa_monthly') || null,
+        utilities_annual: optionalString(form, 'utilities_annual') || null,
+        other_operating_expense_annual: optionalString(form, 'other_operating_expense_annual') || null,
+        capital_reserve_rate: optionalString(form, 'capital_reserve_rate') || null,
         rental_deposit_account_id: optionalString(form, 'rental_deposit_account_id') || null,
       });
       await refreshDashboard(selectedHouseholdId);
@@ -1740,8 +1749,17 @@ function App() {
                     <label className="checkbox-label"><input name="is_rental" type="checkbox" defaultChecked={property.is_rental} /> Rental property</label>
                     <label>Rental start date<input name="rental_start_date" type="date" defaultValue={property.rental_start_date ?? ''} /></label>
                     <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" defaultValue={property.monthly_market_rent ?? ''} />
-                    <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate" defaultValue={property.vacancy_rate ?? ''} />
-                    <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate" defaultValue={property.management_fee_rate ?? ''} />
+                    <input name="other_monthly_income" inputMode="decimal" placeholder="Other monthly income" defaultValue={property.other_monthly_income ?? ''} />
+                    <input name="rent_growth_rate" inputMode="decimal" placeholder="Annual rent growth, e.g. 0.03" defaultValue={property.rent_growth_rate ?? ''} />
+                    <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate, e.g. 0.05" defaultValue={property.vacancy_rate ?? ''} />
+                    <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate, e.g. 0.08" defaultValue={property.management_fee_rate ?? ''} />
+                    <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax" defaultValue={property.property_tax_annual ?? ''} />
+                    <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance" defaultValue={property.insurance_annual ?? ''} />
+                    <input name="maintenance_rate" inputMode="decimal" placeholder="Maintenance rate, e.g. 0.01" defaultValue={property.maintenance_rate ?? ''} />
+                    <input name="hoa_monthly" inputMode="decimal" placeholder="Monthly HOA" defaultValue={property.hoa_monthly ?? ''} />
+                    <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" defaultValue={property.utilities_annual ?? ''} />
+                    <input name="other_operating_expense_annual" inputMode="decimal" placeholder="Other annual operating expenses" defaultValue={property.other_operating_expense_annual ?? ''} />
+                    <input name="capital_reserve_rate" inputMode="decimal" placeholder="Capital reserve rate, e.g. 0.01" defaultValue={property.capital_reserve_rate ?? ''} />
                     <select name="rental_deposit_account_id" defaultValue={property.rental_deposit_account_id ?? ''}>
                       <option value="">Default cash-flow account</option>
                       {assetAccounts.filter((account) => account.id !== property.account_id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
