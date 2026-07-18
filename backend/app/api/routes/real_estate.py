@@ -11,6 +11,7 @@ from app.schemas.real_estate import (
     MortgageProfileRead,
     RealEstatePropertyCreate,
     RealEstatePropertyRead,
+    RealEstatePropertyUpdate,
     RealEstateSaleCreate,
     RealEstateSaleRead,
 )
@@ -176,6 +177,36 @@ def create_real_estate_property(
     db.commit()
     db.refresh(real_estate_property)
     return real_estate_property
+
+
+@router.patch("/real-estate/properties/{property_id}", response_model=RealEstatePropertyRead)
+def update_real_estate_property(
+    property_id: UUID,
+    payload: RealEstatePropertyUpdate,
+    db: Session = Depends(get_db),
+) -> RealEstateProperty:
+    property_record = db.get(RealEstateProperty, property_id)
+    if property_record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    changes = payload.model_dump(exclude_unset=True)
+    if "rental_deposit_account_id" in changes and changes["rental_deposit_account_id"] is not None:
+        deposit_account = db.get(Account, changes["rental_deposit_account_id"])
+        if (
+            deposit_account is None
+            or deposit_account.household_id != property_record.household_id
+            or not deposit_account.is_active
+            or deposit_account.account_kind != AccountKind.asset
+            or deposit_account.id == property_record.account_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rental deposit account must be a different active asset in the same household",
+            )
+    for field, value in changes.items():
+        setattr(property_record, field, value)
+    db.commit()
+    db.refresh(property_record)
+    return property_record
 
 
 @router.get(

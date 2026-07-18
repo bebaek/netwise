@@ -565,6 +565,23 @@ export function createRealEstateProperty(payload: {
   });
 }
 
+export function updateRealEstateProperty(
+  propertyId: string,
+  payload: Partial<{
+    property_type: string; expected_appreciation_rate: string | null; property_tax_annual: string | null;
+    insurance_annual: string | null; maintenance_rate: string | null; hoa_monthly: string | null;
+    is_rental: boolean; rental_start_date: string | null; monthly_market_rent: string | null;
+    other_monthly_income: string | null; rent_growth_rate: string | null; vacancy_rate: string | null;
+    management_fee_rate: string | null; utilities_annual: string | null;
+    other_operating_expense_annual: string | null; capital_reserve_rate: string | null;
+    rental_deposit_account_id: string | null;
+  }>,
+): Promise<RealEstateProperty> {
+  return request<RealEstateProperty>(`/real-estate/properties/${propertyId}`, {
+    method: 'PATCH', body: JSON.stringify(payload),
+  });
+}
+
 export function listRealEstateSales(householdId: string): Promise<RealEstateSale[]> {
   return request<RealEstateSale[]>(`/real-estate/sales?household_id=${householdId}`);
 }

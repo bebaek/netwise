@@ -54,6 +54,7 @@ import {
   removeHouseholdMember,
   updateAccount,
   updateAccountEvent,
+  updateRealEstateProperty,
   updateSnapshot,
   upsertProjectionSettings,
 } from './api';
@@ -277,6 +278,7 @@ function App() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [breakdownHistory, setBreakdownHistory] = useState<NetWorthBreakdownHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
+  const [propertyEditId, setPropertyEditId] = useState<string>('');
   const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
@@ -712,6 +714,26 @@ function App() {
     try {
       await deleteAccountEvent(accountEvent.account_id, accountEvent.id);
       if (accountEventDraft?.id === accountEvent.id) setAccountEventDraft(null);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUpdateProperty(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedHouseholdId || !propertyEditId) return;
+    const form = new FormData(event.currentTarget);
+    try {
+      await updateRealEstateProperty(propertyEditId, {
+        property_type: requiredString(form, 'property_type'),
+        is_rental: form.get('is_rental') === 'on',
+        rental_start_date: optionalString(form, 'rental_start_date') || null,
+        monthly_market_rent: optionalString(form, 'monthly_market_rent') || null,
+        vacancy_rate: optionalString(form, 'vacancy_rate') || null,
+        management_fee_rate: optionalString(form, 'management_fee_rate') || null,
+        rental_deposit_account_id: optionalString(form, 'rental_deposit_account_id') || null,
+      });
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -1692,6 +1714,43 @@ function App() {
             ) : (
               <p className="muted">Run a projection to see future net worth points.</p>
             )}
+          </section>
+
+          <section className="card">
+            <h2>Property details</h2>
+            <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
+            {properties.length ? (
+              <>
+                <select value={propertyEditId} onChange={(event) => setPropertyEditId(event.target.value)}>
+                  <option value="">Select property to edit</option>
+                  {properties.map((property) => (
+                    <option key={property.id} value={property.id}>
+                      {accountNameById.get(property.account_id) ?? property.account_id}
+                    </option>
+                  ))}
+                </select>
+                {properties.filter((property) => property.id === propertyEditId).map((property) => (
+                  <form key={property.id} onSubmit={handleUpdateProperty} className="projection-form">
+                    <select name="property_type" defaultValue={property.property_type}>
+                      <option value="residence">Primary residence</option>
+                      <option value="rental">Rental</option>
+                      <option value="land">Land</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label className="checkbox-label"><input name="is_rental" type="checkbox" defaultChecked={property.is_rental} /> Rental property</label>
+                    <label>Rental start date<input name="rental_start_date" type="date" defaultValue={property.rental_start_date ?? ''} /></label>
+                    <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" defaultValue={property.monthly_market_rent ?? ''} />
+                    <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate" defaultValue={property.vacancy_rate ?? ''} />
+                    <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate" defaultValue={property.management_fee_rate ?? ''} />
+                    <select name="rental_deposit_account_id" defaultValue={property.rental_deposit_account_id ?? ''}>
+                      <option value="">Default cash-flow account</option>
+                      {assetAccounts.filter((account) => account.id !== property.account_id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    </select>
+                    <button type="submit">Save property details</button>
+                  </form>
+                ))}
+              </>
+            ) : <p className="muted">No properties configured.</p>}
           </section>
 
           <section className="grid two-column">

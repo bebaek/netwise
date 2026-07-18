@@ -29,6 +29,26 @@ class RealEstatePropertyCreate(BaseModel):
     rental_deposit_account_id: UUID | None = None
 
 
+class RealEstatePropertyUpdate(BaseModel):
+    property_type: str | None = None
+    expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    property_tax_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    insurance_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    is_rental: bool | None = None
+    rental_start_date: date | None = None
+    monthly_market_rent: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    other_monthly_income: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    rent_growth_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    vacancy_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    management_fee_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    utilities_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    other_operating_expense_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    capital_reserve_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    rental_deposit_account_id: UUID | None = None
+
+
 class RealEstatePropertyRead(BaseModel):
     id: UUID
     household_id: UUID
