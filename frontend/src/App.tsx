@@ -141,6 +141,16 @@ type AccountEventDraft = {
   projection_behavior: string;
 };
 
+type AppView = 'overview' | 'update' | 'plan' | 'assets' | 'settings';
+
+const APP_VIEWS: Array<{ id: AppView; label: string; description: string }> = [
+  { id: 'overview', label: 'Overview', description: 'Your current position, history, and financial trajectory.' },
+  { id: 'update', label: 'Update', description: 'Capture balances and maintain snapshot history.' },
+  { id: 'plan', label: 'Plan', description: 'Model projections, income, events, and property sales.' },
+  { id: 'assets', label: 'Assets', description: 'Manage accounts, properties, mortgages, and assumptions.' },
+  { id: 'settings', label: 'Settings', description: 'Manage household access, imports, and exports.' },
+];
+
 const ACCOUNT_EVENT_TYPE_OPTIONS = [
   ['contribution', 'Contribution'],
   ['withdrawal', 'Withdrawal'],
@@ -268,6 +278,7 @@ function HistoryChart({
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<AppView>('overview');
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -1074,13 +1085,15 @@ function App() {
     }
   }
 
+  const activeViewDetails = APP_VIEWS.find((view) => view.id === activeView) ?? APP_VIEWS[0];
+
   return (
     <main className="app-shell">
-      <header className="hero">
-        <div>
+      <header className="app-header">
+        <div className="brand-block">
           <p className="eyebrow">Netwise</p>
-          <h1>Financial status from balance snapshots</h1>
-          <p className="muted">Track household net worth without transaction categorization.</p>
+          <h1>{selectedHousehold?.name ?? 'Financial planning'}</h1>
+          <p className="muted">Balance-snapshot planning without transaction tracking.</p>
         </div>
         <div className="selector-stack">
           {selectedUser && (
@@ -1112,7 +1125,23 @@ function App() {
         </div>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      {selectedHousehold && (
+        <nav className="app-nav" aria-label="Primary navigation">
+          {APP_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              className={`app-nav-button${activeView === view.id ? ' active' : ''}`}
+              aria-current={activeView === view.id ? 'page' : undefined}
+              onClick={() => setActiveView(view.id)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {error && <div className="error" role="alert">{error}</div>}
       {loading && <div className="card">Loading…</div>}
 
       {!loading && users.length === 0 && (
@@ -1140,7 +1169,21 @@ function App() {
 
       {selectedHousehold && (
         <>
-          <section className="grid two-column">
+          <section className="page-heading">
+            <div>
+              <p className="eyebrow">{activeViewDetails.label}</p>
+              <h2>{activeViewDetails.label}</h2>
+              <p className="muted">{activeViewDetails.description}</p>
+            </div>
+            {activeView === 'overview' && (
+              <button type="button" onClick={() => setActiveView('update')}>Update balances</button>
+            )}
+          </section>
+
+          <details className="advanced-planning" hidden={activeView !== 'plan'}>
+            <summary>Advanced property sale automation</summary>
+            <p className="muted">Configure automatic sales for liquidity shortfalls or runway optimization.</p>
+            <section className="grid two-column">
             <div className="card">
               <h2>Automatic property sale strategies</h2>
               <p className="muted">Strategies either sell at a liquid-funding shortfall or jointly test annual March 1 sale schedules to delay retirement withdrawals as long as possible. Fixed-date sales take precedence.</p>
@@ -1194,16 +1237,20 @@ function App() {
                     ))}
                   </select>
                 </label>
-                <input name="automatic_selling_expense_rate" inputMode="decimal" placeholder="Selling expense rate, default 0.06" />
+                <label>
+                  Selling expense rate
+                  <input name="automatic_selling_expense_rate" inputMode="decimal" placeholder="Default 0.06" />
+                </label>
                 <label>Estimated sale-tax reserve rate<input name="automatic_estimated_tax_rate" inputMode="decimal" defaultValue="0.15" required /></label>
                 <label><input name="automatic_enabled" type="checkbox" defaultChecked /> Enabled</label>
                 <p className="muted">Primary residences are never enrolled automatically. Runway optimization jointly evaluates enabled optimized properties in priority order and reports its selected schedule with the projection.</p>
                 <button type="submit" disabled={!propertyAccounts.length}>Save strategy</button>
               </form>
             </div>
-          </section>
+            </section>
+          </details>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'settings'}>
             <div className="section-header">
               <div>
                 <h2>People & household access</h2>
@@ -1264,7 +1311,7 @@ function App() {
           </section>
 
           {adminToolsEnabled && (
-            <section className="card">
+            <section className="card" hidden={activeView !== 'settings'}>
               <div className="section-header">
                 <div>
                   <h2>Import FinTrack data</h2>
@@ -1334,7 +1381,7 @@ function App() {
             </section>
           )}
 
-          <section className="summary-grid">
+          <section className="summary-grid" hidden={activeView !== 'overview'}>
             <div className="metric-card">
               <span>Net worth</span>
               <strong>{formatMoney(netWorth?.net_worth)}</strong>
@@ -1349,7 +1396,7 @@ function App() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'overview'}>
             <div className="section-header">
               <div>
                 <h2>Financial trajectory</h2>
@@ -1408,7 +1455,7 @@ function App() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'overview'}>
             <h2>What changed?</h2>
             <p className="muted">Break down each snapshot date by asset and liability category.</p>
             {breakdownHistory?.points.length ? (
@@ -1451,7 +1498,7 @@ function App() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'update'}>
             <h2>Add household snapshot</h2>
             <p className="muted">Capture a snapshot day across many accounts. Empty balances are skipped; existing same-day snapshots are updated.</p>
             {accounts.length ? (
@@ -1476,14 +1523,14 @@ function App() {
                   ))}
                 </div>
                 <button type="submit">Save household snapshot</button>
-                {snapshotBatchMessage && <p className="success-message">{snapshotBatchMessage}</p>}
+                {snapshotBatchMessage && <p className="success-message" role="status">{snapshotBatchMessage}</p>}
               </form>
             ) : (
               <p className="muted">Add accounts before capturing a household snapshot.</p>
             )}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'update'}>
             <div className="section-header">
               <div>
                 <h2>Snapshot history</h2>
@@ -1592,7 +1639,7 @@ function App() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'plan'}>
             <h2>Projection</h2>
             <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
 
@@ -1862,7 +1909,7 @@ function App() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'assets'}>
             <h2>Property details</h2>
             <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
             {properties.length ? (
@@ -1909,7 +1956,7 @@ function App() {
             ) : <p className="muted">No properties configured.</p>}
           </section>
 
-          <section className="grid two-column">
+          <section className="grid two-column" hidden={activeView !== 'plan'}>
             <div className="card">
               <h2>Income sources</h2>
               {incomeSources.length ? (
@@ -1969,7 +2016,7 @@ function App() {
             </div>
           </section>
 
-          <section className="grid two-column">
+          <section className="grid two-column" hidden={activeView !== 'plan'}>
             <div className="card">
               <h2>Add income source</h2>
               <form onSubmit={handleCreateIncomeSource} className="stacked-form">
@@ -2018,7 +2065,7 @@ function App() {
             </div>
           </section>
 
-          <section className="grid two-column">
+          <section className="grid two-column" hidden={activeView !== 'assets'}>
             <div className="card">
               <h2>Real estate</h2>
               {properties.length ? (
@@ -2080,7 +2127,7 @@ function App() {
             </div>
           </section>
 
-          <section className="grid two-column">
+          <section className="grid two-column" hidden={activeView !== 'assets'}>
             <div className="card">
               <h2>Add property</h2>
               <p className="muted">Creates a real estate asset account, property profile, and optional valuation snapshot.</p>
@@ -2167,7 +2214,7 @@ function App() {
             </div>
           </section>
 
-          <section className="grid two-column">
+          <section className="grid two-column" hidden={activeView !== 'plan'}>
             <div className="card">
               <h2>Planned property sales</h2>
               <p className="muted">A sale pays off its linked mortgage, deducts selling costs and an estimated tax reserve, and transfers net proceeds to the selected account.</p>
@@ -2221,7 +2268,7 @@ function App() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card" hidden={activeView !== 'assets'}>
             <div className="section-header">
               <div>
                 <h2>Accounts</h2>
@@ -2349,7 +2396,7 @@ function App() {
             )}
           </section>
 
-          <section className="card projection-events-card">
+          <section className="card projection-events-card" hidden={activeView !== 'plan'}>
             <div className="section-header">
               <div>
                 <h2>Projection events</h2>
@@ -2551,9 +2598,8 @@ function App() {
             )}
           </section>
 
-          <section className="grid two-column">
-            <div className="card">
-              <h2>Add account</h2>
+          <section className="card" hidden={activeView !== 'assets'}>
+            <h2>Add account</h2>
               <form onSubmit={handleCreateAccount} className="stacked-form">
                 <input name="name" placeholder="Fidelity 401k" required />
                 <select name="account_kind" defaultValue="asset">
@@ -2570,12 +2616,13 @@ function App() {
                 </select>
                 <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield, e.g. 0.05" />
                 <button type="submit">Add account</button>
-              </form>
-            </div>
+            </form>
+          </section>
 
-            <div className="card">
-              <h2>Add snapshot</h2>
-              <form onSubmit={handleCreateSnapshot} className="stacked-form">
+          <section className="card" hidden={activeView !== 'update'}>
+            <h2>Add a single snapshot</h2>
+            <p className="muted">Use this for a one-off account update. For routine updates, capture the household snapshot above.</p>
+            <form onSubmit={handleCreateSnapshot} className="stacked-form">
                 <select name="account_id" required defaultValue="">
                   <option value="" disabled>
                     Select account
@@ -2588,9 +2635,8 @@ function App() {
                 </select>
                 <input name="as_of_date" type="date" defaultValue={today()} required />
                 <input name="balance" placeholder="100000.00" required />
-                <button type="submit">Add snapshot</button>
-              </form>
-            </div>
+              <button type="submit">Add snapshot</button>
+            </form>
           </section>
         </>
       )}
