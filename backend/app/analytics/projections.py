@@ -291,8 +291,19 @@ def calculate_net_worth_projection(
                 period_start,
                 months_per_period,
             )
+            rental_mortgage_debt_service = _apply_rental_mortgage_debt_service(
+                property_profile,
+                mortgage_profiles_by_property.get(property_profile.account_id),
+                accounts,
+                accounts_by_id,
+                balances,
+                cash_flows,
+                as_of_date,
+                months_per_period,
+                sold_mortgage_account_ids,
+            )
             projected_rental_income += rental_income
-            projected_rental_expenses += rental_expenses
+            projected_rental_expenses += rental_expenses + rental_mortgage_debt_service
         for income_source in income_sources:
             income_amount = _projected_income_source_for_period(
                 income_source, period_start, as_of_date, months_per_period
@@ -535,11 +546,7 @@ def _apply_rental_cash_flow(
     period_start: date,
     months_per_period: int,
 ) -> tuple[Decimal, Decimal]:
-    """Apply rental operating cash flow and return effective income and expenses.
-
-    Mortgage principal and interest are intentionally excluded here: the existing
-    projection's household spending assumption remains responsible for debt service.
-    """
+    """Apply non-debt rental operating cash flow and return income and expenses."""
     property_account = accounts_by_id.get(property_profile.account_id)
     if (
         not property_profile.is_rental
@@ -583,6 +590,61 @@ def _apply_rental_cash_flow(
     if deposit_account is not None and expenses != Decimal("0.00"):
         _apply_account_cash_flow(balances, cash_flows, deposit_account, "rental_expense", -expenses)
     return income, expenses
+
+
+def _apply_rental_mortgage_debt_service(
+    property_profile: RealEstateProperty,
+    mortgage_profile: MortgageProfile | None,
+    accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    period_end: date,
+    months_per_period: int,
+    sold_mortgage_account_ids: set[UUID],
+) -> Decimal:
+    """Deduct a linked rental's scheduled mortgage payment from rental cash flow.
+
+    Only rentals are included. A property sale marks its linked mortgage as paid off,
+    so future periods automatically stop this debt-service outflow.
+    """
+    if not property_profile.is_rental or mortgage_profile is None:
+        return Decimal("0.00")
+    if mortgage_profile.liability_account_id in sold_mortgage_account_ids:
+        return Decimal("0.00")
+    property_account = accounts_by_id.get(property_profile.account_id)
+    mortgage_account = accounts_by_id.get(mortgage_profile.liability_account_id)
+    if (
+        property_account is None
+        or mortgage_account is None
+        or balances[property_account.id] <= Decimal("0.00")
+        or balances[mortgage_account.id] <= Decimal("0.00")
+        or mortgage_profile.start_date > period_end
+    ):
+        return Decimal("0.00")
+
+    monthly_payment = mortgage_profile.monthly_payment or _amortized_monthly_payment(mortgage_profile)
+    debt_service = (monthly_payment * Decimal(months_per_period)).quantize(Decimal("0.01"))
+    if debt_service <= Decimal("0.00"):
+        return Decimal("0.00")
+    deposit_account = accounts_by_id.get(property_profile.rental_deposit_account_id)
+    if deposit_account is None:
+        deposit_account = _cash_flow_target_account(accounts, accounts_by_id, None)
+    if deposit_account is not None:
+        _apply_account_cash_flow(
+            balances, cash_flows, deposit_account, "rental_mortgage_debt_service", -debt_service
+        )
+    return debt_service
+
+
+def _amortized_monthly_payment(profile: MortgageProfile) -> Decimal:
+    monthly_rate = profile.interest_rate / Decimal("12")
+    if monthly_rate == Decimal("0.00"):
+        return (profile.original_principal / Decimal(profile.term_months)).quantize(Decimal("0.01"))
+    factor = (Decimal("1") + monthly_rate) ** profile.term_months
+    return (profile.original_principal * monthly_rate * factor / (factor - Decimal("1"))).quantize(
+        Decimal("0.01")
+    )
 
 
 def _apply_account_cash_flow(
