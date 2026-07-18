@@ -748,6 +748,17 @@ function App() {
         insurance_annual: optionalString(form, 'insurance_annual'),
         maintenance_rate: optionalString(form, 'maintenance_rate'),
         hoa_monthly: optionalString(form, 'hoa_monthly'),
+        is_rental: form.get('is_rental') === 'on',
+        rental_start_date: optionalString(form, 'rental_start_date'),
+        monthly_market_rent: optionalString(form, 'monthly_market_rent'),
+        other_monthly_income: optionalString(form, 'other_monthly_income'),
+        rent_growth_rate: optionalString(form, 'rent_growth_rate'),
+        vacancy_rate: optionalString(form, 'vacancy_rate'),
+        management_fee_rate: optionalString(form, 'management_fee_rate'),
+        utilities_annual: optionalString(form, 'utilities_annual'),
+        other_operating_expense_annual: optionalString(form, 'other_operating_expense_annual'),
+        capital_reserve_rate: optionalString(form, 'capital_reserve_rate'),
+        rental_deposit_account_id: optionalString(form, 'rental_deposit_account_id'),
       });
       if (currentValue) {
         await createSnapshot(propertyAccount.id, {
@@ -1877,6 +1888,25 @@ function App() {
                 <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance" />
                 <input name="maintenance_rate" inputMode="decimal" placeholder="Maintenance rate, e.g. 0.01" />
                 <input name="hoa_monthly" inputMode="decimal" placeholder="Monthly HOA" />
+                <label className="checkbox-label">
+                  <input name="is_rental" type="checkbox" />
+                  Rental property
+                </label>
+                <input name="rental_start_date" type="date" placeholder="Rental start date" />
+                <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" />
+                <input name="other_monthly_income" inputMode="decimal" placeholder="Other monthly income" />
+                <input name="rent_growth_rate" inputMode="decimal" placeholder="Annual rent growth, e.g. 0.03" />
+                <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate, e.g. 0.05" />
+                <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate, e.g. 0.08" />
+                <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" />
+                <input name="other_operating_expense_annual" inputMode="decimal" placeholder="Other annual operating expenses" />
+                <input name="capital_reserve_rate" inputMode="decimal" placeholder="Capital reserve rate, e.g. 0.01" />
+                <select name="rental_deposit_account_id" defaultValue="">
+                  <option value="">Default cash-flow account</option>
+                  {assetAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>{account.name}</option>
+                  ))}
+                </select>
                 <input name="current_value" inputMode="decimal" placeholder="Current valuation snapshot" />
                 <label>
                   Valuation date

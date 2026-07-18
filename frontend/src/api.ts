@@ -179,6 +179,17 @@ export type RealEstateProperty = {
   insurance_annual: string | null;
   maintenance_rate: string | null;
   hoa_monthly: string | null;
+  is_rental: boolean;
+  rental_start_date: string | null;
+  monthly_market_rent: string | null;
+  other_monthly_income: string | null;
+  rent_growth_rate: string | null;
+  vacancy_rate: string | null;
+  management_fee_rate: string | null;
+  utilities_annual: string | null;
+  other_operating_expense_annual: string | null;
+  capital_reserve_rate: string | null;
+  rental_deposit_account_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -262,6 +273,8 @@ export type NetWorthProjection = {
     assets_total: string;
     liabilities_total: string;
     projected_income: string;
+    projected_rental_income: string;
+    projected_rental_expenses: string;
     projected_taxes: string;
     projected_spending: string;
     projected_liquidation_expenses: string;
@@ -534,6 +547,17 @@ export function createRealEstateProperty(payload: {
   insurance_annual?: string;
   maintenance_rate?: string;
   hoa_monthly?: string;
+  is_rental?: boolean;
+  rental_start_date?: string;
+  monthly_market_rent?: string;
+  other_monthly_income?: string;
+  rent_growth_rate?: string;
+  vacancy_rate?: string;
+  management_fee_rate?: string;
+  utilities_annual?: string;
+  other_operating_expense_annual?: string;
+  capital_reserve_rate?: string;
+  rental_deposit_account_id?: string;
 }): Promise<RealEstateProperty> {
   return request<RealEstateProperty>('/real-estate/properties', {
     method: 'POST',

@@ -154,6 +154,19 @@ def create_real_estate_property(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Real estate property must be linked to an asset account",
         )
+    if payload.rental_deposit_account_id is not None:
+        deposit_account = db.get(Account, payload.rental_deposit_account_id)
+        if (
+            deposit_account is None
+            or deposit_account.household_id != account.household_id
+            or not deposit_account.is_active
+            or deposit_account.account_kind != AccountKind.asset
+            or deposit_account.id == account.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rental deposit account must be a different active asset in the same household",
+            )
 
     real_estate_property = RealEstateProperty(
         household_id=account.household_id,

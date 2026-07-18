@@ -28,6 +28,8 @@ class ProjectionPointRead(BaseModel):
     assets_total: Decimal
     liabilities_total: Decimal
     projected_income: Decimal
+    projected_rental_income: Decimal
+    projected_rental_expenses: Decimal
     projected_taxes: Decimal
     projected_spending: Decimal
     projected_liquidation_expenses: Decimal

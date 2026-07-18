@@ -149,7 +149,9 @@ class Account(Base):
         back_populates="account", cascade="all, delete-orphan"
     )
     real_estate_property: Mapped["RealEstateProperty | None"] = relationship(
-        back_populates="account", cascade="all, delete-orphan"
+        back_populates="account",
+        cascade="all, delete-orphan",
+        foreign_keys="RealEstateProperty.account_id",
     )
     mortgage_profile: Mapped["MortgageProfile | None"] = relationship(
         back_populates="liability_account",
@@ -225,12 +227,25 @@ class RealEstateProperty(Base):
     insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     maintenance_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     hoa_monthly: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    is_rental: Mapped[bool] = mapped_column(default=False, nullable=False)
+    rental_start_date: Mapped[date | None] = mapped_column(Date)
+    monthly_market_rent: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    other_monthly_income: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    rent_growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    vacancy_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    management_fee_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    utilities_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    other_operating_expense_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    capital_reserve_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    rental_deposit_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
 
-    account: Mapped[Account] = relationship(back_populates="real_estate_property")
+    account: Mapped[Account] = relationship(
+        back_populates="real_estate_property", foreign_keys=[account_id]
+    )
 
     __table_args__ = (
         UniqueConstraint("account_id", name="uq_real_estate_properties_account"),

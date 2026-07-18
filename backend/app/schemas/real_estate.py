@@ -16,6 +16,17 @@ class RealEstatePropertyCreate(BaseModel):
     insurance_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    is_rental: bool = False
+    rental_start_date: date | None = None
+    monthly_market_rent: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    other_monthly_income: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    rent_growth_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    vacancy_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    management_fee_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    utilities_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    other_operating_expense_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    capital_reserve_rate: Decimal | None = Field(default=None, ge=0, lt=1, max_digits=8, decimal_places=6)
+    rental_deposit_account_id: UUID | None = None
 
 
 class RealEstatePropertyRead(BaseModel):
@@ -31,6 +42,17 @@ class RealEstatePropertyRead(BaseModel):
     insurance_annual: Decimal | None
     maintenance_rate: Decimal | None
     hoa_monthly: Decimal | None
+    is_rental: bool
+    rental_start_date: date | None
+    monthly_market_rent: Decimal | None
+    other_monthly_income: Decimal | None
+    rent_growth_rate: Decimal | None
+    vacancy_rate: Decimal | None
+    management_fee_rate: Decimal | None
+    utilities_annual: Decimal | None
+    other_operating_expense_annual: Decimal | None
+    capital_reserve_rate: Decimal | None
+    rental_deposit_account_id: UUID | None
     created_at: datetime
     updated_at: datetime
 

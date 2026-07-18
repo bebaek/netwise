@@ -279,6 +279,20 @@ def calculate_net_worth_projection(
                 )
 
         projected_income = Decimal("0.00")
+        projected_rental_income = Decimal("0.00")
+        projected_rental_expenses = Decimal("0.00")
+        for property_profile in property_profiles.values():
+            rental_income, rental_expenses = _apply_rental_cash_flow(
+                property_profile,
+                accounts,
+                accounts_by_id,
+                balances,
+                cash_flows,
+                period_start,
+                months_per_period,
+            )
+            projected_rental_income += rental_income
+            projected_rental_expenses += rental_expenses
         for income_source in income_sources:
             income_amount = _projected_income_source_for_period(
                 income_source, period_start, as_of_date, months_per_period
@@ -294,7 +308,12 @@ def calculate_net_worth_projection(
                     )
 
         projected_income = projected_income.quantize(Decimal("0.01"))
-        income_taxes = (projected_income * tax_rate).quantize(Decimal("0.01"))
+        projected_rental_income = projected_rental_income.quantize(Decimal("0.01"))
+        projected_rental_expenses = projected_rental_expenses.quantize(Decimal("0.01"))
+        taxable_income = max(
+            projected_income + projected_rental_income - projected_rental_expenses, Decimal("0.00")
+        )
+        income_taxes = (taxable_income * tax_rate).quantize(Decimal("0.01"))
         projected_spending = _projected_spending_for_period(
             spending_baseline,
             period_start,
@@ -335,7 +354,12 @@ def calculate_net_worth_projection(
                 projected_liquidation_expenses + tax_payment_result.liquidation_expenses
             ).quantize(Decimal("0.01"))
         net_cash_flow = (
-            projected_income - projected_taxes - projected_spending - projected_liquidation_expenses
+            projected_income
+            + projected_rental_income
+            - projected_rental_expenses
+            - projected_taxes
+            - projected_spending
+            - projected_liquidation_expenses
         ).quantize(
             Decimal("0.01")
         )
@@ -367,6 +391,8 @@ def calculate_net_worth_projection(
                 "assets_total": assets_total,
                 "liabilities_total": liabilities_total,
                 "projected_income": projected_income,
+                "projected_rental_income": projected_rental_income,
+                "projected_rental_expenses": projected_rental_expenses,
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
                 "projected_liquidation_expenses": projected_liquidation_expenses,
@@ -498,6 +524,65 @@ def _cash_flow_target_account(
     if not asset_accounts:
         return None
     return min(asset_accounts, key=_cash_flow_priority)
+
+
+def _apply_rental_cash_flow(
+    property_profile: RealEstateProperty,
+    accounts: list[Account],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    cash_flows: list[dict],
+    period_start: date,
+    months_per_period: int,
+) -> tuple[Decimal, Decimal]:
+    """Apply rental operating cash flow and return effective income and expenses.
+
+    Mortgage principal and interest are intentionally excluded here: the existing
+    projection's household spending assumption remains responsible for debt service.
+    """
+    property_account = accounts_by_id.get(property_profile.account_id)
+    if (
+        not property_profile.is_rental
+        or property_account is None
+        or balances[property_account.id] <= Decimal("0.00")
+        or (
+            property_profile.rental_start_date is not None
+            and property_profile.rental_start_date > period_start
+        )
+    ):
+        return Decimal("0.00"), Decimal("0.00")
+
+    years_elapsed = max(
+        period_start.year - (property_profile.rental_start_date or period_start).year, 0
+    )
+    rent_growth = property_profile.rent_growth_rate or Decimal("0.00")
+    monthly_rent = (property_profile.monthly_market_rent or Decimal("0.00")) * (
+        (Decimal("1") + rent_growth) ** years_elapsed
+    )
+    scheduled_rent = monthly_rent * Decimal(months_per_period)
+    effective_rent = scheduled_rent * (Decimal("1") - (property_profile.vacancy_rate or Decimal("0.00")))
+    other_income = (property_profile.other_monthly_income or Decimal("0.00")) * Decimal(months_per_period)
+    income = (effective_rent + other_income).quantize(Decimal("0.01"))
+    annual_prorate = Decimal(months_per_period) / Decimal("12")
+    expenses = (
+        (property_profile.property_tax_annual or Decimal("0.00")) * annual_prorate
+        + (property_profile.insurance_annual or Decimal("0.00")) * annual_prorate
+        + (property_profile.utilities_annual or Decimal("0.00")) * annual_prorate
+        + (property_profile.other_operating_expense_annual or Decimal("0.00")) * annual_prorate
+        + (property_profile.hoa_monthly or Decimal("0.00")) * Decimal(months_per_period)
+        + balances[property_account.id]
+        * ((property_profile.maintenance_rate or Decimal("0.00")) + (property_profile.capital_reserve_rate or Decimal("0.00")))
+        * annual_prorate
+        + effective_rent * (property_profile.management_fee_rate or Decimal("0.00"))
+    ).quantize(Decimal("0.01"))
+    deposit_account = accounts_by_id.get(property_profile.rental_deposit_account_id)
+    if deposit_account is None:
+        deposit_account = _cash_flow_target_account(accounts, accounts_by_id, None)
+    if deposit_account is not None and income != Decimal("0.00"):
+        _apply_account_cash_flow(balances, cash_flows, deposit_account, "rental_income", income)
+    if deposit_account is not None and expenses != Decimal("0.00"):
+        _apply_account_cash_flow(balances, cash_flows, deposit_account, "rental_expense", -expenses)
+    return income, expenses
 
 
 def _apply_account_cash_flow(
