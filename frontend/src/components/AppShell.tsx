@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import type { Household, User } from '../api';
 
@@ -95,14 +96,33 @@ export function AppNavigation() {
   );
 }
 
-export function ViewHeading({ activeView }: { activeView: AppView }) {
+export function ViewHeading({
+  activeView,
+  householdName,
+}: {
+  activeView: AppView;
+  householdName: string;
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const details = APP_VIEWS.find((view) => view.id === activeView) ?? APP_VIEWS[0];
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [activeView]);
+
+  useEffect(() => {
+    const title = `${details.label} · ${householdName} · Netwise`;
+    document.title = title;
+    return () => {
+      if (document.title === title) document.title = 'Netwise';
+    };
+  }, [details.label, householdName]);
 
   return (
     <section className="page-heading">
       <div>
         <p className="eyebrow">{details.label}</p>
-        <h2>{details.label}</h2>
+        <h2 ref={headingRef} tabIndex={-1}>{details.label}</h2>
         <p className="muted">{details.description}</p>
       </div>
       {activeView === 'overview' && (

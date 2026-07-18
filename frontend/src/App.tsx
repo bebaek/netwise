@@ -141,10 +141,18 @@ function downloadJson(filename: string, value: unknown): void {
   URL.revokeObjectURL(url);
 }
 
-function WorkspaceView({ view, children }: { view: AppView; children: ReactNode }) {
+function WorkspaceView({
+  view,
+  householdName,
+  children,
+}: {
+  view: AppView;
+  householdName: string;
+  children: ReactNode;
+}) {
   return (
     <>
-      <ViewHeading activeView={view} />
+      <ViewHeading activeView={view} householdName={householdName} />
       <Suspense fallback={<div className="card" role="status">Loading page…</div>}>
         {children}
       </Suspense>
@@ -1003,7 +1011,7 @@ function App() {
           <Route
             path="/overview"
             element={
-              <WorkspaceView view="overview">
+              <WorkspaceView view="overview" householdName={selectedHousehold.name}>
                 <OverviewPage
                   netWorth={netWorth}
                   history={history}
@@ -1020,7 +1028,7 @@ function App() {
           <Route
             path="/update"
             element={
-              <WorkspaceView view="update">
+              <WorkspaceView view="update" householdName={selectedHousehold.name}>
                 <UpdateBalancesPage
                   accounts={accounts}
                   latestBalanceByAccountId={latestBalanceByAccountId}
@@ -1042,7 +1050,7 @@ function App() {
           <Route
             path="/plan"
             element={
-              <WorkspaceView view="plan">
+              <WorkspaceView view="plan" householdName={selectedHousehold.name}>
                 <PlanningPage
                   defaultDate={today()}
                   accounts={accounts}
@@ -1077,7 +1085,7 @@ function App() {
           <Route
             path="/assets"
             element={
-              <WorkspaceView view="assets">
+              <WorkspaceView view="assets" householdName={selectedHousehold.name}>
                 <AssetsPage
                   defaultDate={today()}
                   accounts={accounts}
@@ -1104,7 +1112,7 @@ function App() {
           <Route
             path="/settings"
             element={
-              <WorkspaceView view="settings">
+              <WorkspaceView view="settings" householdName={selectedHousehold.name}>
                 <HouseholdSettingsPage
                   household={selectedHousehold}
                   members={householdMembers}

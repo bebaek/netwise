@@ -37,13 +37,18 @@ test('navigates across the financial planning workspace', async ({ page }, testI
   });
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
+  const householdName = (await page.getByLabel('Selected household').locator('option:checked').textContent())?.trim();
+  expect(householdName).toBeTruthy();
+
   for (const view of views) {
     const navigationButton = page.getByRole('link', { name: view.nav, exact: true });
-    await navigationButton.click();
+    if (view.nav !== 'Overview') await navigationButton.click();
 
     await expect(navigationButton).toHaveAttribute('aria-current', 'page');
     await expect(page).toHaveURL(new RegExp(`/${view.nav.toLowerCase()}$`));
     await expect(page.locator('.page-heading h2')).toHaveText(view.nav);
+    await expect(page.locator('.page-heading h2')).toBeFocused();
+    await expect(page).toHaveTitle(`${view.nav} · ${householdName} · Netwise`);
     await expect(page.getByRole('heading', { name: view.heading, exact: true })).toBeVisible();
     await expectNoDocumentOverflow(page);
     await captureView(page, testInfo, view.nav);
