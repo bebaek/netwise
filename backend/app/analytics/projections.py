@@ -572,8 +572,13 @@ def _apply_rental_cash_flow(
     income = (effective_rent + other_income).quantize(Decimal("0.01"))
     annual_prorate = Decimal(months_per_period) / Decimal("12")
     expenses = (
-        (property_profile.property_tax_annual or Decimal("0.00")) * annual_prorate
-        + (property_profile.insurance_annual or Decimal("0.00")) * annual_prorate
+        (
+            property_profile.tax_and_insurance_annual
+            if property_profile.tax_and_insurance_annual is not None
+            else (property_profile.property_tax_annual or Decimal("0.00"))
+            + (property_profile.insurance_annual or Decimal("0.00"))
+        )
+        * annual_prorate
         + (property_profile.utilities_annual or Decimal("0.00")) * annual_prorate
         + (property_profile.other_operating_expense_annual or Decimal("0.00")) * annual_prorate
         + (property_profile.hoa_monthly or Decimal("0.00")) * Decimal(months_per_period)

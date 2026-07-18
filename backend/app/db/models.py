@@ -225,6 +225,7 @@ class RealEstateProperty(Base):
     expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     property_tax_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    tax_and_insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     maintenance_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     hoa_monthly: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     is_rental: Mapped[bool] = mapped_column(default=False, nullable=False)

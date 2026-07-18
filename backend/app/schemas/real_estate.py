@@ -12,8 +12,9 @@ class RealEstatePropertyCreate(BaseModel):
     purchase_price: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     down_payment: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
-    property_tax_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
-    insurance_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    tax_and_insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     is_rental: bool = False
@@ -32,8 +33,9 @@ class RealEstatePropertyCreate(BaseModel):
 class RealEstatePropertyUpdate(BaseModel):
     property_type: str | None = None
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
-    property_tax_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
-    insurance_annual: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    tax_and_insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     maintenance_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     hoa_monthly: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     is_rental: bool | None = None
@@ -60,6 +62,7 @@ class RealEstatePropertyRead(BaseModel):
     expected_appreciation_rate: Decimal | None
     property_tax_annual: Decimal | None
     insurance_annual: Decimal | None
+    tax_and_insurance_annual: Decimal | None
     maintenance_rate: Decimal | None
     hoa_monthly: Decimal | None
     is_rental: bool

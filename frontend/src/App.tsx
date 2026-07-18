@@ -736,6 +736,7 @@ function App() {
         management_fee_rate: optionalString(form, 'management_fee_rate') || null,
         property_tax_annual: optionalString(form, 'property_tax_annual') || null,
         insurance_annual: optionalString(form, 'insurance_annual') || null,
+        tax_and_insurance_annual: optionalString(form, 'tax_and_insurance_annual') || null,
         maintenance_rate: optionalString(form, 'maintenance_rate') || null,
         hoa_monthly: optionalString(form, 'hoa_monthly') || null,
         utilities_annual: optionalString(form, 'utilities_annual') || null,
@@ -777,6 +778,7 @@ function App() {
         expected_appreciation_rate: optionalString(form, 'expected_appreciation_rate'),
         property_tax_annual: optionalString(form, 'property_tax_annual'),
         insurance_annual: optionalString(form, 'insurance_annual'),
+        tax_and_insurance_annual: optionalString(form, 'tax_and_insurance_annual'),
         maintenance_rate: optionalString(form, 'maintenance_rate'),
         hoa_monthly: optionalString(form, 'hoa_monthly'),
         is_rental: form.get('is_rental') === 'on',
@@ -1753,8 +1755,9 @@ function App() {
                     <input name="rent_growth_rate" inputMode="decimal" placeholder="Annual rent growth, e.g. 0.03" defaultValue={property.rent_growth_rate ?? ''} />
                     <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate, e.g. 0.05" defaultValue={property.vacancy_rate ?? ''} />
                     <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate, e.g. 0.08" defaultValue={property.management_fee_rate ?? ''} />
-                    <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax" defaultValue={property.property_tax_annual ?? ''} />
-                    <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance" defaultValue={property.insurance_annual ?? ''} />
+                    <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" defaultValue={property.tax_and_insurance_annual ?? ''} />
+                    <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" defaultValue={property.property_tax_annual ?? ''} />
+                    <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance (if entered separately)" defaultValue={property.insurance_annual ?? ''} />
                     <input name="maintenance_rate" inputMode="decimal" placeholder="Maintenance rate, e.g. 0.01" defaultValue={property.maintenance_rate ?? ''} />
                     <input name="hoa_monthly" inputMode="decimal" placeholder="Monthly HOA" defaultValue={property.hoa_monthly ?? ''} />
                     <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" defaultValue={property.utilities_annual ?? ''} />
@@ -1961,8 +1964,9 @@ function App() {
                 <input name="purchase_price" inputMode="decimal" placeholder="Purchase price" />
                 <input name="down_payment" inputMode="decimal" placeholder="Down payment" />
                 <input name="expected_appreciation_rate" inputMode="decimal" placeholder="Expected appreciation rate, e.g. 0.03" />
-                <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax" />
-                <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance" />
+                <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" />
+                <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" />
+                <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance (if entered separately)" />
                 <input name="maintenance_rate" inputMode="decimal" placeholder="Maintenance rate, e.g. 0.01" />
                 <input name="hoa_monthly" inputMode="decimal" placeholder="Monthly HOA" />
                 <label className="checkbox-label">
