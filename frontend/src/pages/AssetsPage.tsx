@@ -17,7 +17,6 @@ export type AccountEditDraft = {
 };
 
 export function AssetsPage({
-  active,
   defaultDate,
   accounts,
   assetAccounts,
@@ -37,7 +36,6 @@ export function AssetsPage({
   onStartEditAccount,
   onCreateAccount,
 }: {
-  active: boolean;
   defaultDate: string;
   accounts: Account[];
   assetAccounts: Account[];
@@ -59,7 +57,7 @@ export function AssetsPage({
 }) {
   return (
     <>
-<section className="card" hidden={!active}>
+<section className="card">
   <h2>Property details</h2>
   <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
   {properties.length ? (
@@ -106,7 +104,7 @@ export function AssetsPage({
   ) : <p className="muted">No properties configured.</p>}
 </section>
 
-<section className="grid two-column" hidden={!active}>
+<section className="grid two-column">
   <div className="card">
     <h2>Real estate</h2>
     {properties.length ? (
@@ -168,7 +166,7 @@ export function AssetsPage({
   </div>
 </section>
 
-<section className="grid two-column" hidden={!active}>
+<section className="grid two-column">
   <div className="card">
     <h2>Add property</h2>
     <p className="muted">Creates a real estate asset account, property profile, and optional valuation snapshot.</p>
@@ -255,7 +253,7 @@ export function AssetsPage({
   </div>
 </section>
 
-<section className="card" hidden={!active}>
+<section className="card">
   <div className="section-header">
     <div>
       <h2>Accounts</h2>
@@ -383,7 +381,7 @@ export function AssetsPage({
   )}
 </section>
 
-<section className="card" hidden={!active}>
+<section className="card">
   <h2>Add account</h2>
     <form onSubmit={onCreateAccount} className="stacked-form">
       <input name="name" placeholder="Fidelity 401k" required />

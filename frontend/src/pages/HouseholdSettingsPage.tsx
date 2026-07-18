@@ -2,7 +2,6 @@ import type { FormEventHandler } from 'react';
 import type { FintrackImportResult, Household, HouseholdMembership, User } from '../api';
 
 export function HouseholdSettingsPage({
-  active,
   household,
   members,
   availableUsers,
@@ -17,7 +16,6 @@ export function HouseholdSettingsPage({
   onImportFintrack,
   fintrackImportResult,
 }: {
-  active: boolean;
   household: Household;
   members: HouseholdMembership[];
   availableUsers: User[];
@@ -34,7 +32,7 @@ export function HouseholdSettingsPage({
 }) {
   return (
     <>
-      <section className="card" hidden={!active}>
+      <section className="card">
         <div className="section-header">
           <div>
             <h2>People & household access</h2>
@@ -91,7 +89,7 @@ export function HouseholdSettingsPage({
       </section>
 
       {adminToolsEnabled && (
-        <section className="card" hidden={!active}>
+        <section className="card">
           <div className="section-header">
             <div>
               <h2>Import FinTrack data</h2>

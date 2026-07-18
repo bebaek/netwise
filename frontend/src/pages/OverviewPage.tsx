@@ -103,7 +103,6 @@ function HistoryChart({
 }
 
 export function OverviewPage({
-  active,
   netWorth,
   history,
   projection,
@@ -113,7 +112,6 @@ export function OverviewPage({
   showProjectionOnTrajectory,
   onShowProjectionOnTrajectory,
 }: {
-  active: boolean;
   netWorth: NetWorth | null;
   history: NetWorthHistory | null;
   projection: NetWorthProjection | null;
@@ -138,7 +136,7 @@ export function OverviewPage({
 
   return (
     <>
-      <section className="summary-grid" hidden={!active}>
+      <section className="summary-grid">
         <div className="metric-card">
           <span>Net worth</span>
           <strong>{formatMoney(netWorth?.net_worth)}</strong>
@@ -153,7 +151,7 @@ export function OverviewPage({
         </div>
       </section>
 
-      <section className="card" hidden={!active}>
+      <section className="card">
         <div className="section-header">
           <div>
             <h2>Financial trajectory</h2>
@@ -212,7 +210,7 @@ export function OverviewPage({
         )}
       </section>
 
-      <section className="card" hidden={!active}>
+      <section className="card">
         <h2>What changed?</h2>
         <p className="muted">Break down each snapshot date by asset and liability category.</p>
         {breakdownHistory?.points.length ? (

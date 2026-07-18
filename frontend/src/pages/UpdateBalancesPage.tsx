@@ -9,7 +9,6 @@ export type SnapshotEditDraft = {
 };
 
 export function UpdateBalancesPage({
-  active,
   accounts,
   latestBalanceByAccountId,
   defaultDate,
@@ -24,7 +23,6 @@ export function UpdateBalancesPage({
   onDeleteSnapshot,
   onCreateSnapshot,
 }: {
-  active: boolean;
   accounts: Account[];
   latestBalanceByAccountId: ReadonlyMap<string, string | null>;
   defaultDate: string;
@@ -41,7 +39,7 @@ export function UpdateBalancesPage({
 }) {
   return (
     <>
-      <section className="card" hidden={!active}>
+      <section className="card">
         <h2>Add household snapshot</h2>
         <p className="muted">Capture a snapshot day across many accounts. Empty balances are skipped; existing same-day snapshots are updated.</p>
         {accounts.length ? (
@@ -73,7 +71,7 @@ export function UpdateBalancesPage({
         )}
       </section>
 
-      <section className="card" hidden={!active}>
+      <section className="card">
         <div className="section-header">
           <div>
             <h2>Snapshot history</h2>
@@ -180,7 +178,7 @@ export function UpdateBalancesPage({
         )}
       </section>
 
-      <section className="card" hidden={!active}>
+      <section className="card">
         <h2>Add a single snapshot</h2>
         <p className="muted">Use this for a one-off account update. For routine updates, capture the household snapshot above.</p>
         <form onSubmit={onCreateSnapshot} className="stacked-form">

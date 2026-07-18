@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
   AccountEvent,
@@ -68,8 +68,6 @@ import {
   AppHeader,
   AppNavigation,
   ViewHeading,
-  appViewFromPath,
-  appViewPath,
   type AppView,
 } from './components/AppShell';
 import { AssetsPage, type AccountEditDraft } from './pages/AssetsPage';
@@ -112,11 +110,16 @@ function downloadJson(filename: string, value: unknown): void {
   URL.revokeObjectURL(url);
 }
 
+function WorkspaceView({ view, children }: { view: AppView; children: ReactNode }) {
+  return (
+    <>
+      <ViewHeading activeView={view} />
+      {children}
+    </>
+  );
+}
+
 function App() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const routedView = appViewFromPath(location.pathname);
-  const activeView: AppView = routedView ?? 'overview';
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -149,14 +152,6 @@ function App() {
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    if (!routedView) navigate(appViewPath('overview'), { replace: true });
-  }, [navigate, routedView]);
-
-  function selectView(view: AppView) {
-    navigate(appViewPath(view));
-  }
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId),
@@ -956,108 +951,133 @@ function App() {
       )}
 
       {selectedHousehold && (
-        <>
-          <ViewHeading activeView={activeView} onSelectView={selectView} />
-
-          <PlanningPage
-            active={activeView === 'plan'}
-            defaultDate={today()}
-            accounts={accounts}
-            assetAccounts={assetAccounts}
-            propertyAccounts={propertyAccounts}
-            accountNameById={accountNameById}
-            liquidationStrategies={liquidationStrategies}
-            onDeleteLiquidationStrategy={handleDeleteLiquidationStrategy}
-            onUpsertLiquidationStrategy={handleUpsertLiquidationStrategy}
-            projectionSettings={projectionSettings}
-            onSaveProjectionSettings={handleSaveProjectionSettings}
-            onGetProjection={handleGetProjection}
-            incomeSources={incomeSources}
-            taxRecords={taxRecords}
-            projection={projection}
-            onCreateIncomeSource={handleCreateIncomeSource}
-            onCreateTaxRecord={handleCreateTaxRecord}
-            realEstateSales={realEstateSales}
-            onDeleteRealEstateSale={handleDeleteRealEstateSale}
-            onCreateRealEstateSale={handleCreateRealEstateSale}
-            accountEvents={accountEvents}
-            accountEventDraft={accountEventDraft}
-            onAccountEventDraft={setAccountEventDraft}
-            onStartNewAccountEvent={startNewAccountEventDraft}
-            onStartEditAccountEvent={startEditAccountEventDraft}
-            onSaveAccountEvent={handleSaveAccountEventDraft}
-            onDeleteAccountEvent={handleDeleteAccountEvent}
+        <Routes>
+          <Route path="/" element={<Navigate to="/overview" replace />} />
+          <Route
+            path="/overview"
+            element={
+              <WorkspaceView view="overview">
+                <OverviewPage
+                  netWorth={netWorth}
+                  history={history}
+                  projection={projection}
+                  breakdownHistory={breakdownHistory}
+                  showInterpolatedHistory={showInterpolatedHistory}
+                  onShowInterpolatedHistory={setShowInterpolatedHistory}
+                  showProjectionOnTrajectory={showProjectionOnTrajectory}
+                  onShowProjectionOnTrajectory={setShowProjectionOnTrajectory}
+                />
+              </WorkspaceView>
+            }
           />
-
-          <AssetsPage
-            active={activeView === 'assets'}
-            defaultDate={today()}
-            accounts={accounts}
-            assetAccounts={assetAccounts}
-            propertyAccounts={propertyAccounts}
-            properties={properties}
-            mortgages={mortgages}
-            propertyEditId={propertyEditId}
-            onPropertyEditId={setPropertyEditId}
-            accountNameById={accountNameById}
-            latestBalanceByAccountId={latestBalanceByAccountId}
-            onUpdateProperty={handleUpdateProperty}
-            onCreateProperty={handleCreateProperty}
-            onCreateMortgage={handleCreateMortgage}
-            accountEditDraft={accountEditDraft}
-            onAccountEditDraft={setAccountEditDraft}
-            onSaveAccountEdit={handleSaveAccountEdit}
-            onStartEditAccount={startEditAccount}
-            onCreateAccount={handleCreateAccount}
+          <Route
+            path="/update"
+            element={
+              <WorkspaceView view="update">
+                <UpdateBalancesPage
+                  accounts={accounts}
+                  latestBalanceByAccountId={latestBalanceByAccountId}
+                  defaultDate={today()}
+                  snapshotBatchMessage={snapshotBatchMessage}
+                  onCreateSnapshotBatch={handleCreateSnapshotBatch}
+                  householdSnapshots={householdSnapshots}
+                  snapshotAccountFilter={snapshotAccountFilter}
+                  onSnapshotAccountFilter={setSnapshotAccountFilter}
+                  snapshotEditDraft={snapshotEditDraft}
+                  onSnapshotEditDraft={setSnapshotEditDraft}
+                  onUpdateSnapshot={handleUpdateSnapshot}
+                  onDeleteSnapshot={handleDeleteSnapshot}
+                  onCreateSnapshot={handleCreateSnapshot}
+                />
+              </WorkspaceView>
+            }
           />
-
-          <HouseholdSettingsPage
-            active={activeView === 'settings'}
-            household={selectedHousehold}
-            members={householdMembers}
-            availableUsers={availableUsersForMembership}
-            adminToolsEnabled={adminToolsEnabled}
-            onDownloadExport={handleDownloadHouseholdExport}
-            onCreateHousehold={handleCreateHousehold}
-            onCreateUser={handleCreateUser}
-            onRemoveMember={handleRemoveHouseholdMember}
-            onAddMember={handleAddHouseholdMember}
-            fintrackDryRun={fintrackDryRun}
-            onFintrackDryRun={setFintrackDryRun}
-            onImportFintrack={handleImportFintrack}
-            fintrackImportResult={fintrackImportResult}
+          <Route
+            path="/plan"
+            element={
+              <WorkspaceView view="plan">
+                <PlanningPage
+                  defaultDate={today()}
+                  accounts={accounts}
+                  assetAccounts={assetAccounts}
+                  propertyAccounts={propertyAccounts}
+                  accountNameById={accountNameById}
+                  liquidationStrategies={liquidationStrategies}
+                  onDeleteLiquidationStrategy={handleDeleteLiquidationStrategy}
+                  onUpsertLiquidationStrategy={handleUpsertLiquidationStrategy}
+                  projectionSettings={projectionSettings}
+                  onSaveProjectionSettings={handleSaveProjectionSettings}
+                  onGetProjection={handleGetProjection}
+                  incomeSources={incomeSources}
+                  taxRecords={taxRecords}
+                  projection={projection}
+                  onCreateIncomeSource={handleCreateIncomeSource}
+                  onCreateTaxRecord={handleCreateTaxRecord}
+                  realEstateSales={realEstateSales}
+                  onDeleteRealEstateSale={handleDeleteRealEstateSale}
+                  onCreateRealEstateSale={handleCreateRealEstateSale}
+                  accountEvents={accountEvents}
+                  accountEventDraft={accountEventDraft}
+                  onAccountEventDraft={setAccountEventDraft}
+                  onStartNewAccountEvent={startNewAccountEventDraft}
+                  onStartEditAccountEvent={startEditAccountEventDraft}
+                  onSaveAccountEvent={handleSaveAccountEventDraft}
+                  onDeleteAccountEvent={handleDeleteAccountEvent}
+                />
+              </WorkspaceView>
+            }
           />
-
-          <OverviewPage
-            active={activeView === 'overview'}
-            netWorth={netWorth}
-            history={history}
-            projection={projection}
-            breakdownHistory={breakdownHistory}
-            showInterpolatedHistory={showInterpolatedHistory}
-            onShowInterpolatedHistory={setShowInterpolatedHistory}
-            showProjectionOnTrajectory={showProjectionOnTrajectory}
-            onShowProjectionOnTrajectory={setShowProjectionOnTrajectory}
+          <Route
+            path="/assets"
+            element={
+              <WorkspaceView view="assets">
+                <AssetsPage
+                  defaultDate={today()}
+                  accounts={accounts}
+                  assetAccounts={assetAccounts}
+                  propertyAccounts={propertyAccounts}
+                  properties={properties}
+                  mortgages={mortgages}
+                  propertyEditId={propertyEditId}
+                  onPropertyEditId={setPropertyEditId}
+                  accountNameById={accountNameById}
+                  latestBalanceByAccountId={latestBalanceByAccountId}
+                  onUpdateProperty={handleUpdateProperty}
+                  onCreateProperty={handleCreateProperty}
+                  onCreateMortgage={handleCreateMortgage}
+                  accountEditDraft={accountEditDraft}
+                  onAccountEditDraft={setAccountEditDraft}
+                  onSaveAccountEdit={handleSaveAccountEdit}
+                  onStartEditAccount={startEditAccount}
+                  onCreateAccount={handleCreateAccount}
+                />
+              </WorkspaceView>
+            }
           />
-
-          <UpdateBalancesPage
-            active={activeView === 'update'}
-            accounts={accounts}
-            latestBalanceByAccountId={latestBalanceByAccountId}
-            defaultDate={today()}
-            snapshotBatchMessage={snapshotBatchMessage}
-            onCreateSnapshotBatch={handleCreateSnapshotBatch}
-            householdSnapshots={householdSnapshots}
-            snapshotAccountFilter={snapshotAccountFilter}
-            onSnapshotAccountFilter={setSnapshotAccountFilter}
-            snapshotEditDraft={snapshotEditDraft}
-            onSnapshotEditDraft={setSnapshotEditDraft}
-            onUpdateSnapshot={handleUpdateSnapshot}
-            onDeleteSnapshot={handleDeleteSnapshot}
-            onCreateSnapshot={handleCreateSnapshot}
+          <Route
+            path="/settings"
+            element={
+              <WorkspaceView view="settings">
+                <HouseholdSettingsPage
+                  household={selectedHousehold}
+                  members={householdMembers}
+                  availableUsers={availableUsersForMembership}
+                  adminToolsEnabled={adminToolsEnabled}
+                  onDownloadExport={handleDownloadHouseholdExport}
+                  onCreateHousehold={handleCreateHousehold}
+                  onCreateUser={handleCreateUser}
+                  onRemoveMember={handleRemoveHouseholdMember}
+                  onAddMember={handleAddHouseholdMember}
+                  fintrackDryRun={fintrackDryRun}
+                  onFintrackDryRun={setFintrackDryRun}
+                  onImportFintrack={handleImportFintrack}
+                  fintrackImportResult={fintrackImportResult}
+                />
+              </WorkspaceView>
+            }
           />
-
-        </>
+          <Route path="*" element={<Navigate to="/overview" replace />} />
+        </Routes>
       )}
     </main>
   );

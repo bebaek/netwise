@@ -60,7 +60,6 @@ function formatRate(value: string): string {
 }
 
 export function PlanningPage({
-  active,
   defaultDate,
   accounts,
   assetAccounts,
@@ -88,7 +87,6 @@ export function PlanningPage({
   onSaveAccountEvent,
   onDeleteAccountEvent,
 }: {
-  active: boolean;
   defaultDate: string;
   accounts: Account[];
   assetAccounts: Account[];
@@ -118,7 +116,7 @@ export function PlanningPage({
 }) {
   return (
     <>
-<details className="advanced-planning" hidden={!active}>
+<details className="advanced-planning">
   <summary>Advanced property sale automation</summary>
   <p className="muted">Configure automatic sales for liquidity shortfalls or runway optimization.</p>
   <section className="grid two-column">
@@ -188,7 +186,7 @@ export function PlanningPage({
   </section>
 </details>
 
-<section className="card" hidden={!active}>
+<section className="card">
   <h2>Projection</h2>
   <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
 
@@ -458,7 +456,7 @@ export function PlanningPage({
   )}
 </section>
 
-<section className="grid two-column" hidden={!active}>
+<section className="grid two-column">
   <div className="card">
     <h2>Income sources</h2>
     {incomeSources.length ? (
@@ -518,7 +516,7 @@ export function PlanningPage({
   </div>
 </section>
 
-<section className="grid two-column" hidden={!active}>
+<section className="grid two-column">
   <div className="card">
     <h2>Add income source</h2>
     <form onSubmit={onCreateIncomeSource} className="stacked-form">
@@ -567,7 +565,7 @@ export function PlanningPage({
   </div>
 </section>
 
-<section className="grid two-column" hidden={!active}>
+<section className="grid two-column">
   <div className="card">
     <h2>Planned property sales</h2>
     <p className="muted">A sale pays off its linked mortgage, deducts selling costs and an estimated tax reserve, and transfers net proceeds to the selected account.</p>
@@ -621,7 +619,7 @@ export function PlanningPage({
   </div>
 </section>
 
-<section className="card projection-events-card" hidden={!active}>
+<section className="card projection-events-card">
   <div className="section-header">
     <div>
       <h2>Projection events</h2>

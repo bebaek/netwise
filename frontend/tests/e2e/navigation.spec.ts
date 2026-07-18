@@ -55,10 +55,19 @@ test('navigates across the financial planning workspace', async ({ page }, testI
 
 test('overview update action opens the balance workflow', async ({ page }) => {
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
-  await page.getByRole('button', { name: 'Update balances', exact: true }).click();
+  await page.getByRole('link', { name: 'Update balances', exact: true }).click();
 
   await expect(page.getByRole('link', { name: 'Update', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Add household snapshot', exact: true })).toBeVisible();
+});
+
+test('mounts only the active workspace page', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: 'Financial trajectory', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Assets', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Financial trajectory', exact: true })).toHaveCount(0);
 });
 
 test('redirects unknown routes to overview', async ({ page }) => {

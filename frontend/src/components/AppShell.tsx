@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import type { Household, User } from '../api';
 
 export type AppView = 'overview' | 'update' | 'plan' | 'assets' | 'settings';
@@ -19,11 +19,6 @@ export const APP_VIEWS: ViewDetails[] = [
 
 export function appViewPath(view: AppView): string {
   return `/${view}`;
-}
-
-export function appViewFromPath(pathname: string): AppView | null {
-  const segment = pathname.replace(/^\/+|\/+$/g, '');
-  return APP_VIEWS.some((view) => view.id === segment) ? segment as AppView : null;
 }
 
 export function AppHeader({
@@ -100,13 +95,7 @@ export function AppNavigation() {
   );
 }
 
-export function ViewHeading({
-  activeView,
-  onSelectView,
-}: {
-  activeView: AppView;
-  onSelectView: (view: AppView) => void;
-}) {
+export function ViewHeading({ activeView }: { activeView: AppView }) {
   const details = APP_VIEWS.find((view) => view.id === activeView) ?? APP_VIEWS[0];
 
   return (
@@ -117,7 +106,7 @@ export function ViewHeading({
         <p className="muted">{details.description}</p>
       </div>
       {activeView === 'overview' && (
-        <button type="button" onClick={() => onSelectView('update')}>Update balances</button>
+        <Link className="button-link" to={appViewPath('update')}>Update balances</Link>
       )}
     </section>
   );
