@@ -59,7 +59,12 @@ export function UpdateBalancesPage({
                     <span>{account.account_kind} · {account.category}</span>
                   </div>
                   <div>{formatMoney(latestBalanceByAccountId.get(account.id))}</div>
-                  <input name={`balance:${account.id}`} inputMode="decimal" placeholder="Leave blank to skip" />
+                  <input
+                    name={`balance:${account.id}`}
+                    inputMode="decimal"
+                    placeholder="Leave blank to skip"
+                    aria-label={`${account.name} new balance`}
+                  />
                 </div>
               ))}
             </div>
@@ -91,7 +96,7 @@ export function UpdateBalancesPage({
           </select>
         </div>
         {householdSnapshots.length ? (
-          <table className="spaced-table">
+          <table className="spaced-table" tabIndex={0}>
             <thead>
               <tr>
                 <th>Date</th>
@@ -110,6 +115,7 @@ export function UpdateBalancesPage({
                       {isEditing ? (
                         <input
                           type="date"
+                          aria-label={`Snapshot date for ${snapshot.account_name}`}
                           value={snapshotEditDraft.as_of_date}
                           onChange={(event) =>
                             onSnapshotEditDraft({ ...snapshotEditDraft, as_of_date: event.target.value })
@@ -127,6 +133,7 @@ export function UpdateBalancesPage({
                       {isEditing ? (
                         <input
                           inputMode="decimal"
+                          aria-label={`Snapshot balance for ${snapshot.account_name}`}
                           value={snapshotEditDraft.balance}
                           onChange={(event) =>
                             onSnapshotEditDraft({ ...snapshotEditDraft, balance: event.target.value })
@@ -182,14 +189,23 @@ export function UpdateBalancesPage({
         <h2>Add a single snapshot</h2>
         <p className="muted">Use this for a one-off account update. For routine updates, capture the household snapshot above.</p>
         <form onSubmit={onCreateSnapshot} className="stacked-form">
-          <select name="account_id" required defaultValue="">
-            <option value="" disabled>Select account</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>{account.name}</option>
-            ))}
-          </select>
-          <input name="as_of_date" type="date" defaultValue={defaultDate} required />
-          <input name="balance" placeholder="100000.00" required />
+          <label>
+            Account
+            <select name="account_id" required defaultValue="">
+              <option value="" disabled>Select account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>{account.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Snapshot date
+            <input name="as_of_date" type="date" defaultValue={defaultDate} required />
+          </label>
+          <label>
+            Balance
+            <input name="balance" inputMode="decimal" placeholder="100000.00" required />
+          </label>
           <button type="submit">Add snapshot</button>
         </form>
       </section>

@@ -62,7 +62,7 @@ export function AssetsPage({
   <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
   {properties.length ? (
     <>
-      <select value={propertyEditId} onChange={(event) => onPropertyEditId(event.target.value)}>
+      <select aria-label="Property to edit" value={propertyEditId} onChange={(event) => onPropertyEditId(event.target.value)}>
         <option value="">Select property to edit</option>
         {properties.map((property) => (
           <option key={property.id} value={property.id}>
@@ -72,7 +72,7 @@ export function AssetsPage({
       </select>
       {properties.filter((property) => property.id === propertyEditId).map((property) => (
         <form key={property.id} onSubmit={onUpdateProperty} className="projection-form">
-          <select name="property_type" defaultValue={property.property_type}>
+          <select name="property_type" aria-label="Property type" defaultValue={property.property_type}>
             <option value="residence">Primary residence</option>
             <option value="rental">Rental</option>
             <option value="land">Land</option>
@@ -93,7 +93,7 @@ export function AssetsPage({
           <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" defaultValue={property.utilities_annual ?? ''} />
           <input name="other_operating_expense_annual" inputMode="decimal" placeholder="Other annual operating expenses" defaultValue={property.other_operating_expense_annual ?? ''} />
           <input name="capital_reserve_rate" inputMode="decimal" placeholder="Capital reserve rate, e.g. 0.01" defaultValue={property.capital_reserve_rate ?? ''} />
-          <select name="rental_deposit_account_id" defaultValue={property.rental_deposit_account_id ?? ''}>
+          <select name="rental_deposit_account_id" aria-label="Rental deposit account" defaultValue={property.rental_deposit_account_id ?? ''}>
             <option value="">Default cash-flow account</option>
             {assetAccounts.filter((account) => account.id !== property.account_id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
           </select>
@@ -108,7 +108,7 @@ export function AssetsPage({
   <div className="card">
     <h2>Real estate</h2>
     {properties.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr>
             <th>Property</th>
@@ -136,7 +136,7 @@ export function AssetsPage({
   <div className="card">
     <h2>Mortgages</h2>
     {mortgages.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr>
             <th>Mortgage</th>
@@ -172,7 +172,7 @@ export function AssetsPage({
     <p className="muted">Creates a real estate asset account, property profile, and optional valuation snapshot.</p>
     <form onSubmit={onCreateProperty} className="stacked-form">
       <input name="property_name" placeholder="Primary residence" required />
-      <select name="property_type" defaultValue="residence">
+      <select name="property_type" aria-label="Property type" defaultValue="residence">
         <option value="residence">Residence</option>
         <option value="rental">Rental</option>
         <option value="land">Land</option>
@@ -203,7 +203,7 @@ export function AssetsPage({
       <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" />
       <input name="other_operating_expense_annual" inputMode="decimal" placeholder="Other annual operating expenses" />
       <input name="capital_reserve_rate" inputMode="decimal" placeholder="Capital reserve rate, e.g. 0.01" />
-      <select name="rental_deposit_account_id" defaultValue="">
+      <select name="rental_deposit_account_id" aria-label="Rental deposit account" defaultValue="">
         <option value="">Default cash-flow account</option>
         {assetAccounts.map((account) => (
           <option key={account.id} value={account.id}>{account.name}</option>
@@ -223,7 +223,7 @@ export function AssetsPage({
     <p className="muted">Creates a mortgage liability account, mortgage profile, and initial balance snapshot.</p>
     <form onSubmit={onCreateMortgage} className="stacked-form">
       <input name="mortgage_name" placeholder="Primary residence mortgage" required />
-      <select name="property_account_id" defaultValue="">
+      <select name="property_account_id" aria-label="Linked property" defaultValue="">
         <option value="">No linked property</option>
         {propertyAccounts.map((account) => (
           <option key={account.id} value={account.id}>
@@ -239,7 +239,7 @@ export function AssetsPage({
         <input name="start_date" type="date" required />
       </label>
       <input name="monthly_payment" inputMode="decimal" placeholder="Monthly payment" />
-      <select name="rate_type" defaultValue="fixed">
+      <select name="rate_type" aria-label="Mortgage rate type" defaultValue="fixed">
         <option value="fixed">Fixed</option>
         <option value="adjustable">Adjustable</option>
       </select>
@@ -350,7 +350,7 @@ export function AssetsPage({
     </form>
   )}
   {accounts.length ? (
-    <table>
+    <table tabIndex={0}>
       <thead>
         <tr>
           <th>Name</th>
@@ -385,13 +385,13 @@ export function AssetsPage({
   <h2>Add account</h2>
     <form onSubmit={onCreateAccount} className="stacked-form">
       <input name="name" placeholder="Fidelity 401k" required />
-      <select name="account_kind" defaultValue="asset">
+      <select name="account_kind" aria-label="Account kind" defaultValue="asset">
         <option value="asset">Asset</option>
         <option value="liability">Liability</option>
       </select>
       <input name="category" placeholder="retirement / real_estate / mortgage" required />
       <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
-      <select name="retirement_tax_treatment" defaultValue="">
+      <select name="retirement_tax_treatment" aria-label="Retirement tax treatment" defaultValue="">
         <option value="">Not a retirement account</option>
         <option value="traditional">Traditional / tax-deferred</option>
         <option value="roth">Roth / tax-free</option>

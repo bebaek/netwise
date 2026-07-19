@@ -182,7 +182,7 @@ export function OverviewPage({
               points={history.points}
               projectionPoints={showProjectionOnTrajectory ? projection?.points ?? [] : []}
             />
-            <table className="spaced-table">
+            <table className="spaced-table" tabIndex={0} aria-label="Net worth history">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -214,7 +214,7 @@ export function OverviewPage({
         <h2>What changed?</h2>
         <p className="muted">Break down each snapshot date by asset and liability category.</p>
         {breakdownHistory?.points.length ? (
-          <div className="table-scroll">
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="Net worth breakdown history">
             <table className="spaced-table breakdown-table">
               <thead>
                 <tr>

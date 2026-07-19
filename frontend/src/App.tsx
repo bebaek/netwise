@@ -1,4 +1,4 @@
-import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
@@ -161,6 +161,7 @@ function WorkspaceView({
 }
 
 function App() {
+  const householdRequestId = useRef(0);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => storedSelection(SELECTED_USER_STORAGE_KEY));
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -229,25 +230,23 @@ function App() {
   async function refreshUsers() {
     const userList = await listUsers();
     setUsers(userList);
-    if (userList.length === 0) {
-      setSelectedUserId('');
-      return;
-    }
-    if (!userList.some((user) => user.id === selectedUserId)) {
-      setSelectedUserId(userList[0].id);
-    }
+    setSelectedUserId((currentUserId) => {
+      if (userList.length === 0) return '';
+      return userList.some((user) => user.id === currentUserId) ? currentUserId : userList[0].id;
+    });
   }
 
   async function refreshHouseholds(userId: string) {
+    const requestId = ++householdRequestId.current;
     const householdList = await listHouseholds(userId);
+    if (requestId !== householdRequestId.current) return;
     setHouseholds(householdList);
-    if (householdList.length === 0) {
-      setSelectedHouseholdId('');
-      return;
-    }
-    if (!householdList.some((household) => household.id === selectedHouseholdId)) {
-      setSelectedHouseholdId(householdList[0].id);
-    }
+    setSelectedHouseholdId((currentHouseholdId) => {
+      if (householdList.length === 0) return '';
+      return householdList.some((household) => household.id === currentHouseholdId)
+        ? currentHouseholdId
+        : householdList[0].id;
+    });
   }
 
   async function refreshDashboard(householdId: string) {
@@ -316,10 +315,12 @@ function App() {
 
   useEffect(() => {
     if (!selectedUserId) {
+      householdRequestId.current += 1;
       setHouseholds([]);
       setSelectedHouseholdId('');
       return;
     }
+    setHouseholds([]);
     refreshHouseholds(selectedUserId).catch((err: unknown) => setError(String(err)));
   }, [selectedUserId]);
 

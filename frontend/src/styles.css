@@ -222,6 +222,10 @@ th {
   font-weight: 800;
 }
 
+.advanced-planning:not([open]) > :not(summary) {
+  display: none;
+}
+
 .advanced-planning > .muted {
   margin-bottom: 0;
 }
@@ -246,7 +250,7 @@ th {
 }
 
 .muted {
-  color: #64748b;
+  color: #526277;
 }
 
 .selector-stack {
@@ -282,6 +286,10 @@ th {
   display: grid;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.grid > * {
+  min-width: 0;
 }
 
 .summary-grid {
@@ -976,7 +984,7 @@ code {
     flex-direction: column;
   }
 
-  table:not(.projection-summary-table):not(.editable-table) {
+  table:not(.projection-summary-table):not(.editable-table):not(.breakdown-table) {
     display: block;
     overflow-x: auto;
     white-space: nowrap;

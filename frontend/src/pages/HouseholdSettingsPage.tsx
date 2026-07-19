@@ -71,13 +71,13 @@ export function HouseholdSettingsPage({
         </div>
         {availableUsers.length > 0 && (
           <form onSubmit={onAddMember} className="form-row spaced-table">
-            <select name="user_id" required defaultValue="">
+            <select name="user_id" aria-label="Household member" required defaultValue="">
               <option value="" disabled>Add user to household</option>
               {availableUsers.map((user) => (
                 <option key={user.id} value={user.id}>{user.display_name}</option>
               ))}
             </select>
-            <select name="role" defaultValue="member">
+            <select name="role" aria-label="Household role" defaultValue="member">
               <option value="owner">Owner</option>
               <option value="admin">Admin</option>
               <option value="member">Member</option>
@@ -119,7 +119,7 @@ export function HouseholdSettingsPage({
                 {fintrackImportResult.accounts_created} accounts created, {fintrackImportResult.accounts_existing} existing, {fintrackImportResult.snapshots_created} snapshots created, {fintrackImportResult.snapshots_updated} updated, {fintrackImportResult.snapshots_existing} unchanged, {fintrackImportResult.events_created} events created, {fintrackImportResult.events_existing} existing.
               </p>
               <div className="table-scroll">
-                <table>
+                <table tabIndex={0}>
                   <thead>
                     <tr>
                       <th>Asset</th>

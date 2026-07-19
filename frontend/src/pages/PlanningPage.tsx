@@ -124,7 +124,7 @@ export function PlanningPage({
     <h2>Automatic property sale strategies</h2>
     <p className="muted">Strategies either sell at a liquid-funding shortfall or jointly test annual March 1 sale schedules to delay retirement withdrawals as long as possible. Fixed-date sales take precedence.</p>
     {liquidationStrategies.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr><th>Property</th><th>Mode</th><th>Priority</th><th>Earliest date</th><th>Tax reserve</th><th>Status</th><th /></tr>
         </thead>
@@ -413,7 +413,7 @@ export function PlanningPage({
       <details className="cash-flow-details">
         <summary>Show projected account cash flows</summary>
         <div className="desktop-table table-frame cash-flow-table-frame">
-          <table className="spaced-table compact-table">
+          <table className="spaced-table compact-table" tabIndex={0}>
             <thead>
               <tr>
                 <th>Year</th>
@@ -460,7 +460,7 @@ export function PlanningPage({
   <div className="card">
     <h2>Income sources</h2>
     {incomeSources.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr>
             <th>Name</th>
@@ -490,7 +490,7 @@ export function PlanningPage({
   <div className="card">
     <h2>Annual tax records</h2>
     {taxRecords.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr>
             <th>Year</th>
@@ -523,7 +523,7 @@ export function PlanningPage({
       <input name="income_name" placeholder="Salary" required />
       <input name="income_type" placeholder="salary / bonus / other" />
       <input name="amount" inputMode="decimal" placeholder="Amount per pay period" required />
-      <select name="frequency" defaultValue="monthly" required>
+      <select name="frequency" aria-label="Income frequency" defaultValue="monthly" required>
         <option value="weekly">Weekly</option>
         <option value="biweekly">Biweekly</option>
         <option value="semimonthly">Semimonthly</option>
@@ -540,7 +540,7 @@ export function PlanningPage({
         <input name="end_date" type="date" />
       </label>
       <input name="growth_rate" inputMode="decimal" placeholder="Growth rate, e.g. 0.03" />
-      <select name="deposit_account_id" defaultValue="">
+      <select name="deposit_account_id" aria-label="Income deposit account" defaultValue="">
         <option value="">Default deposit account</option>
         {assetAccounts.map((account) => (
           <option key={account.id} value={account.id}>
@@ -570,7 +570,7 @@ export function PlanningPage({
     <h2>Planned property sales</h2>
     <p className="muted">A sale pays off its linked mortgage, deducts selling costs and an estimated tax reserve, and transfers net proceeds to the selected account.</p>
     {realEstateSales.length ? (
-      <table>
+      <table tabIndex={0}>
         <thead>
           <tr><th>Property</th><th>Date</th><th>Price</th><th>Tax reserve</th><th>Proceeds account</th><th /></tr>
         </thead>
@@ -593,7 +593,7 @@ export function PlanningPage({
   <div className="card">
     <h2>Plan property sale</h2>
     <form onSubmit={onCreateRealEstateSale} className="stacked-form">
-      <select name="property_account_id" defaultValue="" required>
+      <select name="property_account_id" aria-label="Property to sell" defaultValue="" required>
         <option value="" disabled>Select property</option>
         {propertyAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
       </select>
