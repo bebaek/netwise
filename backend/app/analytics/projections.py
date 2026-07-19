@@ -40,6 +40,11 @@ DEFAULT_CATEGORY_YIELDS = {
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
 DEFAULT_INCOME_GROWTH_RATE = Decimal("0.020000")
 
+
+def _current_date() -> date:
+    return date.today()
+
+
 DEFAULT_LIQUIDATION_EXPENSE_RATES = {
     "taxable_investment": Decimal("0.010000"),
     "brokerage": Decimal("0.010000"),
@@ -697,6 +702,7 @@ def _optimize_liquid_runway_sales(
             ordered_strategies,
             start_year=start_year,
             end_year=candidate_end_year,
+            not_before=max(date(start_year, 1, 1), _current_date()),
         ):
             evaluate(schedule)
 
@@ -735,6 +741,7 @@ def _ordered_march_sale_schedules(
     *,
     start_year: int,
     end_year: int,
+    not_before: date,
 ) -> list[dict[UUID, date | None]]:
     schedules: list[dict[UUID, date | None]] = []
 
@@ -754,7 +761,8 @@ def _ordered_march_sale_schedules(
             choices = [
                 date(year, 3, 1)
                 for year in range(start_year, end_year + 1)
-                if (
+                if date(year, 3, 1) >= not_before
+                and (
                     strategy.earliest_sale_date is None
                     or date(year, 3, 1) >= strategy.earliest_sale_date
                 )

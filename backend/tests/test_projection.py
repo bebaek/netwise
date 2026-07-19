@@ -1,6 +1,8 @@
+from datetime import date
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
 from app.analytics.projections import _withdrawal_order
 from app.db.models import Account
@@ -886,9 +888,10 @@ def test_automatic_property_sale_funds_shortfall_before_retirement(client: TestC
     ]
 
 
-def test_property_sale_optimizer_evaluates_march_dates_and_reports_schedule(
-    client: TestClient,
+def test_property_sale_optimizer_excludes_past_march_dates_and_reports_schedule(
+    client: TestClient, monkeypatch: MonkeyPatch
 ):
+    monkeypatch.setattr("app.analytics.projections._current_date", lambda: date(2026, 3, 2))
     household_id = client.post("/households", json={"name": "Runway Optimizer"}).json()["id"]
     checking = client.post(
         "/accounts",
@@ -966,12 +969,12 @@ def test_property_sale_optimizer_evaluates_march_dates_and_reports_schedule(
 
     assert response.status_code == 200
     optimization = response.json()["property_sale_optimization"]
-    assert optimization["schedules_evaluated"] == 3
+    assert optimization["schedules_evaluated"] == 2
     assert optimization["selected_sales"] == [
         {
             "property_account_id": rental["id"],
             "property_name": "Rental",
-            "sale_date": "2026-03-01",
+            "sale_date": "2027-03-01",
         }
     ]
     assert optimization["first_retirement_withdrawal_date"] is None
