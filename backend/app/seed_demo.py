@@ -100,7 +100,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
             account_kind="asset",
             category="real_estate",
             liquidity_class="illiquid",
-            expected_annual_yield=Decimal("0.035000"),
+            expected_annual_yield=None,
         ),
         "mortgage": _get_or_create_account(
             db,

@@ -41,6 +41,27 @@ def test_update_account(client: TestClient):
     assert updated["liquidation_expense_rate"] == "0.100000"
 
 
+def test_real_estate_account_does_not_store_duplicate_yield(client: TestClient):
+    household = client.post("/households", json={"name": "Property Yield"}).json()
+    account = client.post(
+        "/accounts",
+        json={
+            "household_id": household["id"],
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.250000",
+        },
+    ).json()
+
+    assert account["expected_annual_yield"] is None
+    updated = client.patch(
+        f"/accounts/{account['id']}", json={"expected_annual_yield": "0.500000"}
+    ).json()
+    assert updated["expected_annual_yield"] is None
+
+
 def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     household = client.post("/households", json={"name": "Home"}).json()
     household_id = household["id"]
@@ -176,6 +197,7 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
             "purchase_price": "610000.00",
             "adjusted_tax_basis": "625000.00",
             "down_payment": "125000.00",
+            "expected_appreciation_rate": "0.020000",
         },
     )
     assert property_update_response.status_code == 200
@@ -184,6 +206,7 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     assert updated_property["purchase_price"] == "610000.00"
     assert updated_property["adjusted_tax_basis"] == "625000.00"
     assert updated_property["down_payment"] == "125000.00"
+    assert updated_property["expected_appreciation_rate"] == "0.020000"
 
     mortgage_response = client.post(
         "/mortgages",

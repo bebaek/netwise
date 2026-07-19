@@ -13,7 +13,9 @@ class RealEstatePropertyCreate(BaseModel):
     purchase_price: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     adjusted_tax_basis: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     down_payment: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
-    expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    expected_appreciation_rate: Decimal | None = Field(
+        default=Decimal("0.000000"), max_digits=8, decimal_places=6
+    )
     property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     tax_and_insurance_annual: Decimal | None = Field(
@@ -111,6 +113,36 @@ class RealEstatePropertyRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RealEstateValuationPoint(BaseModel):
+    as_of_date: date
+    value: Decimal
+
+
+class RealEstateAnalyticsRead(BaseModel):
+    property_id: UUID
+    account_id: UUID
+    property_name: str
+    valuation_date: date | None
+    current_value: Decimal | None
+    purchase_date: date | None
+    purchase_price: Decimal | None
+    expected_appreciation_rate: Decimal | None
+    appreciation_amount: Decimal | None
+    appreciation_rate: Decimal | None
+    annualized_appreciation_rate: Decimal | None
+    mortgage_balance: Decimal | None
+    mortgage_balance_estimated: bool
+    equity: Decimal | None
+    estimated_annual_rental_income: Decimal | None
+    estimated_noi: Decimal | None
+    estimated_annual_cash_flow: Decimal | None
+    gross_rental_yield: Decimal | None
+    cap_rate: Decimal | None
+    cash_on_cash_return: Decimal | None
+    valuation_history: list[RealEstateValuationPoint]
+    limitations: list[str]
 
 
 class RealEstateSaleCreate(BaseModel):

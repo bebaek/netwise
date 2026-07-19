@@ -47,9 +47,11 @@ def test_fintrack_import_creates_accounts_snapshots_events_and_profiles(client, 
 
     home = next(account for account in accounts if account["name"] == "Home")
     assert home["category"] == "real_estate"
+    assert home["expected_annual_yield"] is None
     properties = client.get(f"/real-estate/properties?household_id={household['id']}").json()
     assert len(properties) == 1
     assert properties[0]["account_id"] == home["id"]
+    assert properties[0]["expected_appreciation_rate"] == "0.030000"
 
     mortgages = client.get(f"/mortgages?household_id={household['id']}").json()
     assert len(mortgages) == 1

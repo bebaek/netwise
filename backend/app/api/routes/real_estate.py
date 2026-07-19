@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.real_estate import calculate_real_estate_analytics
 from app.db.models import (
     Account,
     AccountKind,
@@ -16,6 +17,7 @@ from app.db.session import get_db
 from app.schemas.real_estate import (
     MortgageProfileCreate,
     MortgageProfileRead,
+    RealEstateAnalyticsRead,
     RealEstateLiquidationStrategyRead,
     RealEstateLiquidationStrategyUpsert,
     RealEstatePropertyCreate,
@@ -344,6 +346,17 @@ def update_real_estate_property(
     db.commit()
     db.refresh(property_record)
     return property_record
+
+
+@router.get(
+    "/real-estate/analytics",
+    response_model=list[RealEstateAnalyticsRead],
+)
+def get_real_estate_analytics(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return calculate_real_estate_analytics(db, household_id)
 
 
 @router.get(

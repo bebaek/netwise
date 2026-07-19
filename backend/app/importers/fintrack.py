@@ -220,7 +220,7 @@ def _import_real_estate_asset(
         account_kind="asset",
         category="real_estate",
         liquidity_class="illiquid",
-        expected_annual_yield=_condition_yield(condition),
+        expected_annual_yield=None,
         currency=currency,
     )
     result.account_id = property_account.id
