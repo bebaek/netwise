@@ -269,6 +269,91 @@ def test_projection_projects_real_estate_and_mortgage_balance(client: TestClient
     assert point["assets_total"] == "520000.00"
     assert point["liabilities_total"] == "290833.33"
     assert point["net_worth"] == "229166.67"
+    assert point["projected_mortgage_spending"] == "9166.63"
+    assert point["projected_spending"] == "9166.63"
+
+
+def test_projection_stops_owner_mortgage_spending_after_final_payment(client: TestClient):
+    household = client.post("/households", json={"name": "Mortgage Spending"}).json()
+    household_id = household["id"]
+    cash = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Cash",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    mortgage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Mortgage",
+            "account_kind": "liability",
+            "category": "mortgage",
+            "liquidity_class": "debt",
+            "currency": "USD",
+        },
+    ).json()
+    for account, balance in ((cash, "100000.00"), (home, "200000.00"), (mortgage, "12000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+    client.post(
+        "/real-estate/properties",
+        json={
+            "account_id": home["id"],
+            "property_type": "residence",
+            "expected_appreciation_rate": "0.000000",
+        },
+    )
+    client.post(
+        "/mortgages",
+        json={
+            "liability_account_id": mortgage["id"],
+            "property_account_id": home["id"],
+            "original_principal": "12000.00",
+            "interest_rate": "0.000000",
+            "term_months": 12,
+            "start_date": "2025-12-01",
+            "monthly_payment": "1000.00",
+            "rate_type": "fixed",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2027&annual_spending=12000.00&spending_inflation_rate=0.100000"
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert points[0]["projected_mortgage_spending"] == "12000.00"
+    assert points[0]["projected_spending"] == "24000.00"
+    assert points[1]["projected_mortgage_spending"] == "0.00"
+    assert points[1]["projected_spending"] == "13200.00"
+    cash_balances = [
+        next(account["projected_balance"] for account in point["accounts"] if account["name"] == "Cash")
+        for point in points
+    ]
+    assert cash_balances == ["76000.00", "62800.00"]
 
 
 def test_projection_does_not_infer_spending_from_historical_snapshots(client: TestClient):
@@ -631,6 +716,82 @@ def test_projection_switches_spending_at_retirement_and_reports_withdrawal(
     assert balances == {"Checking": "0.00", "Traditional IRA": "675.81"}
 
 
+def test_recurring_projection_transfer_moves_available_cash_without_changing_net_worth(
+    client: TestClient, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setattr("app.analytics.projections._current_date", lambda: date(2025, 12, 31))
+    household_id = client.post("/households", json={"name": "Recurring Contributions"}).json()["id"]
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    retirement = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "401k",
+            "account_kind": "asset",
+            "category": "retirement",
+            "liquidity_class": "retirement_liquid",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    for account, balance in ((checking, "150.00"), (retirement, "0.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+
+    created = client.post(
+        "/projection-transfers",
+        json={
+            "household_id": household_id,
+            "name": "401k contribution",
+            "from_account_id": checking["id"],
+            "to_account_id": retirement["id"],
+            "annual_amount": "1200.00",
+            "start_date": "2026-03-15",
+            "end_date": "2026-04-01",
+            "growth_rate": "0.000000",
+        },
+    )
+    assert created.status_code == 201
+    transfer_id = created.json()["id"]
+    listed = client.get(f"/projection-transfers?household_id={household_id}")
+    assert listed.status_code == 200
+    assert [transfer["id"] for transfer in listed.json()] == [transfer_id]
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2026&interval=monthly"
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert all(point["net_worth"] == "150.00" for point in points)
+    assert points[1]["cash_flows"] == []
+    assert [flow["cash_flow_type"] for flow in points[2]["cash_flows"]] == [
+        "recurring_transfer_out",
+        "recurring_transfer_in",
+    ]
+    assert [flow["amount"] for flow in points[2]["cash_flows"]] == ["-100.00", "100.00"]
+    assert [flow["amount"] for flow in points[3]["cash_flows"]] == ["-50.00", "50.00"]
+    final_balances = {
+        account["name"]: account["projected_balance"] for account in points[-1]["accounts"]
+    }
+    assert final_balances == {"401k": "150.00", "Checking": "0.00"}
+
+    deleted = client.delete(f"/projection-transfers/{transfer_id}")
+    assert deleted.status_code == 204
+
+
 def test_projection_taxes_non_cash_projection_event_withdrawals(client: TestClient):
     household = client.post("/households", json={"name": "Taxable Withdrawal"}).json()
     household_id = household["id"]
@@ -770,6 +931,16 @@ def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: Test
             f"/accounts/{account['id']}/snapshots",
             json={"as_of_date": "2026-01-01", "balance": balance},
         )
+    property_response = client.post(
+        "/real-estate/properties",
+        json={
+            "account_id": home["id"],
+            "property_type": "residence",
+            "purchase_price": "275000.00",
+            "adjusted_tax_basis": "300000.00",
+        },
+    )
+    assert property_response.status_code == 201
     client.post(
         "/mortgages",
         json={
@@ -801,8 +972,9 @@ def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: Test
         balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
         assert balances["Home"] == "0.00"
         assert balances["Mortgage"] == "0.00"
-        assert balances["Brokerage"] == "84166.67"
-    assert points[0]["projected_taxes"] == "75000.00"
+        assert balances["Brokerage"] == "136666.67"
+    assert response.json()["warnings"] == []
+    assert points[0]["projected_taxes"] == "22500.00"
     assert points[0]["cash_flows"] == [
         {
             "account_id": home["id"],
@@ -826,13 +998,13 @@ def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: Test
             "account_id": home["id"],
             "account_name": "Home",
             "cash_flow_type": "property_sale_tax",
-            "amount": "-75000.00",
+            "amount": "-22500.00",
         },
         {
             "account_id": brokerage["id"],
             "account_name": "Brokerage",
             "cash_flow_type": "property_sale_proceeds",
-            "amount": "84166.67",
+            "amount": "136666.67",
         },
     ]
 
@@ -955,6 +1127,9 @@ def test_automatic_property_sale_funds_shortfall_before_retirement(client: TestC
     )
 
     assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        "Rental: sale tax uses the gross-price fallback because tax basis is missing."
+    ]
     point = response.json()["points"][0]
     balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
     assert balances == {"Checking": "390.00", "Rental": "0.00", "Retirement": "10000.00"}

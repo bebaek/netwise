@@ -18,6 +18,7 @@ from app.db.models import (
     IncomeSource,
     MembershipRole,
     MortgageProfile,
+    ProjectionTransfer,
     RealEstateProperty,
     User,
 )
@@ -107,6 +108,7 @@ _REAL_ESTATE_FIELDS = (
     "property_type",
     "purchase_date",
     "purchase_price",
+    "adjusted_tax_basis",
     "down_payment",
     "expected_appreciation_rate",
     "property_tax_annual",
@@ -150,6 +152,19 @@ _INCOME_SOURCE_FIELDS = (
     "amount",
     "currency",
     "frequency",
+    "start_date",
+    "end_date",
+    "growth_rate",
+    "created_at",
+    "updated_at",
+)
+_PROJECTION_TRANSFER_FIELDS = (
+    "id",
+    "household_id",
+    "name",
+    "from_account_id",
+    "to_account_id",
+    "annual_amount",
     "start_date",
     "end_date",
     "growth_rate",
@@ -404,6 +419,14 @@ def export_household(
                 select(IncomeSource)
                 .where(IncomeSource.household_id == household_id)
                 .order_by(IncomeSource.name)
+            ).all()
+        ],
+        "projection_transfers": [
+            _model_export(projection_transfer, _PROJECTION_TRANSFER_FIELDS)
+            for projection_transfer in db.scalars(
+                select(ProjectionTransfer)
+                .where(ProjectionTransfer.household_id == household_id)
+                .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
             ).all()
         ],
         "annual_tax_records": [

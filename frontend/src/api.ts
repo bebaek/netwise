@@ -176,6 +176,7 @@ export type RealEstateProperty = {
   property_type: string;
   purchase_date: string | null;
   purchase_price: string | null;
+  adjusted_tax_basis: string | null;
   down_payment: string | null;
   expected_appreciation_rate: string | null;
   property_tax_annual: string | null;
@@ -257,6 +258,20 @@ export type IncomeSource = {
   updated_at: string;
 };
 
+export type ProjectionTransfer = {
+  id: string;
+  household_id: string;
+  name: string;
+  from_account_id: string;
+  to_account_id: string;
+  annual_amount: string;
+  start_date: string;
+  end_date: string | null;
+  growth_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProjectionSettings = {
   id: string;
   household_id: string;
@@ -291,6 +306,7 @@ export type NetWorthProjection = {
   retirement_date: string | null;
   first_retirement_withdrawal_date: string | null;
   first_unfunded_date: string | null;
+  warnings: string[];
   points: Array<{
     year: number;
     as_of_date: string;
@@ -302,6 +318,7 @@ export type NetWorthProjection = {
     projected_rental_expenses: string;
     projected_taxes: string;
     projected_spending: string;
+    projected_mortgage_spending: string;
     projected_liquidation_expenses: string;
     projected_unfunded_cash_flow: string;
     net_cash_flow: string;
@@ -582,6 +599,7 @@ export function createRealEstateProperty(payload: {
   property_type?: string;
   purchase_date?: string;
   purchase_price?: string;
+  adjusted_tax_basis?: string;
   down_payment?: string;
   expected_appreciation_rate?: string;
   property_tax_annual?: string;
@@ -610,7 +628,9 @@ export function createRealEstateProperty(payload: {
 export function updateRealEstateProperty(
   propertyId: string,
   payload: Partial<{
-    property_type: string; expected_appreciation_rate: string | null; property_tax_annual: string | null;
+    property_type: string; purchase_date: string | null; purchase_price: string | null;
+    adjusted_tax_basis: string | null; down_payment: string | null;
+    expected_appreciation_rate: string | null; property_tax_annual: string | null;
     insurance_annual: string | null; tax_and_insurance_annual: string | null;
     maintenance_rate: string | null; hoa_monthly: string | null;
     is_rental: boolean; rental_start_date: string | null; monthly_market_rent: string | null;
@@ -719,6 +739,30 @@ export function createIncomeSource(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function createProjectionTransfer(payload: {
+  household_id: string;
+  name: string;
+  from_account_id: string;
+  to_account_id: string;
+  annual_amount: string;
+  start_date: string;
+  end_date?: string;
+  growth_rate?: string;
+}): Promise<ProjectionTransfer> {
+  return request<ProjectionTransfer>('/projection-transfers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listProjectionTransfers(householdId: string): Promise<ProjectionTransfer[]> {
+  return request<ProjectionTransfer[]>(`/projection-transfers?household_id=${householdId}`);
+}
+
+export function deleteProjectionTransfer(projectionTransferId: string): Promise<void> {
+  return request<void>(`/projection-transfers/${projectionTransferId}`, { method: 'DELETE' });
 }
 
 export async function getProjectionSettings(householdId: string): Promise<ProjectionSettings | null> {

@@ -15,6 +15,7 @@ import {
   NetWorthHistory,
   NetWorthProjection,
   ProjectionSettings,
+  ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateProperty,
   RealEstateSale,
@@ -27,12 +28,14 @@ import {
   createHousehold,
   createIncomeSource,
   createMortgageProfile,
+  createProjectionTransfer,
   createRealEstateProperty,
   createRealEstateSale,
   createSnapshot,
   createSnapshotBatch,
   createUser,
   deleteAccountEvent,
+  deleteProjectionTransfer,
   deleteSnapshot,
   deleteRealEstateLiquidationStrategy,
   deleteRealEstateSale,
@@ -52,6 +55,7 @@ import {
   listHouseholdSnapshots,
   listIncomeSources,
   listMortgageProfiles,
+  listProjectionTransfers,
   listRealEstateLiquidationStrategies,
   listRealEstateProperties,
   listRealEstateSales,
@@ -186,6 +190,7 @@ function App() {
   const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
@@ -271,6 +276,7 @@ function App() {
         liquidationStrategyList,
         mortgageList,
         incomeSourceList,
+        projectionTransferList,
         taxRecordList,
         snapshotList,
         breakdownResult,
@@ -285,6 +291,7 @@ function App() {
         listRealEstateLiquidationStrategies(householdId),
         listMortgageProfiles(householdId),
         listIncomeSources(householdId),
+        listProjectionTransfers(householdId),
         listAnnualTaxRecords(householdId),
         listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
         getNetWorthBreakdownHistory(householdId),
@@ -310,6 +317,7 @@ function App() {
       setLiquidationStrategies(liquidationStrategyList);
       setMortgages(mortgageList);
       setIncomeSources(incomeSourceList);
+      setProjectionTransfers(projectionTransferList);
       setTaxRecords(taxRecordList);
       setProjectionSettings(projectionSettingsResult);
       setLoadedHouseholdId(householdId);
@@ -664,6 +672,10 @@ function App() {
     try {
       await updateRealEstateProperty(propertyEditId, {
         property_type: requiredString(form, 'property_type'),
+        purchase_date: optionalString(form, 'purchase_date') || null,
+        purchase_price: optionalString(form, 'purchase_price') || null,
+        adjusted_tax_basis: optionalString(form, 'adjusted_tax_basis') || null,
+        down_payment: optionalString(form, 'down_payment') || null,
         is_rental: form.get('is_rental') === 'on',
         rental_start_date: optionalString(form, 'rental_start_date') || null,
         monthly_market_rent: optionalString(form, 'monthly_market_rent') || null,
@@ -711,6 +723,7 @@ function App() {
         property_type: optionalString(form, 'property_type') ?? 'residence',
         purchase_date: optionalString(form, 'purchase_date'),
         purchase_price: optionalString(form, 'purchase_price'),
+        adjusted_tax_basis: optionalString(form, 'adjusted_tax_basis'),
         down_payment: optionalString(form, 'down_payment'),
         expected_appreciation_rate: optionalString(form, 'expected_appreciation_rate'),
         property_tax_annual: optionalString(form, 'property_tax_annual'),
@@ -879,6 +892,42 @@ function App() {
         deposit_account_id: optionalString(form, 'deposit_account_id'),
       });
       target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateProjectionTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createProjectionTransfer({
+        household_id: selectedHouseholdId,
+        name: requiredString(form, 'transfer_name'),
+        from_account_id: requiredString(form, 'transfer_from_account_id'),
+        to_account_id: requiredString(form, 'transfer_to_account_id'),
+        annual_amount: requiredString(form, 'transfer_annual_amount'),
+        start_date: requiredString(form, 'transfer_start_date'),
+        end_date: optionalString(form, 'transfer_end_date'),
+        growth_rate: optionalString(form, 'transfer_growth_rate'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteProjectionTransfer(projectionTransfer: ProjectionTransfer) {
+    if (!selectedHouseholdId) return;
+    if (!window.confirm(`Delete recurring transfer ${projectionTransfer.name}?`)) return;
+    setError('');
+    try {
+      await deleteProjectionTransfer(projectionTransfer.id);
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -1100,9 +1149,12 @@ function App() {
                   onSaveProjectionSettings={handleSaveProjectionSettings}
                   onGetProjection={handleGetProjection}
                   incomeSources={incomeSources}
+                  projectionTransfers={projectionTransfers}
                   taxRecords={taxRecords}
                   projection={projection}
                   onCreateIncomeSource={handleCreateIncomeSource}
+                  onCreateProjectionTransfer={handleCreateProjectionTransfer}
+                  onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
                   onCreateTaxRecord={handleCreateTaxRecord}
                   realEstateSales={realEstateSales}
                   onDeleteRealEstateSale={handleDeleteRealEstateSale}

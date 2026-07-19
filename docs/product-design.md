@@ -184,13 +184,19 @@ Each income source can include amount, frequency, start date, end date, and grow
 ## Retirement-phase modeling
 
 The initial retirement model is household-level and deterministic. Projection settings can define a
-retirement date and annual retirement spending. The projection uses regular annual spending before
-that date, retirement spending afterward, and prorates a period that contains the transition date.
-Both spending amounts use the configured spending inflation rate.
+retirement date and annual retirement non-mortgage spending. The projection uses regular annual
+non-mortgage spending before that date, retirement non-mortgage spending afterward, and prorates a
+period that contains the transition date. Both non-mortgage spending amounts use the configured
+spending inflation rate. Owner-occupied mortgage payments are calculated separately from linked
+mortgage profiles, remain fixed rather than inflating with household spending, and stop after the
+final scheduled payment or a property sale. Projected total spending reports both components, with
+the mortgage portion exposed separately.
 
 Income timing remains explicit: salary, pension, Social Security, and similar cash flows are modeled
 as income sources with their own start and end dates. The retirement date does not automatically
-stop salary or calculate retirement benefits.
+stop salary or calculate retirement benefits. Recurring projection transfers can model contributions
+from one asset account to another; they run after spending and taxes, are capped by available source
+cash, and do not count as household income or spending.
 
 Projection results identify retirement-phase periods, the first retirement-account withdrawal, and
 the first unfunded period. Retirement accounts do not receive a default early-withdrawal penalty;

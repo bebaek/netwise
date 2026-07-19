@@ -32,6 +32,7 @@ class ProjectionPointRead(BaseModel):
     projected_rental_expenses: Decimal
     projected_taxes: Decimal
     projected_spending: Decimal
+    projected_mortgage_spending: Decimal
     projected_liquidation_expenses: Decimal
     projected_unfunded_cash_flow: Decimal
     net_cash_flow: Decimal
@@ -63,5 +64,6 @@ class NetWorthProjectionRead(BaseModel):
     retirement_date: date | None
     first_retirement_withdrawal_date: date | None
     first_unfunded_date: date | None
+    warnings: list[str]
     points: list[ProjectionPointRead]
     property_sale_optimization: PropertySaleOptimizationRead | None = None

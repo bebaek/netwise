@@ -167,6 +167,23 @@ def test_create_accounts_snapshots_and_net_worth(client: TestClient):
     assert property_payload["household_id"] == household_id
     assert property_payload["account_id"] == home["id"]
     assert property_payload["purchase_price"] == "600000.00"
+    assert property_payload["adjusted_tax_basis"] is None
+
+    property_update_response = client.patch(
+        f"/real-estate/properties/{property_payload['id']}",
+        json={
+            "purchase_date": "2020-02-01",
+            "purchase_price": "610000.00",
+            "adjusted_tax_basis": "625000.00",
+            "down_payment": "125000.00",
+        },
+    )
+    assert property_update_response.status_code == 200
+    updated_property = property_update_response.json()
+    assert updated_property["purchase_date"] == "2020-02-01"
+    assert updated_property["purchase_price"] == "610000.00"
+    assert updated_property["adjusted_tax_basis"] == "625000.00"
+    assert updated_property["down_payment"] == "125000.00"
 
     mortgage_response = client.post(
         "/mortgages",

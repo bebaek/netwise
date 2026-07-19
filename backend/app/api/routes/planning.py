@@ -4,7 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, AccountKind, AnnualTaxRecord, Household, IncomeSource, ProjectionSettings
+from app.db.models import (
+    Account,
+    AccountKind,
+    AnnualTaxRecord,
+    Household,
+    IncomeSource,
+    ProjectionSettings,
+    ProjectionTransfer,
+)
 from app.db.session import get_db
 from app.schemas.planning import (
     AnnualTaxRecordCreate,
@@ -13,6 +21,8 @@ from app.schemas.planning import (
     IncomeSourceRead,
     ProjectionSettingsRead,
     ProjectionSettingsUpsert,
+    ProjectionTransferCreate,
+    ProjectionTransferRead,
 )
 
 router = APIRouter(tags=["planning"])
@@ -49,6 +59,67 @@ def create_income_source(
     db.commit()
     db.refresh(income_source)
     return income_source
+
+
+@router.post(
+    "/projection-transfers",
+    response_model=ProjectionTransferRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_projection_transfer(
+    payload: ProjectionTransferCreate,
+    db: Session = Depends(get_db),
+) -> ProjectionTransfer:
+    if db.get(Household, payload.household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    _validate_asset_account(db, payload.household_id, payload.from_account_id, "Source account")
+    _validate_asset_account(db, payload.household_id, payload.to_account_id, "Destination account")
+    if payload.from_account_id == payload.to_account_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Source and destination accounts must be different",
+        )
+    if payload.end_date is not None and payload.end_date < payload.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End date must be on or after start date",
+        )
+
+    projection_transfer = ProjectionTransfer(**payload.model_dump())
+    db.add(projection_transfer)
+    db.commit()
+    db.refresh(projection_transfer)
+    return projection_transfer
+
+
+@router.get("/projection-transfers", response_model=list[ProjectionTransferRead])
+def list_projection_transfers(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[ProjectionTransfer]:
+    return list(
+        db.scalars(
+            select(ProjectionTransfer)
+            .where(ProjectionTransfer.household_id == household_id)
+            .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
+        ).all()
+    )
+
+
+@router.delete(
+    "/projection-transfers/{projection_transfer_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_projection_transfer(
+    projection_transfer_id: UUID,
+    db: Session = Depends(get_db),
+) -> None:
+    projection_transfer = db.get(ProjectionTransfer, projection_transfer_id)
+    if projection_transfer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Projection transfer not found"
+        )
+    db.delete(projection_transfer)
+    db.commit()
 
 
 @router.get("/projection-settings/{household_id}", response_model=ProjectionSettingsRead)

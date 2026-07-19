@@ -6,6 +6,7 @@ import type {
   IncomeSource,
   NetWorthProjection,
   ProjectionSettings,
+  ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
 } from '../api';
@@ -72,9 +73,12 @@ export function PlanningPage({
   onSaveProjectionSettings,
   onGetProjection,
   incomeSources,
+  projectionTransfers,
   taxRecords,
   projection,
   onCreateIncomeSource,
+  onCreateProjectionTransfer,
+  onDeleteProjectionTransfer,
   onCreateTaxRecord,
   realEstateSales,
   onDeleteRealEstateSale,
@@ -99,9 +103,12 @@ export function PlanningPage({
   onSaveProjectionSettings: FormEventHandler<HTMLFormElement>;
   onGetProjection: FormEventHandler<HTMLFormElement>;
   incomeSources: IncomeSource[];
+  projectionTransfers: ProjectionTransfer[];
   taxRecords: AnnualTaxRecord[];
   projection: NetWorthProjection | null;
   onCreateIncomeSource: FormEventHandler<HTMLFormElement>;
+  onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
+  onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
   onCreateTaxRecord: FormEventHandler<HTMLFormElement>;
   realEstateSales: RealEstateSale[];
   onDeleteRealEstateSale: (sale: RealEstateSale) => void | Promise<void>;
@@ -197,7 +204,7 @@ export function PlanningPage({
         <p className="muted">Saved defaults used when a projection run does not provide overrides.</p>
       </div>
       <label>
-        Annual spending
+        Annual non-mortgage spending
         <input
           name="settings_annual_spending"
           inputMode="decimal"
@@ -223,7 +230,7 @@ export function PlanningPage({
         />
       </label>
       <label>
-        Annual retirement spending
+        Annual retirement non-mortgage spending
         <input
           name="settings_retirement_annual_spending"
           inputMode="decimal"
@@ -231,7 +238,7 @@ export function PlanningPage({
           defaultValue={projectionSettings?.retirement_annual_spending ?? ''}
         />
       </label>
-      <p className="muted">The retirement date changes the spending phase. Use income-source dates for salary, pension, and Social Security timing. Retirement withdrawal penalties are only applied when configured as an account liquidation expense.</p>
+      <p className="muted">Owner-occupied mortgage payments are projected separately from household spending, remain fixed, and stop after the final scheduled payment. The retirement date changes the non-mortgage spending phase. Use income-source dates for salary, pension, and Social Security timing. Retirement withdrawal penalties are only applied when configured as an account liquidation expense.</p>
       <label>
         Spending account
         <select name="settings_spending_account_id" defaultValue={projectionSettings?.spending_account_id ?? ''}>
@@ -291,7 +298,7 @@ export function PlanningPage({
         </select>
       </label>
       <label>
-        Annual spending override
+        Annual non-mortgage spending override
         <input
           name="projection_annual_spending"
           inputMode="decimal"
@@ -339,6 +346,9 @@ export function PlanningPage({
 
   {projection?.points.length ? (
     <>
+      {projection.warnings.map((warning) => (
+        <div className="projection-note" key={warning}><strong>Projection warning:</strong> {warning}</div>
+      ))}
       {projection.retirement_date && (
         <div className="projection-note">
           <strong>Retirement phase:</strong> begins {projection.retirement_date}; first retirement-account withdrawal: {projection.first_retirement_withdrawal_date ?? 'none in projection'}; first unfunded period: {projection.first_unfunded_date ?? 'none in projection'}.
@@ -363,7 +373,8 @@ export function PlanningPage({
               <th>Liabilities</th>
               <th>Income</th>
               <th>Taxes</th>
-              <th>Spending</th>
+              <th>Total spending</th>
+              <th>Mortgage portion</th>
               <th>Unfunded</th>
               <th>Net cash flow</th>
             </tr>
@@ -381,6 +392,7 @@ export function PlanningPage({
                 <td>{formatMoney(point.projected_income)}</td>
                 <td>{formatMoney(point.projected_taxes)}</td>
                 <td>{formatMoney(point.projected_spending)}</td>
+                <td>{formatMoney(point.projected_mortgage_spending)}</td>
                 <td>{formatMoney(point.projected_unfunded_cash_flow)}</td>
                 <td>{formatMoney(point.net_cash_flow)}</td>
               </tr>
@@ -420,8 +432,12 @@ export function PlanningPage({
                 <dd>{formatMoney(point.projected_taxes)}</dd>
               </div>
               <div>
-                <dt>Spending</dt>
+                <dt>Total spending</dt>
                 <dd>{formatMoney(point.projected_spending)}</dd>
+              </div>
+              <div>
+                <dt>Mortgage portion</dt>
+                <dd>{formatMoney(point.projected_mortgage_spending)}</dd>
               </div>
               <div>
                 <dt>Unfunded</dt>
@@ -480,6 +496,58 @@ export function PlanningPage({
   ) : (
     <p className="muted">Run a projection to see future net worth points.</p>
   )}
+</section>
+
+<section className="grid two-column">
+  <div className="card">
+    <h2>Recurring projection transfers</h2>
+    <p className="muted">Move available cash between accounts after projected spending and taxes. Transfers do not count as income or spending and do not model tax effects.</p>
+    {projectionTransfers.length ? (
+      <table tabIndex={0}>
+        <thead>
+          <tr><th>Name</th><th>From</th><th>To</th><th>Annual amount</th><th>Dates</th><th /></tr>
+        </thead>
+        <tbody>
+          {projectionTransfers.map((transfer) => (
+            <tr key={transfer.id}>
+              <td>{transfer.name}</td>
+              <td>{accountNameById.get(transfer.from_account_id) ?? transfer.from_account_id}</td>
+              <td>{accountNameById.get(transfer.to_account_id) ?? transfer.to_account_id}</td>
+              <td>{formatMoney(transfer.annual_amount)}</td>
+              <td>{transfer.start_date} – {transfer.end_date ?? 'ongoing'}</td>
+              <td><button type="button" className="danger-button" onClick={() => onDeleteProjectionTransfer(transfer)}>Delete</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : <p className="muted">No recurring transfers configured.</p>}
+  </div>
+
+  <div className="card">
+    <h2>Add recurring transfer</h2>
+    <form onSubmit={onCreateProjectionTransfer} className="stacked-form">
+      <input name="transfer_name" placeholder="401k contribution" required />
+      <label>
+        From account
+        <select name="transfer_from_account_id" defaultValue="" required>
+          <option value="" disabled>Select source</option>
+          {assetAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+        </select>
+      </label>
+      <label>
+        To account
+        <select name="transfer_to_account_id" defaultValue="" required>
+          <option value="" disabled>Select destination</option>
+          {assetAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+        </select>
+      </label>
+      <label>Annual amount<input name="transfer_annual_amount" inputMode="decimal" required /></label>
+      <label>Start date<input name="transfer_start_date" type="date" defaultValue={defaultDate} required /></label>
+      <label>End date<input name="transfer_end_date" type="date" /></label>
+      <label>Annual growth rate<input name="transfer_growth_rate" inputMode="decimal" placeholder="0.00" /></label>
+      <button type="submit" disabled={assetAccounts.length < 2}>Add transfer</button>
+    </form>
+  </div>
 </section>
 
 <section className="grid two-column">

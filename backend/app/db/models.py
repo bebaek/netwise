@@ -107,6 +107,9 @@ class Household(Base):
     projection_settings: Mapped["ProjectionSettings | None"] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    projection_transfers: Mapped[list["ProjectionTransfer"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class HouseholdMembership(Base):
@@ -228,6 +231,7 @@ class RealEstateProperty(Base):
     property_type: Mapped[str] = mapped_column(String(64), nullable=False, default="residence")
     purchase_date: Mapped[date | None] = mapped_column(Date)
     purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    adjusted_tax_basis: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     down_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     property_tax_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
@@ -406,6 +410,34 @@ class AnnualTaxRecord(Base):
     __table_args__ = (
         UniqueConstraint("household_id", "tax_year", name="uq_annual_tax_records_household_year"),
         Index("ix_annual_tax_records_household_id", "household_id"),
+    )
+
+
+class ProjectionTransfer(Base):
+    __tablename__ = "projection_transfers"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    from_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    to_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    annual_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="projection_transfers")
+    from_account: Mapped[Account] = relationship(foreign_keys=[from_account_id])
+    to_account: Mapped[Account] = relationship(foreign_keys=[to_account_id])
+
+    __table_args__ = (
+        Index("ix_projection_transfers_household_id", "household_id"),
+        Index("ix_projection_transfers_from_account_id", "from_account_id"),
+        Index("ix_projection_transfers_to_account_id", "to_account_id"),
     )
 
 

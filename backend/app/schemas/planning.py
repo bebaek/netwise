@@ -38,6 +38,33 @@ class IncomeSourceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProjectionTransferCreate(BaseModel):
+    household_id: UUID
+    name: str = Field(min_length=1, max_length=200)
+    from_account_id: UUID
+    to_account_id: UUID
+    annual_amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+    start_date: date
+    end_date: date | None = None
+    growth_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+
+
+class ProjectionTransferRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    name: str
+    from_account_id: UUID
+    to_account_id: UUID
+    annual_amount: Decimal
+    start_date: date
+    end_date: date | None
+    growth_rate: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProjectionSettingsUpsert(BaseModel):
     annual_spending: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     spending_inflation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)

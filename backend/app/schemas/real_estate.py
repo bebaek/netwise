@@ -10,8 +10,9 @@ class RealEstatePropertyCreate(BaseModel):
     account_id: UUID
     property_type: str = "residence"
     purchase_date: date | None = None
-    purchase_price: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
-    down_payment: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    purchase_price: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    adjusted_tax_basis: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    down_payment: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
@@ -45,6 +46,10 @@ class RealEstatePropertyCreate(BaseModel):
 
 class RealEstatePropertyUpdate(BaseModel):
     property_type: str | None = None
+    purchase_date: date | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    adjusted_tax_basis: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    down_payment: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     expected_appreciation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     property_tax_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     insurance_annual: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
@@ -83,6 +88,7 @@ class RealEstatePropertyRead(BaseModel):
     property_type: str
     purchase_date: date | None
     purchase_price: Decimal | None
+    adjusted_tax_basis: Decimal | None
     down_payment: Decimal | None
     expected_appreciation_rate: Decimal | None
     property_tax_annual: Decimal | None

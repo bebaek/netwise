@@ -78,6 +78,11 @@ export function AssetsPage({
             <option value="land">Land</option>
             <option value="other">Other</option>
           </select>
+          <label>Purchase date<input name="purchase_date" type="date" defaultValue={property.purchase_date ?? ''} /></label>
+          <label>Purchase price<input name="purchase_price" inputMode="decimal" defaultValue={property.purchase_price ?? ''} /></label>
+          <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" defaultValue={property.adjusted_tax_basis ?? ''} /></label>
+          <p className="muted">Sale-tax estimates use adjusted basis when provided, otherwise purchase price. Include basis adjustments such as capital improvements and depreciation.</p>
+          <label>Down payment<input name="down_payment" inputMode="decimal" defaultValue={property.down_payment ?? ''} /></label>
           <label className="checkbox-label"><input name="is_rental" type="checkbox" defaultChecked={property.is_rental} /> Rental property</label>
           <label>Rental start date<input name="rental_start_date" type="date" defaultValue={property.rental_start_date ?? ''} /></label>
           <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" defaultValue={property.monthly_market_rent ?? ''} />
@@ -114,6 +119,7 @@ export function AssetsPage({
             <th>Property</th>
             <th>Type</th>
             <th>Purchase price</th>
+            <th>Adjusted basis</th>
             <th>Appreciation</th>
           </tr>
         </thead>
@@ -123,6 +129,7 @@ export function AssetsPage({
               <td>{accountNameById.get(property.account_id) ?? property.account_id}</td>
               <td>{property.property_type}</td>
               <td>{formatMoney(property.purchase_price)}</td>
+              <td>{formatMoney(property.adjusted_tax_basis)}</td>
               <td>{property.expected_appreciation_rate ?? '—'}</td>
             </tr>
           ))}
@@ -182,8 +189,10 @@ export function AssetsPage({
         Purchase date
         <input name="purchase_date" type="date" />
       </label>
-      <input name="purchase_price" inputMode="decimal" placeholder="Purchase price" />
-      <input name="down_payment" inputMode="decimal" placeholder="Down payment" />
+      <label>Purchase price<input name="purchase_price" inputMode="decimal" /></label>
+      <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" /></label>
+      <p className="muted">If adjusted basis is blank, sale-tax estimates use purchase price. Basis generally includes qualifying improvements and subtracts depreciation.</p>
+      <label>Down payment<input name="down_payment" inputMode="decimal" /></label>
       <input name="expected_appreciation_rate" inputMode="decimal" placeholder="Expected appreciation rate, e.g. 0.03" />
       <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" />
       <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" />

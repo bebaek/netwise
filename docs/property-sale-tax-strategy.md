@@ -4,17 +4,21 @@
 
 Netwise treats taxes on a planned rental or investment property sale as a planning reserve, not as a tax-return calculation.
 
-Each `RealEstateSale` has an `estimated_tax_rate`. The default is `0.150000`, so the projection reserves 15% of the gross sale price:
+Each `RealEstateSale` has an `estimated_tax_rate`. The default is `0.150000`. When a property has an adjusted tax basis, the projection applies this rate to estimated gain after selling expenses. If adjusted basis is absent, purchase price is used as a coarse basis. If both are absent, the projection retains the conservative gross-price fallback and emits a warning.
 
 ```text
-estimated sale tax = gross sale price × estimated tax rate
+basis = adjusted tax basis, otherwise purchase price
+amount realized = gross sale price - selling expenses
+estimated taxable gain = max(amount realized - basis, 0)
+estimated sale tax = estimated taxable gain × estimated tax rate
+
 net proceeds = gross sale price
              - selling expenses
              - mortgage payoff
              - estimated sale tax
 ```
 
-The mortgage payoff reduces cash proceeds but does not reduce the estimated tax reserve. Existing planned sales are migrated to the 15% default. A user can override the rate when creating a sale, including setting it to zero when tax is expected to be deferred or otherwise inapplicable.
+The mortgage payoff reduces cash proceeds but does not reduce estimated taxable gain. A user can override the rate when creating a sale, including setting it to zero when tax is expected to be deferred or otherwise inapplicable.
 
 The projection reports the reserve as:
 
@@ -22,7 +26,7 @@ The projection reports the reserve as:
 - part of the projection point's `projected_taxes`; and
 - a reduction in the amount deposited into the sale proceeds account.
 
-The 15% rate is intentionally a coarse fallback for records that do not contain tax basis or depreciation history. It is not an IRS tax rate, tax advice, or a guarantee of the eventual liability.
+The 15% rate remains a coarse planning assumption rather than an IRS tax rate, tax advice, or a guarantee of eventual liability. Purchase price is only a fallback for adjusted basis. Users should enter adjusted basis when improvements, depreciation, or other basis adjustments are material. Depreciation recapture, primary-residence exclusions, and detailed federal, state, and local tax treatment remain outside the initial estimate.
 
 ## Conditional liquidation before retirement
 
@@ -56,22 +60,21 @@ The search begins with the all-“never” schedule and expands its candidate-ye
 
 Optimized properties do not also participate in shortfall-triggered sales during a candidate simulation; each candidate must respect its proposed schedule. Existing fixed-date sales continue to take precedence. The projection response reports the selected property names and dates, number of schedules evaluated, and first retirement-withdrawal date for auditability.
 
-## Why gross-price fallback is temporary
+## Why the gross-price fallback remains
 
 Actual taxable gain generally depends on amount realized, adjusted tax basis, depreciation, holding period, taxpayer income, jurisdiction, and transaction structure. A flat gross-price reserve can overstate tax on a recently purchased property and understate tax on a highly appreciated or heavily depreciated property.
 
 Selling expenses and mortgage payoff have different tax effects. Selling expenses generally affect amount realized; mortgage payoff affects cash proceeds but does not by itself reduce taxable gain.
 
-## Future calculation hierarchy
+## Calculation hierarchy
 
-The long-term implementation should select the best available method in this order:
+The implementation selects the best available method in this order:
 
-1. **Manual tax amount** — use a sale-specific estimate supplied by the user or tax professional.
-2. **Detailed basis calculation** — calculate gain and its tax components when complete basis and depreciation data are available.
-3. **Blended gain estimate** — apply a configurable blended rate, initially 20%, to estimated gain when basis is known but detailed tax data are incomplete.
-4. **Gross-price reserve** — retain the current 15% of gross price fallback when basis is unknown.
+1. **Adjusted tax basis** — apply the configured rate to estimated gain after selling expenses.
+2. **Purchase-price basis** — use purchase price as a coarse basis and emit a warning that adjustments are missing.
+3. **Gross-price reserve** — retain 15% of gross price as a conservative fallback and emit a missing-basis warning.
 
-Every projected sale should expose which method was used and the assumptions behind it.
+Future versions can add a sale-specific manual tax amount and detailed depreciation-recapture calculations ahead of these methods.
 
 ## Data needed for detailed estimates
 

@@ -20,6 +20,7 @@ from app.db.models import (
     MortgageProfile,
     ProjectionBehavior,
     ProjectionSettings,
+    ProjectionTransfer,
     RealEstateLiquidationStrategy,
     RealEstateProperty,
     RealEstateSale,
@@ -62,6 +63,7 @@ class ProjectionData:
     automatic_sale_strategies: list[RealEstateLiquidationStrategy]
     projection_events: list[AccountEvent]
     income_sources: list[IncomeSource]
+    projection_transfers: list[ProjectionTransfer]
     projection_settings: ProjectionSettings | None
     tax_rate: Decimal
 
@@ -100,6 +102,7 @@ class AutomaticPropertySaleContext:
     strategies: list[RealEstateLiquidationStrategy]
     fixed_sale_property_ids: set[UUID]
     mortgage_profiles_by_property: dict[UUID, MortgageProfile]
+    property_profiles: dict[UUID, RealEstateProperty]
     sold_mortgage_account_ids: set[UUID]
     used_property_ids: set[UUID]
     as_of_date: date
@@ -245,6 +248,13 @@ def calculate_net_worth_projection(
         income_sources = list(
             db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
         )
+        projection_transfers = list(
+            db.scalars(
+                select(ProjectionTransfer)
+                .where(ProjectionTransfer.household_id == household_id)
+                .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
+            ).all()
+        )
         projection_settings = db.scalars(
             select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
         ).first()
@@ -258,6 +268,7 @@ def calculate_net_worth_projection(
             automatic_sale_strategies=automatic_sale_strategies,
             projection_events=projection_events,
             income_sources=income_sources,
+            projection_transfers=projection_transfers,
             projection_settings=projection_settings,
             tax_rate=tax_rate,
         )
@@ -270,6 +281,7 @@ def calculate_net_worth_projection(
         automatic_sale_strategies = _projection_data.automatic_sale_strategies
         projection_events = _projection_data.projection_events
         income_sources = _projection_data.income_sources
+        projection_transfers = _projection_data.projection_transfers
         projection_settings = _projection_data.projection_settings
         tax_rate = _projection_data.tax_rate
 
@@ -279,6 +291,14 @@ def calculate_net_worth_projection(
         for profile in mortgage_profiles.values()
         if profile.property_account_id is not None
     }
+    owner_occupied_property_ids = {
+        profile.account_id for profile in property_profiles.values() if not profile.is_rental
+    }
+    owner_occupied_mortgages = [
+        profile
+        for profile in mortgage_profiles.values()
+        if profile.property_account_id in owner_occupied_property_ids
+    ]
     effective_annual_spending = (
         annual_spending
         if annual_spending is not None
@@ -405,6 +425,7 @@ def calculate_net_worth_projection(
             strategies=automatic_sale_strategies,
             fixed_sale_property_ids=fixed_sale_property_ids,
             mortgage_profiles_by_property=mortgage_profiles_by_property,
+            property_profiles=property_profiles,
             sold_mortgage_account_ids=sold_mortgage_account_ids,
             used_property_ids=automatically_sold_property_ids,
             as_of_date=as_of_date,
@@ -438,6 +459,7 @@ def calculate_net_worth_projection(
                         balances,
                         cash_flows,
                         operation,
+                        property_profiles.get(operation.property_account_id),
                         mortgage_profiles_by_property.get(operation.property_account_id),
                         sold_mortgage_account_ids,
                         tax_rate,
@@ -458,6 +480,7 @@ def calculate_net_worth_projection(
                         balances,
                         cash_flows,
                         projected_sale,
+                        property_profiles.get(operation.property_account_id),
                         mortgage_profiles_by_property.get(operation.property_account_id),
                         sold_mortgage_account_ids,
                         tax_rate,
@@ -530,7 +553,7 @@ def calculate_net_worth_projection(
             projected_income + projected_rental_income - projected_rental_expenses, Decimal("0.00")
         )
         income_taxes = (taxable_income * tax_rate).quantize(Decimal("0.01"))
-        projected_spending = _projected_spending_for_period(
+        projected_non_mortgage_spending = _projected_spending_for_period(
             spending_baseline,
             retirement_spending_baseline,
             effective_retirement_date,
@@ -539,15 +562,29 @@ def calculate_net_worth_projection(
             months_per_period,
             effective_spending_inflation_rate,
         )
-        if projected_spending != Decimal("0.00"):
+        projected_mortgage_spending = _projected_owner_mortgage_spending_for_period(
+            owner_occupied_mortgages,
+            period_start,
+            as_of_date,
+            sold_mortgage_account_ids,
+        )
+        projected_spending = (
+            projected_non_mortgage_spending + projected_mortgage_spending
+        ).quantize(Decimal("0.01"))
+        for spending_amount, cash_flow_type in (
+            (projected_non_mortgage_spending, "spending"),
+            (projected_mortgage_spending, "mortgage_spending"),
+        ):
+            if spending_amount == Decimal("0.00"):
+                continue
             withdrawal_result.add(
                 _withdraw_from_assets(
                     accounts,
                     accounts_by_id,
                     balances,
                     cash_flows,
-                    projected_spending,
-                    "spending",
+                    spending_amount,
+                    cash_flow_type,
                     effective_spending_account_id,
                     tax_rate,
                     automatic_sale_context,
@@ -582,6 +619,39 @@ def calculate_net_worth_projection(
             projected_unfunded_cash_flow = (
                 projected_unfunded_cash_flow + tax_payment_result.unfunded_amount
             ).quantize(Decimal("0.01"))
+
+        for projection_transfer in projection_transfers:
+            planned_transfer = _projected_transfer_for_period(
+                projection_transfer, period_start, as_of_date
+            )
+            source_account = accounts_by_id.get(projection_transfer.from_account_id)
+            destination_account = accounts_by_id.get(projection_transfer.to_account_id)
+            if (
+                planned_transfer <= Decimal("0.00")
+                or source_account is None
+                or destination_account is None
+            ):
+                continue
+            transfer_amount = min(
+                planned_transfer, max(balances[source_account.id], Decimal("0.00"))
+            )
+            if transfer_amount <= Decimal("0.00"):
+                continue
+            _apply_account_cash_flow(
+                balances,
+                cash_flows,
+                source_account,
+                "recurring_transfer_out",
+                -transfer_amount,
+            )
+            _apply_account_cash_flow(
+                balances,
+                cash_flows,
+                destination_account,
+                "recurring_transfer_in",
+                transfer_amount,
+            )
+
         net_cash_flow = (
             projected_income
             + projected_rental_income
@@ -633,6 +703,7 @@ def calculate_net_worth_projection(
                 "projected_rental_expenses": projected_rental_expenses,
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
+                "projected_mortgage_spending": projected_mortgage_spending,
                 "projected_liquidation_expenses": projected_liquidation_expenses,
                 "projected_unfunded_cash_flow": projected_unfunded_cash_flow,
                 "net_cash_flow": net_cash_flow,
@@ -651,6 +722,12 @@ def calculate_net_worth_projection(
         "end_year": end_year,
         "interval": interval,
         "retirement_date": effective_retirement_date,
+        "warnings": _property_sale_tax_basis_warnings(
+            accounts_by_id,
+            property_profiles,
+            real_estate_sales,
+            automatic_sale_strategies,
+        ),
         "points": points,
     }
     result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(
@@ -885,6 +962,67 @@ def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
         if tax_record.effective_tax_rate is not None:
             return tax_record.effective_tax_rate
     return Decimal("0.00")
+
+
+def _projected_transfer_for_period(
+    transfer: ProjectionTransfer,
+    period_start: date,
+    period_end: date,
+) -> Decimal:
+    active_start = max(period_start, transfer.start_date)
+    active_end = min(period_end, transfer.end_date or period_end)
+    if active_start > active_end:
+        return Decimal("0.00")
+    active_months = (
+        (active_end.year - active_start.year) * 12 + active_end.month - active_start.month + 1
+    )
+    growth_rate = transfer.growth_rate or Decimal("0.00")
+    years_elapsed = max(period_start.year - transfer.start_date.year, 0)
+    annual_amount = transfer.annual_amount * (
+        (Decimal("1.00") + growth_rate) ** years_elapsed
+    )
+    return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
+
+
+def _projected_owner_mortgage_spending_for_period(
+    mortgage_profiles: list[MortgageProfile],
+    period_start: date,
+    period_end: date,
+    sold_mortgage_account_ids: set[UUID],
+) -> Decimal:
+    """Return fixed owner-occupied mortgage payments due during the period.
+
+    Mortgage payments are modeled separately from inflation-adjusted household
+    spending. They stop after the final scheduled payment or a property sale.
+    """
+    spending = Decimal("0.00")
+    for profile in mortgage_profiles:
+        if profile.liability_account_id in sold_mortgage_account_ids:
+            continue
+        active_months = _scheduled_mortgage_payment_months(
+            profile, period_start, period_end
+        )
+        if active_months == 0:
+            continue
+        monthly_payment = profile.monthly_payment or _amortized_monthly_payment(profile)
+        spending += monthly_payment * Decimal(active_months)
+    return spending.quantize(Decimal("0.01"))
+
+
+def _scheduled_mortgage_payment_months(
+    profile: MortgageProfile,
+    period_start: date,
+    period_end: date,
+) -> int:
+    """Count scheduled payment months overlapping an inclusive projection period."""
+    period_start_month = period_start.year * 12 + period_start.month - 1
+    period_end_month = period_end.year * 12 + period_end.month - 1
+    origination_month = profile.start_date.year * 12 + profile.start_date.month - 1
+    first_payment_month = origination_month + 1
+    final_payment_month = origination_month + profile.term_months
+    active_start = max(period_start_month, first_payment_month)
+    active_end = min(period_end_month, final_payment_month)
+    return max(active_end - active_start + 1, 0)
 
 
 def _projected_spending_for_period(
@@ -1206,12 +1344,50 @@ def _apply_account_cash_flow(
     )
 
 
+def _property_sale_tax_basis_warnings(
+    accounts_by_id: dict[UUID, Account],
+    property_profiles: dict[UUID, RealEstateProperty],
+    real_estate_sales: list[RealEstateSale],
+    automatic_sale_strategies: list[RealEstateLiquidationStrategy],
+) -> list[str]:
+    property_ids = {
+        sale.property_account_id
+        for sale in real_estate_sales
+        if sale.estimated_tax_rate > Decimal("0.00")
+    } | {
+        strategy.property_account_id
+        for strategy in automatic_sale_strategies
+        if strategy.enabled and strategy.estimated_tax_rate > Decimal("0.00")
+    }
+    warnings = []
+    for property_id in sorted(
+        property_ids,
+        key=lambda item: accounts_by_id[item].name.casefold() if item in accounts_by_id else str(item),
+    ):
+        account = accounts_by_id.get(property_id)
+        profile = property_profiles.get(property_id)
+        property_name = account.name if account is not None else str(property_id)
+        if profile is None or (
+            profile.adjusted_tax_basis is None and profile.purchase_price is None
+        ):
+            warnings.append(
+                f"{property_name}: sale tax uses the gross-price fallback because tax basis is missing."
+            )
+        elif profile.adjusted_tax_basis is None:
+            warnings.append(
+                f"{property_name}: sale tax uses purchase price as basis; enter adjusted tax basis "
+                "to reflect improvements and depreciation."
+            )
+    return warnings
+
+
 def _apply_real_estate_sale(
     accounts: list[Account],
     accounts_by_id: dict[UUID, Account],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     sale: RealEstateSale | ProjectedPropertySale,
+    property_profile: RealEstateProperty | None,
     mortgage_profile: MortgageProfile | None,
     sold_mortgage_account_ids: set[UUID],
     tax_rate: Decimal,
@@ -1260,7 +1436,19 @@ def _apply_real_estate_sale(
             }
         )
 
-    estimated_sale_tax = (sale.gross_sale_price * sale.estimated_tax_rate).quantize(Decimal("0.01"))
+    tax_basis = (
+        property_profile.adjusted_tax_basis
+        if property_profile is not None and property_profile.adjusted_tax_basis is not None
+        else property_profile.purchase_price
+        if property_profile is not None
+        else None
+    )
+    taxable_gain = (
+        max(sale.gross_sale_price - selling_expense - tax_basis, Decimal("0.00"))
+        if tax_basis is not None
+        else sale.gross_sale_price
+    )
+    estimated_sale_tax = (taxable_gain * sale.estimated_tax_rate).quantize(Decimal("0.01"))
     if estimated_sale_tax != Decimal("0.00"):
         cash_flows.append(
             {
@@ -1412,6 +1600,7 @@ def _withdraw_from_assets(
             balances,
             cash_flows,
             projected_sale,
+            automatic_sale_context.property_profiles.get(strategy.property_account_id),
             automatic_sale_context.mortgage_profiles_by_property.get(strategy.property_account_id),
             automatic_sale_context.sold_mortgage_account_ids,
             tax_rate,
