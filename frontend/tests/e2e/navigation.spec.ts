@@ -61,6 +61,30 @@ test('navigates across the financial planning workspace', async ({ page }, testI
   expect(consoleErrors).toEqual([]);
 });
 
+test('shows progress while a projection is running', async ({ page }) => {
+  let releaseProjection: () => void = () => undefined;
+  const projectionBlocked = new Promise<void>((resolve) => {
+    releaseProjection = resolve;
+  });
+  await page.route('**/api/dashboard/*/projection?*', async (route) => {
+    await projectionBlocked;
+    await route.continue();
+  });
+
+  await page.getByRole('link', { name: 'Plan', exact: true }).click();
+  const runButton = page.getByRole('button', { name: 'Run projection', exact: true });
+  await runButton.click();
+
+  const runningButton = page.getByRole('button', { name: 'Running projection…', exact: true });
+  await expect(runningButton).toBeDisabled();
+  await expect(page.getByRole('status')).toContainText('Calculating your projection');
+  await expect(page.locator('form[aria-busy="true"]')).toHaveCount(1);
+
+  releaseProjection();
+  await expect(page.getByRole('button', { name: 'Run projection', exact: true })).toBeEnabled();
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
 test('overview update action opens the balance workflow', async ({ page }) => {
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   await page.getByRole('link', { name: 'Update balances', exact: true }).click();

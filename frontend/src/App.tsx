@@ -16,6 +16,7 @@ import {
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
+  RealEstateAnalytics,
   RealEstateLiquidationStrategy,
   RealEstateProperty,
   RealEstateSale,
@@ -49,6 +50,7 @@ import {
   getNetWorthBreakdownHistory,
   getNetWorthProjection,
   getProjectionSettings,
+  getRealEstateAnalytics,
   importFintrack,
   listAccounts,
   listAccountEvents,
@@ -69,6 +71,7 @@ import {
   updateAccountEvent,
   updateRealEstateProperty,
   updateSnapshot,
+  updateSpendingItem,
   upsertProjectionSettings,
   upsertRealEstateLiquidationStrategy,
 } from './api';
@@ -189,6 +192,7 @@ function App() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [breakdownHistory, setBreakdownHistory] = useState<NetWorthBreakdownHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
+  const [realEstateAnalytics, setRealEstateAnalytics] = useState<RealEstateAnalytics[]>([]);
   const [propertyEditId, setPropertyEditId] = useState<string>('');
   const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
   const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
@@ -198,6 +202,7 @@ function App() {
   const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
+  const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
   const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
@@ -277,6 +282,7 @@ function App() {
         netWorthResult,
         historyResult,
         propertyList,
+        realEstateAnalyticsResult,
         realEstateSaleList,
         liquidationStrategyList,
         mortgageList,
@@ -293,6 +299,7 @@ function App() {
         getNetWorth(householdId),
         getHistoricalTrend(householdId, showInterpolatedHistory),
         listRealEstateProperties(householdId),
+        getRealEstateAnalytics(householdId),
         listRealEstateSales(householdId),
         listRealEstateLiquidationStrategies(householdId),
         listMortgageProfiles(householdId),
@@ -320,6 +327,7 @@ function App() {
       setHistory(historyResult);
       setBreakdownHistory(breakdownResult);
       setProperties(propertyList);
+      setRealEstateAnalytics(realEstateAnalyticsResult);
       setRealEstateSales(realEstateSaleList);
       setLiquidationStrategies(liquidationStrategyList);
       setMortgages(mortgageList);
@@ -684,6 +692,7 @@ function App() {
         purchase_price: optionalString(form, 'purchase_price') || null,
         adjusted_tax_basis: optionalString(form, 'adjusted_tax_basis') || null,
         down_payment: optionalString(form, 'down_payment') || null,
+        expected_appreciation_rate: optionalString(form, 'expected_appreciation_rate') || null,
         is_rental: form.get('is_rental') === 'on',
         rental_start_date: optionalString(form, 'rental_start_date') || null,
         monthly_market_rent: optionalString(form, 'monthly_market_rent') || null,
@@ -723,7 +732,6 @@ function App() {
         account_kind: 'asset',
         category: 'real_estate',
         liquidity_class: 'illiquid',
-        expected_annual_yield: optionalString(form, 'expected_appreciation_rate'),
         currency: 'USD',
       });
       await createRealEstateProperty({
@@ -958,9 +966,35 @@ function App() {
         growth_rate: optionalString(form, 'spending_item_growth_rate'),
       });
       target.reset();
+      setProjection(null);
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
+    }
+  }
+
+  async function handleUpdateSpendingItem(
+    event: FormEvent<HTMLFormElement>,
+    spendingItem: SpendingItem,
+  ) {
+    event.preventDefault();
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(event.currentTarget);
+    try {
+      await updateSpendingItem(spendingItem.id, {
+        name: requiredString(form, 'spending_item_edit_name'),
+        category: requiredString(form, 'spending_item_edit_category'),
+        annual_amount: requiredString(form, 'spending_item_edit_annual_amount'),
+        retirement_annual_amount:
+          optionalString(form, 'spending_item_edit_retirement_annual_amount') ?? null,
+        growth_rate: optionalString(form, 'spending_item_edit_growth_rate') ?? null,
+      });
+      setProjection(null);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+      throw err;
     }
   }
 
@@ -970,6 +1004,7 @@ function App() {
     setError('');
     try {
       await deleteSpendingItem(spendingItem.id);
+      setProjection(null);
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -1002,6 +1037,7 @@ function App() {
     event.preventDefault();
     if (!selectedHouseholdId) return;
     setError('');
+    setProjectionRunning(true);
     const form = new FormData(event.currentTarget);
     try {
       const result = await getNetWorthProjection(
@@ -1019,6 +1055,28 @@ function App() {
       setProjection(result);
     } catch (err: unknown) {
       setProjection(null);
+      setError(String(err));
+    } finally {
+      setProjectionRunning(false);
+    }
+  }
+
+  async function handleSpendingModeChange(mode: 'manual' | 'itemized') {
+    if (!selectedHouseholdId) return;
+    setError('');
+    try {
+      const result = await upsertProjectionSettings(selectedHouseholdId, {
+        annual_spending: projectionSettings?.annual_spending ?? undefined,
+        spending_mode: mode,
+        spending_inflation_rate: projectionSettings?.spending_inflation_rate ?? undefined,
+        retirement_date: projectionSettings?.retirement_date ?? undefined,
+        retirement_annual_spending: projectionSettings?.retirement_annual_spending ?? undefined,
+        spending_account_id: projectionSettings?.spending_account_id ?? undefined,
+        tax_account_id: projectionSettings?.tax_account_id ?? undefined,
+      });
+      setProjectionSettings(result);
+      setProjection(null);
+    } catch (err: unknown) {
       setError(String(err));
     }
   }
@@ -1042,6 +1100,7 @@ function App() {
         tax_account_id: optionalString(form, 'settings_tax_account_id'),
       });
       setProjectionSettings(result);
+      setProjection(null);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1189,8 +1248,10 @@ function App() {
                   onDeleteLiquidationStrategy={handleDeleteLiquidationStrategy}
                   onUpsertLiquidationStrategy={handleUpsertLiquidationStrategy}
                   projectionSettings={projectionSettings}
+                  onSpendingModeChange={handleSpendingModeChange}
                   onSaveProjectionSettings={handleSaveProjectionSettings}
                   onGetProjection={handleGetProjection}
+                  projectionRunning={projectionRunning}
                   incomeSources={incomeSources}
                   projectionTransfers={projectionTransfers}
                   spendingItems={spendingItems}
@@ -1200,6 +1261,7 @@ function App() {
                   onCreateProjectionTransfer={handleCreateProjectionTransfer}
                   onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
                   onCreateSpendingItem={handleCreateSpendingItem}
+                  onUpdateSpendingItem={handleUpdateSpendingItem}
                   onDeleteSpendingItem={handleDeleteSpendingItem}
                   onCreateTaxRecord={handleCreateTaxRecord}
                   realEstateSales={realEstateSales}
@@ -1226,6 +1288,7 @@ function App() {
                   assetAccounts={assetAccounts}
                   propertyAccounts={propertyAccounts}
                   properties={properties}
+                  realEstateAnalytics={realEstateAnalytics}
                   mortgages={mortgages}
                   propertyEditId={propertyEditId}
                   onPropertyEditId={setPropertyEditId}

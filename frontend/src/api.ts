@@ -199,6 +199,31 @@ export type RealEstateProperty = {
   updated_at: string;
 };
 
+export type RealEstateAnalytics = {
+  property_id: string;
+  account_id: string;
+  property_name: string;
+  valuation_date: string | null;
+  current_value: string | null;
+  purchase_date: string | null;
+  purchase_price: string | null;
+  expected_appreciation_rate: string | null;
+  appreciation_amount: string | null;
+  appreciation_rate: string | null;
+  annualized_appreciation_rate: string | null;
+  mortgage_balance: string | null;
+  mortgage_balance_estimated: boolean;
+  equity: string | null;
+  estimated_annual_rental_income: string | null;
+  estimated_noi: string | null;
+  estimated_annual_cash_flow: string | null;
+  gross_rental_yield: string | null;
+  cap_rate: string | null;
+  cash_on_cash_return: string | null;
+  valuation_history: Array<{ as_of_date: string; value: string }>;
+  limitations: string[];
+};
+
 export type RealEstateSale = {
   id: string;
   household_id: string;
@@ -609,6 +634,10 @@ export function getNetWorthHistory(householdId: string): Promise<NetWorthHistory
   return request<NetWorthHistory>(`/dashboard/${householdId}/net-worth/history`);
 }
 
+export function getRealEstateAnalytics(householdId: string): Promise<RealEstateAnalytics[]> {
+  return request<RealEstateAnalytics[]>(`/real-estate/analytics?household_id=${householdId}`);
+}
+
 export function listRealEstateProperties(householdId: string): Promise<RealEstateProperty[]> {
   return request<RealEstateProperty[]>(`/real-estate/properties?household_id=${householdId}`);
 }
@@ -800,6 +829,22 @@ export function createSpendingItem(payload: {
 
 export function listSpendingItems(householdId: string): Promise<SpendingItem[]> {
   return request<SpendingItem[]>(`/spending-items?household_id=${householdId}`);
+}
+
+export function updateSpendingItem(
+  spendingItemId: string,
+  payload: {
+    name?: string;
+    category?: string;
+    annual_amount?: string;
+    retirement_annual_amount?: string | null;
+    growth_rate?: string | null;
+  },
+): Promise<SpendingItem> {
+  return request<SpendingItem>(`/spending-items/${spendingItemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function deleteSpendingItem(spendingItemId: string): Promise<void> {

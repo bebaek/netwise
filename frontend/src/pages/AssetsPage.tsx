@@ -1,6 +1,114 @@
 import type { FormEventHandler } from 'react';
-import type { Account, MortgageProfile, RealEstateProperty, RetirementTaxTreatment } from '../api';
+import type {
+  Account,
+  MortgageProfile,
+  RealEstateAnalytics,
+  RealEstateProperty,
+  RetirementTaxTreatment,
+} from '../api';
 import { formatMoney } from '../utils/format';
+
+function formatPercent(value: string | null): string {
+  if (value == null) return '—';
+  return Number(value).toLocaleString(undefined, {
+    style: 'percent',
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  });
+}
+
+function dateMs(value: string): number {
+  return new Date(`${value}T00:00:00Z`).getTime();
+}
+
+function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalytics }) {
+  const valuations = [...analytics.valuation_history].sort((left, right) =>
+    left.as_of_date.localeCompare(right.as_of_date),
+  );
+  const purchasePoint = analytics.purchase_date && analytics.purchase_price
+    ? { as_of_date: analytics.purchase_date, value: analytics.purchase_price }
+    : null;
+  const lastValuation = valuations[valuations.length - 1];
+  const expectedRate = analytics.expected_appreciation_rate == null
+    ? null
+    : Number(analytics.expected_appreciation_rate);
+  const expectedEnd = purchasePoint && lastValuation && expectedRate != null && expectedRate > -1
+    && lastValuation.as_of_date > purchasePoint.as_of_date
+    ? {
+        as_of_date: lastValuation.as_of_date,
+        value: String(
+          Number(purchasePoint.value)
+          * ((1 + expectedRate) ** ((dateMs(lastValuation.as_of_date) - dateMs(purchasePoint.as_of_date))
+            / (365.2425 * 24 * 60 * 60 * 1000))),
+        ),
+      }
+    : null;
+  const observedPoints = [...(purchasePoint ? [purchasePoint] : []), ...valuations]
+    .sort((left, right) => left.as_of_date.localeCompare(right.as_of_date));
+  const chartPoints = [
+    ...observedPoints,
+    ...(expectedEnd ? [expectedEnd] : []),
+  ];
+  if (chartPoints.length < 2) return null;
+
+  const dates = chartPoints.map((point) => dateMs(point.as_of_date));
+  const values = chartPoints.map((point) => Number(point.value));
+  const minDate = Math.min(...dates);
+  const maxDate = Math.max(...dates);
+  if (minDate === maxDate) return null;
+  const rawMinValue = Math.min(...values);
+  const rawMaxValue = Math.max(...values);
+  const valuePadding = Math.max((rawMaxValue - rawMinValue) * 0.08, rawMaxValue * 0.02, 1);
+  const minValue = Math.max(0, rawMinValue - valuePadding);
+  const maxValue = rawMaxValue + valuePadding;
+  const width = 720;
+  const height = 220;
+  const topPadding = 24;
+  const bottomPadding = 28;
+  const leftPadding = 96;
+  const rightPadding = 28;
+  const xForDate = (value: string) => leftPadding
+    + ((dateMs(value) - minDate) / (maxDate - minDate)) * (width - leftPadding - rightPadding);
+  const yForValue = (value: string) => topPadding
+    + (height - topPadding - bottomPadding)
+    - ((Number(value) - minValue) / (maxValue - minValue)) * (height - topPadding - bottomPadding);
+  const valuationPolyline = observedPoints
+    .map((point) => `${xForDate(point.as_of_date)},${yForValue(point.value)}`)
+    .join(' ');
+  const expectedPolyline = purchasePoint && expectedEnd
+    ? `${xForDate(purchasePoint.as_of_date)},${yForValue(purchasePoint.value)} ${xForDate(expectedEnd.as_of_date)},${yForValue(expectedEnd.value)}`
+    : '';
+
+  return (
+    <div className="trend-chart property-appreciation-chart" aria-label={`${analytics.property_name} appreciation trend chart`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        <title>{analytics.property_name} recorded valuation trend</title>
+        <line x1={leftPadding} y1={height - bottomPadding} x2={width - rightPadding} y2={height - bottomPadding} className="axis" />
+        <line x1={leftPadding} y1={topPadding} x2={leftPadding} y2={height - bottomPadding} className="axis" />
+        <text x={leftPadding - 10} y={topPadding + 4} textAnchor="end" className="axis-label">{formatMoney(String(maxValue))}</text>
+        <text x={leftPadding - 10} y={height - bottomPadding + 4} textAnchor="end" className="axis-label">{formatMoney(String(minValue))}</text>
+        {observedPoints.length > 1 && <polyline points={valuationPolyline} className="trend-line history" />}
+        {expectedPolyline && <polyline points={expectedPolyline} className="trend-line expected" />}
+        {purchasePoint && (
+          <circle cx={xForDate(purchasePoint.as_of_date)} cy={yForValue(purchasePoint.value)} r={5} className="trend-dot purchase">
+            <title>Purchase: {formatMoney(purchasePoint.value)} on {purchasePoint.as_of_date}</title>
+          </circle>
+        )}
+        {valuations.map((point) => (
+          <circle key={point.as_of_date} cx={xForDate(point.as_of_date)} cy={yForValue(point.value)} r={5} className="trend-dot snapshot">
+            <title>Recorded valuation: {formatMoney(point.value)} on {point.as_of_date}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="chart-labels"><span>{new Date(minDate).toISOString().slice(0, 10)}</span><span>{new Date(maxDate).toISOString().slice(0, 10)}</span></div>
+      <div className="chart-legend">
+        <span><i className="legend-dot purchase" />Purchase price</span>
+        <span><i className="legend-dot snapshot" />Recorded valuation</span>
+        {expectedPolyline && <span><i className="legend-dot expected" />Expected appreciation</span>}
+      </div>
+    </div>
+  );
+}
 
 export type AccountEditDraft = {
   id: string;
@@ -22,6 +130,7 @@ export function AssetsPage({
   assetAccounts,
   propertyAccounts,
   properties,
+  realEstateAnalytics,
   mortgages,
   propertyEditId,
   onPropertyEditId,
@@ -41,6 +150,7 @@ export function AssetsPage({
   assetAccounts: Account[];
   propertyAccounts: Account[];
   properties: RealEstateProperty[];
+  realEstateAnalytics: RealEstateAnalytics[];
   mortgages: MortgageProfile[];
   propertyEditId: string;
   onPropertyEditId: (propertyId: string) => void;
@@ -83,6 +193,8 @@ export function AssetsPage({
           <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" defaultValue={property.adjusted_tax_basis ?? ''} /></label>
           <p className="muted">Sale-tax estimates use adjusted basis when provided, otherwise purchase price. Include basis adjustments such as capital improvements and depreciation.</p>
           <label>Down payment<input name="down_payment" inputMode="decimal" defaultValue={property.down_payment ?? ''} /></label>
+          <label>Projected annual appreciation<input name="expected_appreciation_rate" inputMode="decimal" placeholder="0.00" defaultValue={property.expected_appreciation_rate ?? ''} /></label>
+          <p className="muted">Used only for future projections and the expected trend line. Enter 0 for a conservative flat-value assumption.</p>
           <label className="checkbox-label"><input name="is_rental" type="checkbox" defaultChecked={property.is_rental} /> Rental property</label>
           <label>Rental start date<input name="rental_start_date" type="date" defaultValue={property.rental_start_date ?? ''} /></label>
           <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" defaultValue={property.monthly_market_rent ?? ''} />
@@ -109,6 +221,80 @@ export function AssetsPage({
   ) : <p className="muted">No properties configured.</p>}
 </section>
 
+<section className="card">
+  <div className="section-header">
+    <div>
+      <h2>Property performance</h2>
+      <p className="muted">Appreciation and equity use recorded valuations. Rental returns are estimates based on current assumptions.</p>
+    </div>
+  </div>
+  {realEstateAnalytics.length ? (
+    <div className="table-scroll" tabIndex={0} role="region" aria-label="Real estate performance analytics">
+      <table className="spaced-table">
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Current value</th>
+            <th>Historical appreciation</th>
+            <th>Annualized</th>
+            <th>Equity</th>
+            <th>Gross yield</th>
+            <th>Cap rate</th>
+            <th>Cash-on-cash</th>
+          </tr>
+        </thead>
+        <tbody>
+          {realEstateAnalytics.map((analytics) => (
+            <tr key={analytics.property_id}>
+              <td>
+                {analytics.property_name}
+                <span className="muted cell-detail">
+                  {analytics.valuation_date ? `As of ${analytics.valuation_date}` : 'No valuation'}
+                </span>
+              </td>
+              <td>{formatMoney(analytics.current_value)}</td>
+              <td>
+                {formatMoney(analytics.appreciation_amount)}
+                <span className="muted cell-detail">{formatPercent(analytics.appreciation_rate)}</span>
+              </td>
+              <td>{formatPercent(analytics.annualized_appreciation_rate)}</td>
+              <td>
+                {formatMoney(analytics.equity)}
+                {analytics.mortgage_balance_estimated && <span className="muted cell-detail">Estimated mortgage</span>}
+              </td>
+              <td>{formatPercent(analytics.gross_rental_yield)}</td>
+              <td>{formatPercent(analytics.cap_rate)}</td>
+              <td>{formatPercent(analytics.cash_on_cash_return)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {realEstateAnalytics.map((analytics) => (
+        <details key={`${analytics.property_id}-history`} className="analytics-details">
+          <summary>{analytics.property_name} valuation history ({analytics.valuation_history.length})</summary>
+          <PropertyAppreciationChart analytics={analytics} />
+          {analytics.valuation_history.length ? (
+            <table className="spaced-table compact-table">
+              <thead><tr><th>Date</th><th>Recorded value</th></tr></thead>
+              <tbody>
+                {analytics.valuation_history.map((point) => (
+                  <tr key={point.as_of_date}><td>{point.as_of_date}</td><td>{formatMoney(point.value)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <p className="muted">Add a valuation snapshot to begin performance history.</p>}
+          {analytics.estimated_noi != null && (
+            <p className="muted">
+              Estimated annual rent {formatMoney(analytics.estimated_annual_rental_income)}, NOI {formatMoney(analytics.estimated_noi)}, and cash flow {formatMoney(analytics.estimated_annual_cash_flow)}.
+            </p>
+          )}
+          {analytics.limitations.map((limitation) => <p key={limitation} className="muted">{limitation}</p>)}
+        </details>
+      ))}
+    </div>
+  ) : <p className="muted">Add a property to see historical performance.</p>}
+</section>
+
 <section className="grid two-column">
   <div className="card">
     <h2>Real estate</h2>
@@ -120,7 +306,7 @@ export function AssetsPage({
             <th>Type</th>
             <th>Purchase price</th>
             <th>Adjusted basis</th>
-            <th>Appreciation</th>
+            <th>Projected appreciation</th>
           </tr>
         </thead>
         <tbody>
@@ -130,7 +316,7 @@ export function AssetsPage({
               <td>{property.property_type}</td>
               <td>{formatMoney(property.purchase_price)}</td>
               <td>{formatMoney(property.adjusted_tax_basis)}</td>
-              <td>{property.expected_appreciation_rate ?? '—'}</td>
+              <td>{formatPercent(property.expected_appreciation_rate)}</td>
             </tr>
           ))}
         </tbody>
@@ -193,7 +379,7 @@ export function AssetsPage({
       <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" /></label>
       <p className="muted">If adjusted basis is blank, sale-tax estimates use purchase price. Basis generally includes qualifying improvements and subtracts depreciation.</p>
       <label>Down payment<input name="down_payment" inputMode="decimal" /></label>
-      <input name="expected_appreciation_rate" inputMode="decimal" placeholder="Expected appreciation rate, e.g. 0.03" />
+      <label>Projected annual appreciation<input name="expected_appreciation_rate" inputMode="decimal" placeholder="0.00 (flat value)" defaultValue="0.00" /></label>
       <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" />
       <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" />
       <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance (if entered separately)" />
@@ -335,10 +521,14 @@ export function AssetsPage({
             <option value="after_tax">After-tax</option>
           </select>
         </label>
-        <label>
-          Expected annual yield
-          <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
-        </label>
+        {accountEditDraft.category === 'real_estate' ? (
+          <p className="muted">Projected appreciation is managed in Property details.</p>
+        ) : (
+          <label>
+            Expected annual yield
+            <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
+          </label>
+        )}
         <label>
           Liquidation expense rate
           <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
@@ -378,7 +568,7 @@ export function AssetsPage({
             <td>{account.account_kind}</td>
             <td>{account.category}</td>
             <td>{account.retirement_tax_treatment ?? 'Not applicable'}</td>
-            <td>{account.expected_annual_yield ?? '—'}</td>
+            <td>{account.category === 'real_estate' ? 'Property details' : account.expected_annual_yield ?? '—'}</td>
             <td>{formatMoney(latestBalanceByAccountId.get(account.id))}</td>
             <td><button type="button" className="secondary-button" onClick={() => onStartEditAccount(account)}>Edit</button></td>
           </tr>
@@ -406,7 +596,7 @@ export function AssetsPage({
         <option value="roth">Roth / tax-free</option>
         <option value="after_tax">After-tax</option>
       </select>
-      <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield, e.g. 0.05" />
+      <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield for non-property accounts, e.g. 0.05" />
       <button type="submit">Add account</button>
   </form>
 </section>

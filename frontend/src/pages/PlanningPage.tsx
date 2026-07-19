@@ -1,4 +1,4 @@
-import type { FormEventHandler } from 'react';
+import { useState, type FormEvent, type FormEventHandler } from 'react';
 import type {
   Account,
   AccountEvent,
@@ -85,8 +85,10 @@ export function PlanningPage({
   onDeleteLiquidationStrategy,
   onUpsertLiquidationStrategy,
   projectionSettings,
+  onSpendingModeChange,
   onSaveProjectionSettings,
   onGetProjection,
+  projectionRunning,
   incomeSources,
   projectionTransfers,
   spendingItems,
@@ -96,6 +98,7 @@ export function PlanningPage({
   onCreateProjectionTransfer,
   onDeleteProjectionTransfer,
   onCreateSpendingItem,
+  onUpdateSpendingItem,
   onDeleteSpendingItem,
   onCreateTaxRecord,
   realEstateSales,
@@ -118,8 +121,10 @@ export function PlanningPage({
   onDeleteLiquidationStrategy: (strategy: RealEstateLiquidationStrategy) => void | Promise<void>;
   onUpsertLiquidationStrategy: FormEventHandler<HTMLFormElement>;
   projectionSettings: ProjectionSettings | null;
+  onSpendingModeChange: (mode: 'manual' | 'itemized') => void | Promise<void>;
   onSaveProjectionSettings: FormEventHandler<HTMLFormElement>;
   onGetProjection: FormEventHandler<HTMLFormElement>;
+  projectionRunning: boolean;
   incomeSources: IncomeSource[];
   projectionTransfers: ProjectionTransfer[];
   spendingItems: SpendingItem[];
@@ -129,6 +134,7 @@ export function PlanningPage({
   onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
   onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
   onCreateSpendingItem: FormEventHandler<HTMLFormElement>;
+  onUpdateSpendingItem: (event: FormEvent<HTMLFormElement>, item: SpendingItem) => Promise<void>;
   onDeleteSpendingItem: (item: SpendingItem) => void | Promise<void>;
   onCreateTaxRecord: FormEventHandler<HTMLFormElement>;
   realEstateSales: RealEstateSale[];
@@ -142,6 +148,7 @@ export function PlanningPage({
   onSaveAccountEvent: FormEventHandler<HTMLFormElement>;
   onDeleteAccountEvent: (event: AccountEvent) => void | Promise<void>;
 }) {
+  const [spendingItemEditId, setSpendingItemEditId] = useState('');
   const workingSpendingTotal = spendingItems.reduce(
     (total, item) => total + Number(item.annual_amount),
     0,
@@ -246,17 +253,56 @@ export function PlanningPage({
               <tr><th>Item</th><th>Category</th><th>Annual</th><th>Monthly</th><th>Retirement</th><th>Growth</th><th /></tr>
             </thead>
             <tbody>
-              {spendingItems.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{readableLabel(item.category)}</td>
-                  <td>{formatMoney(item.annual_amount)}</td>
-                  <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
-                  <td>{formatMoney(item.retirement_annual_amount ?? item.annual_amount)}</td>
-                  <td>{item.growth_rate == null ? 'Default inflation' : formatRate(item.growth_rate)}</td>
-                  <td><button type="button" className="danger-button" onClick={() => onDeleteSpendingItem(item)}>Delete</button></td>
-                </tr>
-              ))}
+              {spendingItems.map((item) => {
+                const editFormId = `spending-item-edit-${item.id}`;
+                if (spendingItemEditId === item.id) {
+                  return (
+                    <tr key={item.id}>
+                      <td><input form={editFormId} name="spending_item_edit_name" aria-label="Spending item name" defaultValue={item.name} required /></td>
+                      <td>
+                        <select form={editFormId} name="spending_item_edit_category" aria-label="Spending item category" defaultValue={item.category} required>
+                          {SPENDING_CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </td>
+                      <td><input form={editFormId} name="spending_item_edit_annual_amount" aria-label="Current annual amount" inputMode="decimal" defaultValue={item.annual_amount} required /></td>
+                      <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
+                      <td><input form={editFormId} name="spending_item_edit_retirement_annual_amount" aria-label="Retirement annual amount" inputMode="decimal" placeholder="Same as current" defaultValue={item.retirement_annual_amount ?? ''} /></td>
+                      <td><input form={editFormId} name="spending_item_edit_growth_rate" aria-label="Annual growth rate" inputMode="decimal" placeholder="Default inflation" defaultValue={item.growth_rate ?? ''} /></td>
+                      <td>
+                        <form
+                          id={editFormId}
+                          className="form-row"
+                          onSubmit={async (event) => {
+                            try {
+                              await onUpdateSpendingItem(event, item);
+                              setSpendingItemEditId('');
+                            } catch {
+                              // The app-level handler displays the API error and keeps the row editable.
+                            }
+                          }}
+                        >
+                          <button type="submit">Save</button>
+                          <button type="button" className="secondary-button" onClick={() => setSpendingItemEditId('')}>Cancel</button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td>{readableLabel(item.category)}</td>
+                    <td>{formatMoney(item.annual_amount)}</td>
+                    <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
+                    <td>{formatMoney(item.retirement_annual_amount ?? item.annual_amount)}</td>
+                    <td>{item.growth_rate == null ? 'Default inflation' : formatRate(item.growth_rate)}</td>
+                    <td className="form-row">
+                      <button type="button" onClick={() => setSpendingItemEditId(item.id)}>Edit</button>
+                      <button type="button" className="danger-button" onClick={() => onDeleteSpendingItem(item)}>Delete</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -309,7 +355,11 @@ export function PlanningPage({
       </div>
       <label>
         Spending calculation
-        <select name="settings_spending_mode" defaultValue={spendingMode}>
+        <select
+          name="settings_spending_mode"
+          value={spendingMode}
+          onChange={(event) => onSpendingModeChange(event.target.value as 'manual' | 'itemized')}
+        >
           <option value="manual">Use manual household total</option>
           <option value="itemized">Automatically sum spending items</option>
         </select>
@@ -349,7 +399,7 @@ export function PlanningPage({
           defaultValue={projectionSettings?.retirement_annual_spending ?? ''}
         />
       </label>
-      <p className="muted">The manual total is the default when provided. Select automatic item sum to derive spending from the granular plan. Owner-occupied mortgage payments are always projected separately, remain fixed, and stop after the final scheduled payment.</p>
+      <p className="muted">The spending calculation selection saves immediately. The manual total is the default when provided. Select automatic item sum to derive spending from the granular plan. Owner-occupied mortgage payments are always projected separately, remain fixed, and stop after the final scheduled payment.</p>
       <label>
         Spending account
         <select name="settings_spending_account_id" defaultValue={projectionSettings?.spending_account_id ?? ''}>
@@ -375,7 +425,11 @@ export function PlanningPage({
       <button type="submit">Save settings</button>
     </form>
 
-    <form onSubmit={onGetProjection} className="projection-form">
+    <form
+      onSubmit={onGetProjection}
+      className="projection-form"
+      aria-busy={projectionRunning}
+    >
       <div>
         <h3>Run projection</h3>
         <p className="muted">Optional overrides apply only to this run.</p>
@@ -446,7 +500,15 @@ export function PlanningPage({
           ))}
         </select>
       </label>
-      <button type="submit">Run projection</button>
+      <button type="submit" className="projection-run-button" disabled={projectionRunning}>
+        {projectionRunning && <span className="loading-spinner" aria-hidden="true" />}
+        {projectionRunning ? 'Running projection…' : 'Run projection'}
+      </button>
+      {projectionRunning && (
+        <p className="projection-run-status" role="status" aria-live="polite">
+          Calculating your projection. Longer date ranges and optimization strategies may take some time.
+        </p>
+      )}
     </form>
   </div>
 
