@@ -941,6 +941,11 @@ function App() {
       const result = await upsertProjectionSettings(selectedHouseholdId, {
         annual_spending: optionalString(form, 'settings_annual_spending'),
         spending_inflation_rate: optionalString(form, 'settings_spending_inflation_rate'),
+        retirement_date: optionalString(form, 'settings_retirement_date'),
+        retirement_annual_spending: optionalString(
+          form,
+          'settings_retirement_annual_spending',
+        ),
         spending_account_id: optionalString(form, 'settings_spending_account_id'),
         tax_account_id: optionalString(form, 'settings_tax_account_id'),
       });

@@ -215,6 +215,24 @@ export function PlanningPage({
         />
       </label>
       <label>
+        Retirement date
+        <input
+          name="settings_retirement_date"
+          type="date"
+          defaultValue={projectionSettings?.retirement_date ?? ''}
+        />
+      </label>
+      <label>
+        Annual retirement spending
+        <input
+          name="settings_retirement_annual_spending"
+          inputMode="decimal"
+          placeholder="Use regular annual spending"
+          defaultValue={projectionSettings?.retirement_annual_spending ?? ''}
+        />
+      </label>
+      <p className="muted">The retirement date changes the spending phase. Use income-source dates for salary, pension, and Social Security timing. Retirement withdrawal penalties are only applied when configured as an account liquidation expense.</p>
+      <label>
         Spending account
         <select name="settings_spending_account_id" defaultValue={projectionSettings?.spending_account_id ?? ''}>
           <option value="">Default funding order</option>
@@ -321,6 +339,11 @@ export function PlanningPage({
 
   {projection?.points.length ? (
     <>
+      {projection.retirement_date && (
+        <div className="projection-note">
+          <strong>Retirement phase:</strong> begins {projection.retirement_date}; first retirement-account withdrawal: {projection.first_retirement_withdrawal_date ?? 'none in projection'}; first unfunded period: {projection.first_unfunded_date ?? 'none in projection'}.
+        </div>
+      )}
       {projection.property_sale_optimization && (
         <div className="projection-note">
           <strong>Optimized March 1 property sales:</strong>{' '}
@@ -348,7 +371,10 @@ export function PlanningPage({
           <tbody>
             {projection.points.map((point) => (
               <tr key={point.as_of_date}>
-                <td>{projection.interval === 'annual' ? point.year : point.as_of_date}</td>
+                <td>
+                  {projection.interval === 'annual' ? point.year : point.as_of_date}
+                  {point.retirement_phase ? ' · Retirement' : ''}
+                </td>
                 <td>{formatMoney(point.net_worth)}</td>
                 <td>{formatMoney(point.assets_total)}</td>
                 <td>{formatMoney(point.liabilities_total)}</td>

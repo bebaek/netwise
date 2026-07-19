@@ -41,6 +41,10 @@ class IncomeSourceRead(BaseModel):
 class ProjectionSettingsUpsert(BaseModel):
     annual_spending: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     spending_inflation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    retirement_date: date | None = None
+    retirement_annual_spending: Decimal | None = Field(
+        default=None, max_digits=18, decimal_places=2
+    )
     spending_account_id: UUID | None = None
     tax_account_id: UUID | None = None
 
@@ -50,6 +54,8 @@ class ProjectionSettingsRead(BaseModel):
     household_id: UUID
     annual_spending: Decimal | None
     spending_inflation_rate: Decimal | None
+    retirement_date: date | None
+    retirement_annual_spending: Decimal | None
     spending_account_id: UUID | None
     tax_account_id: UUID | None
     created_at: datetime

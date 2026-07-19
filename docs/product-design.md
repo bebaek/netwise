@@ -181,6 +181,23 @@ Examples:
 
 Each income source can include amount, frequency, start date, end date, and growth assumption.
 
+## Retirement-phase modeling
+
+The initial retirement model is household-level and deterministic. Projection settings can define a
+retirement date and annual retirement spending. The projection uses regular annual spending before
+that date, retirement spending afterward, and prorates a period that contains the transition date.
+Both spending amounts use the configured spending inflation rate.
+
+Income timing remains explicit: salary, pension, Social Security, and similar cash flows are modeled
+as income sources with their own start and end dates. The retirement date does not automatically
+stop salary or calculate retirement benefits.
+
+Projection results identify retirement-phase periods, the first retirement-account withdrawal, and
+the first unfunded period. Retirement accounts do not receive a default early-withdrawal penalty;
+users can model one with an account liquidation-expense rate. The initial model does not derive age
+eligibility, required minimum distributions, Social Security benefits, Medicare costs, or detailed
+tax rules.
+
 ## Annual tax summaries
 
 Tax can be entered once per year to improve after-tax income, estimated expense, and future projections.

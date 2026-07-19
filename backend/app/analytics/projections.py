@@ -48,7 +48,6 @@ def _current_date() -> date:
 DEFAULT_LIQUIDATION_EXPENSE_RATES = {
     "taxable_investment": Decimal("0.010000"),
     "brokerage": Decimal("0.010000"),
-    "retirement": Decimal("0.100000"),
     "real_estate": Decimal("0.060000"),
 }
 
@@ -309,6 +308,21 @@ def calculate_net_worth_projection(
         if projection_settings is not None
         else None
     )
+    effective_retirement_date = (
+        projection_settings.retirement_date if projection_settings is not None else None
+    )
+    effective_retirement_annual_spending = (
+        projection_settings.retirement_annual_spending
+        if projection_settings is not None
+        and projection_settings.retirement_annual_spending is not None
+        else effective_annual_spending
+    )
+    retirement_spending_baseline = (
+        (start_year, effective_retirement_annual_spending.quantize(Decimal("0.01")))
+        if effective_retirement_date is not None
+        and effective_retirement_annual_spending is not None
+        else None
+    )
     accounts_by_id = {account.id: account for account in accounts}
     _validate_cash_flow_account(accounts_by_id, effective_spending_account_id, "Spending account")
     _validate_cash_flow_account(accounts_by_id, effective_tax_account_id, "Tax account")
@@ -518,7 +532,10 @@ def calculate_net_worth_projection(
         income_taxes = (taxable_income * tax_rate).quantize(Decimal("0.01"))
         projected_spending = _projected_spending_for_period(
             spending_baseline,
+            retirement_spending_baseline,
+            effective_retirement_date,
             period_start,
+            as_of_date,
             months_per_period,
             effective_spending_inflation_rate,
         )
@@ -619,18 +636,35 @@ def calculate_net_worth_projection(
                 "projected_liquidation_expenses": projected_liquidation_expenses,
                 "projected_unfunded_cash_flow": projected_unfunded_cash_flow,
                 "net_cash_flow": net_cash_flow,
+                "retirement_phase": (
+                    effective_retirement_date is not None
+                    and effective_retirement_date <= as_of_date
+                ),
                 "cash_flows": cash_flows,
                 "accounts": account_points,
             }
         )
 
-    return {
+    result = {
         "household_id": household_id,
         "start_year": start_year,
         "end_year": end_year,
         "interval": interval,
+        "retirement_date": effective_retirement_date,
         "points": points,
     }
+    result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(
+        result, accounts
+    )
+    result["first_unfunded_date"] = next(
+        (
+            point["as_of_date"]
+            for point in points
+            if point["projected_unfunded_cash_flow"] > Decimal("0.00")
+        ),
+        None,
+    )
+    return result
 
 
 def _optimize_liquid_runway_sales(
@@ -855,17 +889,37 @@ def _latest_effective_tax_rate(db: Session, household_id: UUID) -> Decimal:
 
 def _projected_spending_for_period(
     spending_baseline: tuple[int, Decimal] | None,
+    retirement_spending_baseline: tuple[int, Decimal] | None,
+    retirement_date: date | None,
     period_start: date,
+    period_end: date,
     months_per_period: int,
     spending_inflation_rate: Decimal,
 ) -> Decimal:
-    """Return the portion of inflation-adjusted annual spending for a projection period."""
-    annual_spending = _projected_spending_for_year(
+    """Return inflation-adjusted spending, blending a retirement transition period."""
+    working_annual_spending = _projected_spending_for_year(
         spending_baseline, period_start.year, spending_inflation_rate
     )
-    if months_per_period == 12:
-        return annual_spending
-    return (annual_spending * Decimal(months_per_period) / Decimal("12")).quantize(Decimal("0.01"))
+    retirement_annual_spending = _projected_spending_for_year(
+        retirement_spending_baseline, period_start.year, spending_inflation_rate
+    )
+    period_fraction = Decimal(months_per_period) / Decimal("12")
+
+    if retirement_date is None or retirement_spending_baseline is None:
+        return (working_annual_spending * period_fraction).quantize(Decimal("0.01"))
+    if retirement_date <= period_start:
+        return (retirement_annual_spending * period_fraction).quantize(Decimal("0.01"))
+    if retirement_date > period_end:
+        return (working_annual_spending * period_fraction).quantize(Decimal("0.01"))
+
+    period_days = Decimal((period_end - period_start).days + 1)
+    retirement_days = Decimal((period_end - retirement_date).days + 1)
+    working_days = period_days - retirement_days
+    blended_annual_spending = (
+        (working_annual_spending * working_days)
+        + (retirement_annual_spending * retirement_days)
+    ) / period_days
+    return (blended_annual_spending * period_fraction).quantize(Decimal("0.01"))
 
 
 def _projected_spending_for_year(

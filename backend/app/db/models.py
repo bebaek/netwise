@@ -416,6 +416,8 @@ class ProjectionSettings(Base):
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
     annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     spending_inflation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    retirement_date: Mapped[date | None] = mapped_column(Date)
+    retirement_annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     spending_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
     tax_account_id: Mapped[UUID | None] = mapped_column(ForeignKey("accounts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

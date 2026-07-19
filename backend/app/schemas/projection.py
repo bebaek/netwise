@@ -35,6 +35,7 @@ class ProjectionPointRead(BaseModel):
     projected_liquidation_expenses: Decimal
     projected_unfunded_cash_flow: Decimal
     net_cash_flow: Decimal
+    retirement_phase: bool
     cash_flows: list[ProjectionCashFlowRead]
     accounts: list[ProjectionAccountRead]
 
@@ -59,5 +60,8 @@ class NetWorthProjectionRead(BaseModel):
     start_year: int
     end_year: int
     interval: str
+    retirement_date: date | None
+    first_retirement_withdrawal_date: date | None
+    first_unfunded_date: date | None
     points: list[ProjectionPointRead]
     property_sale_optimization: PropertySaleOptimizationRead | None = None

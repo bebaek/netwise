@@ -262,6 +262,8 @@ export type ProjectionSettings = {
   household_id: string;
   annual_spending: string | null;
   spending_inflation_rate: string | null;
+  retirement_date: string | null;
+  retirement_annual_spending: string | null;
   spending_account_id: string | null;
   tax_account_id: string | null;
   created_at: string;
@@ -286,6 +288,9 @@ export type NetWorthProjection = {
   start_year: number;
   end_year: number;
   interval: 'annual' | 'quarterly' | 'monthly';
+  retirement_date: string | null;
+  first_retirement_withdrawal_date: string | null;
+  first_unfunded_date: string | null;
   points: Array<{
     year: number;
     as_of_date: string;
@@ -300,6 +305,7 @@ export type NetWorthProjection = {
     projected_liquidation_expenses: string;
     projected_unfunded_cash_flow: string;
     net_cash_flow: string;
+    retirement_phase: boolean;
     cash_flows: Array<{
       account_id: string;
       account_name: string;
@@ -729,6 +735,8 @@ export function upsertProjectionSettings(
   payload: {
     annual_spending?: string;
     spending_inflation_rate?: string;
+    retirement_date?: string;
+    retirement_annual_spending?: string;
     spending_account_id?: string;
     tax_account_id?: string;
   },

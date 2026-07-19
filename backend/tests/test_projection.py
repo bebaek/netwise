@@ -550,6 +550,87 @@ def test_projection_uses_persisted_cash_flow_settings(client: TestClient):
     assert final_balances == {"Checking": "28000.00", "Savings": "7400.00"}
 
 
+def test_projection_switches_spending_at_retirement_and_reports_withdrawal(
+    client: TestClient, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setattr("app.analytics.projections._current_date", lambda: date(2025, 12, 31))
+    household_id = client.post("/households", json={"name": "Retirement Phase"}).json()["id"]
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    retirement = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Traditional IRA",
+            "account_kind": "asset",
+            "category": "retirement",
+            "liquidity_class": "retirement_liquid",
+            "retirement_tax_treatment": "traditional",
+            "expected_annual_yield": "0.000000",
+        },
+    ).json()
+    for account, balance in ((checking, "600.00"), (retirement, "1000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+
+    settings = client.put(
+        f"/projection-settings/{household_id}",
+        json={
+            "annual_spending": "1200.00",
+            "spending_inflation_rate": "0.000000",
+            "retirement_date": "2026-07-16",
+            "retirement_annual_spending": "600.00",
+        },
+    )
+    assert settings.status_code == 200
+    assert settings.json()["retirement_date"] == "2026-07-16"
+    assert settings.json()["retirement_annual_spending"] == "600.00"
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2026&interval=monthly"
+    )
+
+    assert response.status_code == 200
+    projection = response.json()
+    assert projection["retirement_date"] == "2026-07-16"
+    assert projection["first_retirement_withdrawal_date"] == "2026-07-31"
+    assert projection["first_unfunded_date"] is None
+    assert [point["projected_spending"] for point in projection["points"]] == [
+        "100.00",
+        "100.00",
+        "100.00",
+        "100.00",
+        "100.00",
+        "100.00",
+        "74.19",
+        "50.00",
+        "50.00",
+        "50.00",
+        "50.00",
+        "50.00",
+    ]
+    assert projection["points"][5]["retirement_phase"] is False
+    assert projection["points"][6]["retirement_phase"] is True
+    assert projection["points"][-1]["projected_liquidation_expenses"] == "0.00"
+    balances = {
+        account["name"]: account["projected_balance"]
+        for account in projection["points"][-1]["accounts"]
+    }
+    assert balances == {"Checking": "0.00", "Traditional IRA": "675.81"}
+
+
 def test_projection_taxes_non_cash_projection_event_withdrawals(client: TestClient):
     household = client.post("/households", json={"name": "Taxable Withdrawal"}).json()
     household_id = household["id"]
