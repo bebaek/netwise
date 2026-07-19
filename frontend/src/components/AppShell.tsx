@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import type { Household, User } from '../api';
 
 export type AppView = 'overview' | 'update' | 'plan' | 'assets' | 'settings';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 type ViewDetails = {
   id: AppView;
@@ -31,6 +32,8 @@ export function AppHeader({
   selectedHousehold,
   selectedHouseholdId,
   onSelectHousehold,
+  themePreference,
+  onThemePreferenceChange,
 }: {
   users: User[];
   selectedUser?: User;
@@ -40,6 +43,8 @@ export function AppHeader({
   selectedHousehold?: Household;
   selectedHouseholdId: string;
   onSelectHousehold: (householdId: string) => void;
+  themePreference: ThemePreference;
+  onThemePreferenceChange: (theme: ThemePreference) => void;
 }) {
   return (
     <header className="app-header">
@@ -75,6 +80,15 @@ export function AppHeader({
             ))}
           </select>
         )}
+        <select
+          value={themePreference}
+          onChange={(event) => onThemePreferenceChange(event.target.value as ThemePreference)}
+          aria-label="Theme"
+        >
+          <option value="system">System theme</option>
+          <option value="light">Light theme</option>
+          <option value="dark">Dark theme</option>
+        </select>
       </div>
     </header>
   );

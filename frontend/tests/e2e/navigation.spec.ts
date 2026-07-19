@@ -85,6 +85,27 @@ test('shows progress while a projection is running', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 
+test('uses the system color scheme until a theme is selected', async ({ page }) => {
+  await page.getByLabel('Theme').selectOption('system');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('persists an explicit dark theme across reloads', async ({ page }) => {
+  const themeSelect = page.getByLabel('Theme');
+  await themeSelect.selectOption('dark');
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('netwise.theme'))).toBe('dark');
+
+  await page.reload();
+  await expect(page.getByLabel('Theme')).toHaveValue('dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
 test('overview update action opens the balance workflow', async ({ page }) => {
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   await page.getByRole('link', { name: 'Update balances', exact: true }).click();
