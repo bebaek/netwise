@@ -53,7 +53,10 @@ def test_default_projection_funding_order():
     ]
 
 
-def test_monthly_projection_returns_month_end_points_and_dates_events(client: TestClient):
+def test_monthly_projection_returns_only_future_month_ends_and_applies_past_events(
+    client: TestClient, monkeypatch: MonkeyPatch
+):
+    monkeypatch.setattr("app.analytics.projections._current_date", lambda: date(2026, 6, 30))
     household = client.post("/households", json={"name": "Monthly Projection"}).json()
     account = client.post(
         "/accounts",
@@ -88,11 +91,10 @@ def test_monthly_projection_returns_month_end_points_and_dates_events(client: Te
     assert response.status_code == 200
     projection = response.json()
     assert projection["interval"] == "monthly"
-    assert len(projection["points"]) == 12
-    assert projection["points"][0]["as_of_date"] == "2026-01-31"
+    assert len(projection["points"]) == 6
+    assert projection["points"][0]["as_of_date"] == "2026-07-31"
     assert projection["points"][-1]["as_of_date"] == "2026-12-31"
-    assert projection["points"][4]["net_worth"] == "100.00"
-    assert projection["points"][5]["net_worth"] == "150.00"
+    assert projection["points"][0]["net_worth"] == "150.00"
 
 
 def test_projection_uses_account_yields_and_projection_events(client: TestClient):

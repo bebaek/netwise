@@ -188,6 +188,7 @@ def calculate_net_worth_projection(
     if interval not in {"annual", "quarterly", "monthly"}:
         raise ValueError("interval must be one of: annual, quarterly, monthly")
 
+    projection_date = _current_date()
     start_date = date(start_year, 1, 1)
     if _projection_data is None:
         accounts = list(
@@ -572,6 +573,9 @@ def calculate_net_worth_projection(
             - projected_spending
             - projected_liquidation_expenses
         ).quantize(Decimal("0.01"))
+
+        if as_of_date <= projection_date:
+            continue
 
         account_points = [
             {
