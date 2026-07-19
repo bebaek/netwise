@@ -86,6 +86,7 @@ export type Account = {
   retirement_tax_treatment: RetirementTaxTreatment | null;
   expected_annual_yield: string | null;
   liquidation_expense_rate: string | null;
+  cost_basis: string | null;
   currency: string;
   is_active: boolean;
 };
@@ -488,6 +489,7 @@ export function createAccount(payload: {
   retirement_tax_treatment?: RetirementTaxTreatment;
   expected_annual_yield?: string;
   liquidation_expense_rate?: string;
+  cost_basis?: string;
   currency: string;
 }): Promise<Account> {
   return request<Account>('/accounts', {
@@ -507,6 +509,7 @@ export function updateAccount(
     retirement_tax_treatment?: RetirementTaxTreatment | null;
     expected_annual_yield?: string | null;
     liquidation_expense_rate?: string | null;
+    cost_basis?: string | null;
     currency?: string;
     is_active?: boolean;
   },

@@ -120,6 +120,7 @@ export type AccountEditDraft = {
   retirement_tax_treatment: RetirementTaxTreatment | '';
   expected_annual_yield: string;
   liquidation_expense_rate: string;
+  cost_basis: string;
   currency: string;
   is_active: boolean;
 };
@@ -533,6 +534,13 @@ export function AssetsPage({
           Liquidation expense rate
           <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
         </label>
+        <label>
+          Cost basis
+          <input inputMode="decimal" placeholder="Taxable accounts only" value={accountEditDraft.cost_basis} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, cost_basis: event.target.value })} />
+        </label>
+        <p className="muted">
+          Cost basis applies to taxable investment accounts; capital gains taxes use it instead of taxing the full withdrawal. Leave blank to estimate basis from the oldest balance snapshot.
+        </p>
         <label>
           Currency
           <input required maxLength={3} value={accountEditDraft.currency} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, currency: event.target.value })} />

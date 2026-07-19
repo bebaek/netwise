@@ -1,4 +1,4 @@
-import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
@@ -80,6 +80,7 @@ import {
   AppNavigation,
   ViewHeading,
   type AppView,
+  type ThemePreference,
 } from './components/AppShell';
 import type { AccountEditDraft } from './pages/AssetsPage';
 import type { AccountEventDraft } from './pages/PlanningPage';
@@ -99,6 +100,7 @@ const UpdateBalancesPage = lazy(() =>
 
 const SELECTED_USER_STORAGE_KEY = 'netwise.selectedUserId';
 const SELECTED_HOUSEHOLD_STORAGE_KEY = 'netwise.selectedHouseholdId';
+const THEME_STORAGE_KEY = 'netwise.theme';
 
 function storedSelection(key: string): string {
   try {
@@ -118,6 +120,17 @@ function persistSelection(key: string, value: string): void {
   } catch {
     // Selection persistence is optional when storage is unavailable.
   }
+}
+
+function storedThemePreference(): ThemePreference {
+  const storedTheme = storedSelection(THEME_STORAGE_KEY);
+  return storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system'
+    ? storedTheme
+    : 'system';
+}
+
+function systemPrefersDarkTheme(): boolean {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
 function today(): string {
@@ -174,6 +187,8 @@ function WorkspaceView({
 function App() {
   const householdRequestId = useRef(0);
   const dashboardRequestId = useRef(0);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(storedThemePreference);
+  const [systemDarkTheme, setSystemDarkTheme] = useState<boolean>(systemPrefersDarkTheme);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => storedSelection(SELECTED_USER_STORAGE_KEY));
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -347,6 +362,22 @@ function App() {
   }, [selectedUserId]);
 
   useEffect(() => {
+    const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleColorSchemeChange = (event: MediaQueryListEvent) => setSystemDarkTheme(event.matches);
+    colorScheme.addEventListener('change', handleColorSchemeChange);
+    return () => colorScheme.removeEventListener('change', handleColorSchemeChange);
+  }, []);
+
+  useLayoutEffect(() => {
+    const resolvedTheme = themePreference === 'system'
+      ? (systemDarkTheme ? 'dark' : 'light')
+      : themePreference;
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.style.colorScheme = resolvedTheme;
+    persistSelection(THEME_STORAGE_KEY, themePreference);
+  }, [systemDarkTheme, themePreference]);
+
+  useEffect(() => {
     persistSelection(SELECTED_HOUSEHOLD_STORAGE_KEY, selectedHouseholdId);
   }, [selectedHouseholdId]);
 
@@ -466,6 +497,7 @@ function App() {
       retirement_tax_treatment: account.retirement_tax_treatment ?? '',
       expected_annual_yield: account.expected_annual_yield ?? '',
       liquidation_expense_rate: account.liquidation_expense_rate ?? '',
+      cost_basis: account.cost_basis ?? '',
       currency: account.currency,
       is_active: account.is_active,
     });
@@ -485,6 +517,7 @@ function App() {
         retirement_tax_treatment: accountEditDraft.retirement_tax_treatment || null,
         expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
         liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
+        cost_basis: accountEditDraft.cost_basis.trim() || null,
         currency: accountEditDraft.currency.trim().toUpperCase(),
         is_active: accountEditDraft.is_active,
       });
@@ -1158,6 +1191,8 @@ function App() {
         selectedHousehold={selectedHousehold}
         selectedHouseholdId={selectedHouseholdId}
         onSelectHousehold={setSelectedHouseholdId}
+        themePreference={themePreference}
+        onThemePreferenceChange={setThemePreference}
       />
 
       {selectedHousehold && <AppNavigation />}
