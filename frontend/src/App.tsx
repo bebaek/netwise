@@ -162,6 +162,7 @@ function WorkspaceView({
 
 function App() {
   const householdRequestId = useRef(0);
+  const dashboardRequestId = useRef(0);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => storedSelection(SELECTED_USER_STORAGE_KEY));
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -196,6 +197,9 @@ function App() {
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
+  const [loadedHouseholdId, setLoadedHouseholdId] = useState<string>('');
+  const [householdsLoading, setHouseholdsLoading] = useState<boolean>(false);
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId),
@@ -238,64 +242,80 @@ function App() {
 
   async function refreshHouseholds(userId: string) {
     const requestId = ++householdRequestId.current;
-    const householdList = await listHouseholds(userId);
-    if (requestId !== householdRequestId.current) return;
-    setHouseholds(householdList);
-    setSelectedHouseholdId((currentHouseholdId) => {
-      if (householdList.length === 0) return '';
-      return householdList.some((household) => household.id === currentHouseholdId)
-        ? currentHouseholdId
-        : householdList[0].id;
-    });
+    setHouseholdsLoading(true);
+    try {
+      const householdList = await listHouseholds(userId);
+      if (requestId !== householdRequestId.current) return;
+      setHouseholds(householdList);
+      setSelectedHouseholdId((currentHouseholdId) => {
+        if (householdList.length === 0) return '';
+        return householdList.some((household) => household.id === currentHouseholdId)
+          ? currentHouseholdId
+          : householdList[0].id;
+      });
+    } finally {
+      if (requestId === householdRequestId.current) setHouseholdsLoading(false);
+    }
   }
 
   async function refreshDashboard(householdId: string) {
-    const [
-      accountList,
-      netWorthResult,
-      historyResult,
-      propertyList,
-      realEstateSaleList,
-      liquidationStrategyList,
-      mortgageList,
-      incomeSourceList,
-      taxRecordList,
-      snapshotList,
-      breakdownResult,
-      memberList,
-      projectionSettingsResult,
-    ] = await Promise.all([
-      listAccounts(householdId),
-      getNetWorth(householdId),
-      getHistoricalTrend(householdId, showInterpolatedHistory),
-      listRealEstateProperties(householdId),
-      listRealEstateSales(householdId),
-      listRealEstateLiquidationStrategies(householdId),
-      listMortgageProfiles(householdId),
-      listIncomeSources(householdId),
-      listAnnualTaxRecords(householdId),
-      listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
-      getNetWorthBreakdownHistory(householdId),
-      listHouseholdMembers(householdId),
-      getProjectionSettings(householdId),
-    ]);
-    const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
-      .flat()
-      .sort((left, right) => right.event_date.localeCompare(left.event_date));
-    setAccounts(accountList);
-    setAccountEvents(accountEventList);
-    setHouseholdSnapshots(snapshotList);
-    setHouseholdMembers(memberList);
-    setNetWorth(netWorthResult);
-    setHistory(historyResult);
-    setBreakdownHistory(breakdownResult);
-    setProperties(propertyList);
-    setRealEstateSales(realEstateSaleList);
-    setLiquidationStrategies(liquidationStrategyList);
-    setMortgages(mortgageList);
-    setIncomeSources(incomeSourceList);
-    setTaxRecords(taxRecordList);
-    setProjectionSettings(projectionSettingsResult);
+    const requestId = ++dashboardRequestId.current;
+    setDashboardLoading(true);
+    try {
+      const [
+        accountList,
+        netWorthResult,
+        historyResult,
+        propertyList,
+        realEstateSaleList,
+        liquidationStrategyList,
+        mortgageList,
+        incomeSourceList,
+        taxRecordList,
+        snapshotList,
+        breakdownResult,
+        memberList,
+        projectionSettingsResult,
+      ] = await Promise.all([
+        listAccounts(householdId),
+        getNetWorth(householdId),
+        getHistoricalTrend(householdId, showInterpolatedHistory),
+        listRealEstateProperties(householdId),
+        listRealEstateSales(householdId),
+        listRealEstateLiquidationStrategies(householdId),
+        listMortgageProfiles(householdId),
+        listIncomeSources(householdId),
+        listAnnualTaxRecords(householdId),
+        listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
+        getNetWorthBreakdownHistory(householdId),
+        listHouseholdMembers(householdId),
+        getProjectionSettings(householdId),
+      ]);
+      if (requestId !== dashboardRequestId.current) return;
+
+      const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
+        .flat()
+        .sort((left, right) => right.event_date.localeCompare(left.event_date));
+      if (requestId !== dashboardRequestId.current) return;
+
+      setAccounts(accountList);
+      setAccountEvents(accountEventList);
+      setHouseholdSnapshots(snapshotList);
+      setHouseholdMembers(memberList);
+      setNetWorth(netWorthResult);
+      setHistory(historyResult);
+      setBreakdownHistory(breakdownResult);
+      setProperties(propertyList);
+      setRealEstateSales(realEstateSaleList);
+      setLiquidationStrategies(liquidationStrategyList);
+      setMortgages(mortgageList);
+      setIncomeSources(incomeSourceList);
+      setTaxRecords(taxRecordList);
+      setProjectionSettings(projectionSettingsResult);
+      setLoadedHouseholdId(householdId);
+    } finally {
+      if (requestId === dashboardRequestId.current) setDashboardLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -318,6 +338,7 @@ function App() {
       householdRequestId.current += 1;
       setHouseholds([]);
       setSelectedHouseholdId('');
+      setHouseholdsLoading(false);
       return;
     }
     setHouseholds([]);
@@ -335,7 +356,12 @@ function App() {
   }, [selectedHouseholdId]);
 
   useEffect(() => {
-    if (!selectedHouseholdId) return;
+    if (!selectedHouseholdId) {
+      dashboardRequestId.current += 1;
+      setLoadedHouseholdId('');
+      setDashboardLoading(false);
+      return;
+    }
     refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
   }, [selectedHouseholdId, showInterpolatedHistory, snapshotAccountFilter]);
 
@@ -995,7 +1021,7 @@ function App() {
         </section>
       )}
 
-      {!loading && users.length > 0 && households.length === 0 && (
+      {!loading && !householdsLoading && users.length > 0 && households.length === 0 && (
         <section className="card narrow">
           <h2>Create your household</h2>
           <p className="muted">This household will be owned by {selectedUser?.display_name ?? 'the selected user'}.</p>
@@ -1006,7 +1032,11 @@ function App() {
         </section>
       )}
 
-      {selectedHousehold && (
+      {selectedHousehold && dashboardLoading && loadedHouseholdId !== selectedHousehold.id && (
+        <div className="card" role="status">Loading {selectedHousehold.name}…</div>
+      )}
+
+      {selectedHousehold && loadedHouseholdId === selectedHousehold.id && (
         <Routes>
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route

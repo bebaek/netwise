@@ -94,6 +94,24 @@ test('supports direct routes and reload persistence', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Assets', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
+test('hides stale household data while a household loads', async ({ page }) => {
+  let releaseNetWorth: () => void = () => undefined;
+  const netWorthBlocked = new Promise<void>((resolve) => {
+    releaseNetWorth = resolve;
+  });
+  await page.route('**/api/dashboard/*/net-worth', async (route) => {
+    await netWorthBlocked;
+    await route.continue();
+  });
+
+  await page.reload();
+  await expect(page.getByRole('status').filter({ hasText: 'Loading Demo Household' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Financial trajectory', exact: true })).toHaveCount(0);
+
+  releaseNetWorth();
+  await expect(page.getByRole('heading', { name: 'Financial trajectory', exact: true })).toBeVisible();
+});
+
 test('preserves the selected user and household across reloads', async ({ page }) => {
   const selectedUser = page.getByLabel('Selected user');
   const selectedHousehold = page.getByLabel('Selected household');
