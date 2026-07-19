@@ -186,8 +186,14 @@ Each income source can include amount, frequency, start date, end date, and grow
 The initial retirement model is household-level and deterministic. Projection settings can define a
 retirement date and annual retirement non-mortgage spending. The projection uses regular annual
 non-mortgage spending before that date, retirement non-mortgage spending afterward, and prorates a
-period that contains the transition date. Both non-mortgage spending amounts use the configured
-spending inflation rate. Owner-occupied mortgage payments are calculated separately from linked
+period that contains the transition date. An itemized spending plan defines granular categories. Each
+item has a current annual amount, an optional retirement annual amount, and an optional
+category-specific growth rate; otherwise it inherits general spending inflation. Projection settings
+select either the manual household total or the automatic sum of spending items. Manual mode is the
+default when a household total is present, while itemized mode derives both working and retirement
+spending from the category entries. A one-run spending override uses manual mode. The projection
+returns its effective mode and per-period item breakdown so total spending remains auditable.
+Owner-occupied mortgage payments are calculated separately from linked
 mortgage profiles, remain fixed rather than inflating with household spending, and stop after the
 final scheduled payment or a property sale. Projected total spending reports both components, with
 the mortgage portion exposed separately.

@@ -21,6 +21,12 @@ class ProjectionCashFlowRead(BaseModel):
     amount: Decimal
 
 
+class ProjectionSpendingItemRead(BaseModel):
+    name: str
+    category: str
+    amount: Decimal
+
+
 class ProjectionPointRead(BaseModel):
     year: int
     as_of_date: date
@@ -33,6 +39,7 @@ class ProjectionPointRead(BaseModel):
     projected_taxes: Decimal
     projected_spending: Decimal
     projected_mortgage_spending: Decimal
+    projected_spending_breakdown: list[ProjectionSpendingItemRead]
     projected_liquidation_expenses: Decimal
     projected_unfunded_cash_flow: Decimal
     net_cash_flow: Decimal
@@ -61,6 +68,7 @@ class NetWorthProjectionRead(BaseModel):
     start_year: int
     end_year: int
     interval: str
+    spending_mode: str
     retirement_date: date | None
     first_retirement_withdrawal_date: date | None
     first_unfunded_date: date | None

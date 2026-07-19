@@ -20,6 +20,7 @@ from app.db.models import (
     MortgageProfile,
     ProjectionTransfer,
     RealEstateProperty,
+    SpendingItem,
     User,
 )
 from app.db.session import get_db
@@ -167,6 +168,17 @@ _PROJECTION_TRANSFER_FIELDS = (
     "annual_amount",
     "start_date",
     "end_date",
+    "growth_rate",
+    "created_at",
+    "updated_at",
+)
+_SPENDING_ITEM_FIELDS = (
+    "id",
+    "household_id",
+    "name",
+    "category",
+    "annual_amount",
+    "retirement_annual_amount",
     "growth_rate",
     "created_at",
     "updated_at",
@@ -427,6 +439,14 @@ def export_household(
                 select(ProjectionTransfer)
                 .where(ProjectionTransfer.household_id == household_id)
                 .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
+            ).all()
+        ],
+        "spending_items": [
+            _model_export(spending_item, _SPENDING_ITEM_FIELDS)
+            for spending_item in db.scalars(
+                select(SpendingItem)
+                .where(SpendingItem.household_id == household_id)
+                .order_by(SpendingItem.category, SpendingItem.name)
             ).all()
         ],
         "annual_tax_records": [

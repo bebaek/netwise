@@ -20,6 +20,7 @@ import {
   RealEstateProperty,
   RealEstateSale,
   RetirementTaxTreatment,
+  SpendingItem,
   User,
   addHouseholdMember,
   createAccount,
@@ -33,12 +34,14 @@ import {
   createRealEstateSale,
   createSnapshot,
   createSnapshotBatch,
+  createSpendingItem,
   createUser,
   deleteAccountEvent,
   deleteProjectionTransfer,
   deleteSnapshot,
   deleteRealEstateLiquidationStrategy,
   deleteRealEstateSale,
+  deleteSpendingItem,
   exportHousehold,
   getCapabilities,
   getHistoricalTrend,
@@ -59,6 +62,7 @@ import {
   listRealEstateLiquidationStrategies,
   listRealEstateProperties,
   listRealEstateSales,
+  listSpendingItems,
   listUsers,
   removeHouseholdMember,
   updateAccount,
@@ -191,6 +195,7 @@ function App() {
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
+  const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
@@ -277,6 +282,7 @@ function App() {
         mortgageList,
         incomeSourceList,
         projectionTransferList,
+        spendingItemList,
         taxRecordList,
         snapshotList,
         breakdownResult,
@@ -292,6 +298,7 @@ function App() {
         listMortgageProfiles(householdId),
         listIncomeSources(householdId),
         listProjectionTransfers(householdId),
+        listSpendingItems(householdId),
         listAnnualTaxRecords(householdId),
         listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
         getNetWorthBreakdownHistory(householdId),
@@ -318,6 +325,7 @@ function App() {
       setMortgages(mortgageList);
       setIncomeSources(incomeSourceList);
       setProjectionTransfers(projectionTransferList);
+      setSpendingItems(spendingItemList);
       setTaxRecords(taxRecordList);
       setProjectionSettings(projectionSettingsResult);
       setLoadedHouseholdId(householdId);
@@ -934,6 +942,40 @@ function App() {
     }
   }
 
+  async function handleCreateSpendingItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createSpendingItem({
+        household_id: selectedHouseholdId,
+        name: requiredString(form, 'spending_item_name'),
+        category: requiredString(form, 'spending_item_category'),
+        annual_amount: requiredString(form, 'spending_item_annual_amount'),
+        retirement_annual_amount: optionalString(form, 'spending_item_retirement_annual_amount'),
+        growth_rate: optionalString(form, 'spending_item_growth_rate'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleDeleteSpendingItem(spendingItem: SpendingItem) {
+    if (!selectedHouseholdId) return;
+    if (!window.confirm(`Delete spending item ${spendingItem.name}?`)) return;
+    setError('');
+    try {
+      await deleteSpendingItem(spendingItem.id);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateTaxRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
@@ -989,6 +1031,7 @@ function App() {
     try {
       const result = await upsertProjectionSettings(selectedHouseholdId, {
         annual_spending: optionalString(form, 'settings_annual_spending'),
+        spending_mode: requiredString(form, 'settings_spending_mode') as 'manual' | 'itemized',
         spending_inflation_rate: optionalString(form, 'settings_spending_inflation_rate'),
         retirement_date: optionalString(form, 'settings_retirement_date'),
         retirement_annual_spending: optionalString(
@@ -1150,11 +1193,14 @@ function App() {
                   onGetProjection={handleGetProjection}
                   incomeSources={incomeSources}
                   projectionTransfers={projectionTransfers}
+                  spendingItems={spendingItems}
                   taxRecords={taxRecords}
                   projection={projection}
                   onCreateIncomeSource={handleCreateIncomeSource}
                   onCreateProjectionTransfer={handleCreateProjectionTransfer}
                   onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
+                  onCreateSpendingItem={handleCreateSpendingItem}
+                  onDeleteSpendingItem={handleDeleteSpendingItem}
                   onCreateTaxRecord={handleCreateTaxRecord}
                   realEstateSales={realEstateSales}
                   onDeleteRealEstateSale={handleDeleteRealEstateSale}

@@ -12,6 +12,7 @@ from app.db.models import (
     IncomeSource,
     ProjectionSettings,
     ProjectionTransfer,
+    SpendingItem,
 )
 from app.db.session import get_db
 from app.schemas.planning import (
@@ -23,6 +24,9 @@ from app.schemas.planning import (
     ProjectionSettingsUpsert,
     ProjectionTransferCreate,
     ProjectionTransferRead,
+    SpendingItemCreate,
+    SpendingItemRead,
+    SpendingItemUpdate,
 )
 
 router = APIRouter(tags=["planning"])
@@ -119,6 +123,92 @@ def delete_projection_transfer(
             status_code=status.HTTP_404_NOT_FOUND, detail="Projection transfer not found"
         )
     db.delete(projection_transfer)
+    db.commit()
+
+
+@router.post(
+    "/spending-items",
+    response_model=SpendingItemRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_spending_item(
+    payload: SpendingItemCreate,
+    db: Session = Depends(get_db),
+) -> SpendingItem:
+    if db.get(Household, payload.household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    spending_item = SpendingItem(**payload.model_dump())
+    spending_item.name = spending_item.name.strip()
+    spending_item.category = spending_item.category.strip().lower()
+    if not spending_item.name or not spending_item.category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Spending item name and category are required",
+        )
+    db.add(spending_item)
+    db.commit()
+    db.refresh(spending_item)
+    return spending_item
+
+
+@router.get("/spending-items", response_model=list[SpendingItemRead])
+def list_spending_items(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[SpendingItem]:
+    return list(
+        db.scalars(
+            select(SpendingItem)
+            .where(SpendingItem.household_id == household_id)
+            .order_by(SpendingItem.category, SpendingItem.name, SpendingItem.created_at)
+        ).all()
+    )
+
+
+@router.patch("/spending-items/{spending_item_id}", response_model=SpendingItemRead)
+def update_spending_item(
+    spending_item_id: UUID,
+    payload: SpendingItemUpdate,
+    db: Session = Depends(get_db),
+) -> SpendingItem:
+    spending_item = db.get(SpendingItem, spending_item_id)
+    if spending_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spending item not found")
+    values = payload.model_dump(exclude_unset=True)
+    if values.get("annual_amount") is None and "annual_amount" in values:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Annual amount cannot be null"
+        )
+    for field, value in values.items():
+        if field == "name" and value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Spending item name is required",
+                )
+        elif field == "category" and value is not None:
+            value = value.strip().lower()
+            if not value:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Spending item category is required",
+                )
+        setattr(spending_item, field, value)
+    db.commit()
+    db.refresh(spending_item)
+    return spending_item
+
+
+@router.delete("/spending-items/{spending_item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_spending_item(
+    spending_item_id: UUID,
+    db: Session = Depends(get_db),
+) -> None:
+    spending_item = db.get(SpendingItem, spending_item_id)
+    if spending_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spending item not found")
+    db.delete(spending_item)
     db.commit()
 
 

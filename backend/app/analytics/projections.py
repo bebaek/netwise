@@ -25,6 +25,7 @@ from app.db.models import (
     RealEstateProperty,
     RealEstateSale,
     RetirementTaxTreatment,
+    SpendingItem,
 )
 
 DEFAULT_CATEGORY_YIELDS = {
@@ -64,6 +65,7 @@ class ProjectionData:
     projection_events: list[AccountEvent]
     income_sources: list[IncomeSource]
     projection_transfers: list[ProjectionTransfer]
+    spending_items: list[SpendingItem]
     projection_settings: ProjectionSettings | None
     tax_rate: Decimal
 
@@ -255,6 +257,13 @@ def calculate_net_worth_projection(
                 .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
             ).all()
         )
+        spending_items = list(
+            db.scalars(
+                select(SpendingItem)
+                .where(SpendingItem.household_id == household_id)
+                .order_by(SpendingItem.category, SpendingItem.name, SpendingItem.created_at)
+            ).all()
+        )
         projection_settings = db.scalars(
             select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
         ).first()
@@ -269,6 +278,7 @@ def calculate_net_worth_projection(
             projection_events=projection_events,
             income_sources=income_sources,
             projection_transfers=projection_transfers,
+            spending_items=spending_items,
             projection_settings=projection_settings,
             tax_rate=tax_rate,
         )
@@ -282,6 +292,7 @@ def calculate_net_worth_projection(
         projection_events = _projection_data.projection_events
         income_sources = _projection_data.income_sources
         projection_transfers = _projection_data.projection_transfers
+        spending_items = _projection_data.spending_items
         projection_settings = _projection_data.projection_settings
         tax_rate = _projection_data.tax_rate
 
@@ -354,6 +365,13 @@ def calculate_net_worth_projection(
         (start_year, effective_annual_spending.quantize(Decimal("0.01")))
         if effective_annual_spending is not None
         else None
+    )
+    configured_spending_mode = (
+        projection_settings.spending_mode if projection_settings is not None else "manual"
+    )
+    use_itemized_spending = annual_spending is None and (
+        configured_spending_mode == "itemized"
+        or (effective_annual_spending is None and bool(spending_items))
     )
     if _scheduled_sales is None and not _skip_optimization:
         optimization_strategies = [
@@ -553,21 +571,55 @@ def calculate_net_worth_projection(
             projected_income + projected_rental_income - projected_rental_expenses, Decimal("0.00")
         )
         income_taxes = (taxable_income * tax_rate).quantize(Decimal("0.01"))
-        projected_non_mortgage_spending = _projected_spending_for_period(
-            spending_baseline,
-            retirement_spending_baseline,
-            effective_retirement_date,
-            period_start,
-            as_of_date,
-            months_per_period,
-            effective_spending_inflation_rate,
-        )
+        if use_itemized_spending:
+            projected_spending_breakdown = _projected_spending_items_for_period(
+                spending_items,
+                effective_retirement_date,
+                start_year,
+                period_start,
+                as_of_date,
+                months_per_period,
+                effective_spending_inflation_rate,
+            )
+            projected_non_mortgage_spending = sum(
+                (item["amount"] for item in projected_spending_breakdown),
+                Decimal("0.00"),
+            ).quantize(Decimal("0.01"))
+        else:
+            projected_non_mortgage_spending = _projected_spending_for_period(
+                spending_baseline,
+                retirement_spending_baseline,
+                effective_retirement_date,
+                period_start,
+                as_of_date,
+                months_per_period,
+                effective_spending_inflation_rate,
+            )
+            projected_spending_breakdown = (
+                [
+                    {
+                        "name": "Unitemized non-mortgage spending",
+                        "category": "other",
+                        "amount": projected_non_mortgage_spending,
+                    }
+                ]
+                if projected_non_mortgage_spending != Decimal("0.00")
+                else []
+            )
         projected_mortgage_spending = _projected_owner_mortgage_spending_for_period(
             owner_occupied_mortgages,
             period_start,
             as_of_date,
             sold_mortgage_account_ids,
         )
+        if projected_mortgage_spending != Decimal("0.00"):
+            projected_spending_breakdown.append(
+                {
+                    "name": "Owner-occupied mortgage",
+                    "category": "housing",
+                    "amount": projected_mortgage_spending,
+                }
+            )
         projected_spending = (
             projected_non_mortgage_spending + projected_mortgage_spending
         ).quantize(Decimal("0.01"))
@@ -704,6 +756,7 @@ def calculate_net_worth_projection(
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
                 "projected_mortgage_spending": projected_mortgage_spending,
+                "projected_spending_breakdown": projected_spending_breakdown,
                 "projected_liquidation_expenses": projected_liquidation_expenses,
                 "projected_unfunded_cash_flow": projected_unfunded_cash_flow,
                 "net_cash_flow": net_cash_flow,
@@ -716,18 +769,25 @@ def calculate_net_worth_projection(
             }
         )
 
+    warnings = _property_sale_tax_basis_warnings(
+        accounts_by_id,
+        property_profiles,
+        real_estate_sales,
+        automatic_sale_strategies,
+    )
+    if use_itemized_spending and not spending_items:
+        warnings.insert(
+            0,
+            "Itemized spending mode has no spending items; projected non-mortgage spending is $0.00.",
+        )
     result = {
         "household_id": household_id,
         "start_year": start_year,
         "end_year": end_year,
         "interval": interval,
+        "spending_mode": "itemized" if use_itemized_spending else "manual",
         "retirement_date": effective_retirement_date,
-        "warnings": _property_sale_tax_basis_warnings(
-            accounts_by_id,
-            property_profiles,
-            real_estate_sales,
-            automatic_sale_strategies,
-        ),
+        "warnings": warnings,
         "points": points,
     }
     result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(
@@ -982,6 +1042,43 @@ def _projected_transfer_for_period(
         (Decimal("1.00") + growth_rate) ** years_elapsed
     )
     return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
+
+
+def _projected_spending_items_for_period(
+    spending_items: list[SpendingItem],
+    retirement_date: date | None,
+    baseline_year: int,
+    period_start: date,
+    period_end: date,
+    months_per_period: int,
+    default_growth_rate: Decimal,
+) -> list[dict]:
+    """Project each spending item independently and preserve its category breakdown."""
+    breakdown = []
+    for item in spending_items:
+        growth_rate = item.growth_rate if item.growth_rate is not None else default_growth_rate
+        retirement_amount = (
+            item.retirement_annual_amount
+            if item.retirement_annual_amount is not None
+            else item.annual_amount
+        )
+        amount = _projected_spending_for_period(
+            (baseline_year, item.annual_amount),
+            (baseline_year, retirement_amount) if retirement_date is not None else None,
+            retirement_date,
+            period_start,
+            period_end,
+            months_per_period,
+            growth_rate,
+        )
+        breakdown.append(
+            {
+                "name": item.name,
+                "category": item.category,
+                "amount": amount,
+            }
+        )
+    return breakdown
 
 
 def _projected_owner_mortgage_spending_for_period(

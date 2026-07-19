@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -65,8 +66,44 @@ class ProjectionTransferRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SpendingItemCreate(BaseModel):
+    household_id: UUID
+    name: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="other", min_length=1, max_length=64)
+    annual_amount: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
+    retirement_annual_amount: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    growth_rate: Decimal | None = Field(default=None, ge=-1, max_digits=8, decimal_places=6)
+
+
+class SpendingItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    category: str | None = Field(default=None, min_length=1, max_length=64)
+    annual_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    retirement_annual_amount: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    growth_rate: Decimal | None = Field(default=None, ge=-1, max_digits=8, decimal_places=6)
+
+
+class SpendingItemRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    name: str
+    category: str
+    annual_amount: Decimal
+    retirement_annual_amount: Decimal | None
+    growth_rate: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProjectionSettingsUpsert(BaseModel):
     annual_spending: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    spending_mode: Literal["manual", "itemized"] = "manual"
     spending_inflation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     retirement_date: date | None = None
     retirement_annual_spending: Decimal | None = Field(
@@ -80,6 +117,7 @@ class ProjectionSettingsRead(BaseModel):
     id: UUID
     household_id: UUID
     annual_spending: Decimal | None
+    spending_mode: str
     spending_inflation_rate: Decimal | None
     retirement_date: date | None
     retirement_annual_spending: Decimal | None

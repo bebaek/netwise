@@ -110,6 +110,9 @@ class Household(Base):
     projection_transfers: Mapped[list["ProjectionTransfer"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    spending_items: Mapped[list["SpendingItem"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class HouseholdMembership(Base):
@@ -441,12 +444,36 @@ class ProjectionTransfer(Base):
     )
 
 
+class SpendingItem(Base):
+    __tablename__ = "spending_items"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="other")
+    annual_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    retirement_annual_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="spending_items")
+
+    __table_args__ = (
+        Index("ix_spending_items_household_id", "household_id"),
+        Index("ix_spending_items_household_category", "household_id", "category"),
+    )
+
+
 class ProjectionSettings(Base):
     __tablename__ = "projection_settings"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
     annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    spending_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     spending_inflation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     retirement_date: Mapped[date | None] = mapped_column(Date)
     retirement_annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))

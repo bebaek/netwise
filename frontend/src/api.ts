@@ -272,10 +272,23 @@ export type ProjectionTransfer = {
   updated_at: string;
 };
 
+export type SpendingItem = {
+  id: string;
+  household_id: string;
+  name: string;
+  category: string;
+  annual_amount: string;
+  retirement_annual_amount: string | null;
+  growth_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProjectionSettings = {
   id: string;
   household_id: string;
   annual_spending: string | null;
+  spending_mode: 'manual' | 'itemized';
   spending_inflation_rate: string | null;
   retirement_date: string | null;
   retirement_annual_spending: string | null;
@@ -303,6 +316,7 @@ export type NetWorthProjection = {
   start_year: number;
   end_year: number;
   interval: 'annual' | 'quarterly' | 'monthly';
+  spending_mode: 'manual' | 'itemized';
   retirement_date: string | null;
   first_retirement_withdrawal_date: string | null;
   first_unfunded_date: string | null;
@@ -319,6 +333,11 @@ export type NetWorthProjection = {
     projected_taxes: string;
     projected_spending: string;
     projected_mortgage_spending: string;
+    projected_spending_breakdown: Array<{
+      name: string;
+      category: string;
+      amount: string;
+    }>;
     projected_liquidation_expenses: string;
     projected_unfunded_cash_flow: string;
     net_cash_flow: string;
@@ -765,6 +784,28 @@ export function deleteProjectionTransfer(projectionTransferId: string): Promise<
   return request<void>(`/projection-transfers/${projectionTransferId}`, { method: 'DELETE' });
 }
 
+export function createSpendingItem(payload: {
+  household_id: string;
+  name: string;
+  category: string;
+  annual_amount: string;
+  retirement_annual_amount?: string;
+  growth_rate?: string;
+}): Promise<SpendingItem> {
+  return request<SpendingItem>('/spending-items', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listSpendingItems(householdId: string): Promise<SpendingItem[]> {
+  return request<SpendingItem[]>(`/spending-items?household_id=${householdId}`);
+}
+
+export function deleteSpendingItem(spendingItemId: string): Promise<void> {
+  return request<void>(`/spending-items/${spendingItemId}`, { method: 'DELETE' });
+}
+
 export async function getProjectionSettings(householdId: string): Promise<ProjectionSettings | null> {
   try {
     return await request<ProjectionSettings>(`/projection-settings/${householdId}`);
@@ -778,6 +819,7 @@ export function upsertProjectionSettings(
   householdId: string,
   payload: {
     annual_spending?: string;
+    spending_mode?: 'manual' | 'itemized';
     spending_inflation_rate?: string;
     retirement_date?: string;
     retirement_annual_spending?: string;

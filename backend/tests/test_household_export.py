@@ -48,6 +48,16 @@ def test_household_export_includes_portable_household_data(client: TestClient):
         },
     )
     client.post(
+        "/spending-items",
+        json={
+            "household_id": household_id,
+            "name": "Groceries",
+            "category": "food",
+            "annual_amount": "9000.00",
+            "retirement_annual_amount": "8400.00",
+        },
+    )
+    client.post(
         "/annual-tax-records",
         json={
             "household_id": household_id,
@@ -71,6 +81,8 @@ def test_household_export_includes_portable_household_data(client: TestClient):
     assert payload["snapshots"][0]["balance"] == "1234.56"
     assert payload["account_events"][0]["description"] == "Test contribution"
     assert payload["income_sources"][0]["name"] == "Salary"
+    assert payload["spending_items"][0]["name"] == "Groceries"
+    assert payload["spending_items"][0]["retirement_annual_amount"] == "8400.00"
     assert payload["annual_tax_records"][0]["tax_year"] == 2026
 
 

@@ -9,6 +9,7 @@ import type {
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
+  SpendingItem,
 } from '../api';
 import { formatMoney } from '../utils/format';
 
@@ -44,6 +45,20 @@ const PROJECTION_BEHAVIOR_OPTIONS = [
   ['historical_only', 'Historical only'],
 ] as const;
 
+const SPENDING_CATEGORY_OPTIONS = [
+  ['housing', 'Housing'],
+  ['food', 'Food'],
+  ['healthcare', 'Healthcare'],
+  ['transportation', 'Transportation'],
+  ['utilities', 'Utilities'],
+  ['insurance', 'Insurance'],
+  ['travel', 'Travel'],
+  ['entertainment', 'Entertainment'],
+  ['personal', 'Personal'],
+  ['giving', 'Giving'],
+  ['other', 'Other'],
+] as const;
+
 function eventTypeLabel(value: string): string {
   return ACCOUNT_EVENT_TYPE_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
 }
@@ -74,11 +89,14 @@ export function PlanningPage({
   onGetProjection,
   incomeSources,
   projectionTransfers,
+  spendingItems,
   taxRecords,
   projection,
   onCreateIncomeSource,
   onCreateProjectionTransfer,
   onDeleteProjectionTransfer,
+  onCreateSpendingItem,
+  onDeleteSpendingItem,
   onCreateTaxRecord,
   realEstateSales,
   onDeleteRealEstateSale,
@@ -104,11 +122,14 @@ export function PlanningPage({
   onGetProjection: FormEventHandler<HTMLFormElement>;
   incomeSources: IncomeSource[];
   projectionTransfers: ProjectionTransfer[];
+  spendingItems: SpendingItem[];
   taxRecords: AnnualTaxRecord[];
   projection: NetWorthProjection | null;
   onCreateIncomeSource: FormEventHandler<HTMLFormElement>;
   onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
   onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
+  onCreateSpendingItem: FormEventHandler<HTMLFormElement>;
+  onDeleteSpendingItem: (item: SpendingItem) => void | Promise<void>;
   onCreateTaxRecord: FormEventHandler<HTMLFormElement>;
   realEstateSales: RealEstateSale[];
   onDeleteRealEstateSale: (sale: RealEstateSale) => void | Promise<void>;
@@ -121,6 +142,21 @@ export function PlanningPage({
   onSaveAccountEvent: FormEventHandler<HTMLFormElement>;
   onDeleteAccountEvent: (event: AccountEvent) => void | Promise<void>;
 }) {
+  const workingSpendingTotal = spendingItems.reduce(
+    (total, item) => total + Number(item.annual_amount),
+    0,
+  );
+  const retirementSpendingTotal = spendingItems.reduce(
+    (total, item) => total + Number(item.retirement_annual_amount ?? item.annual_amount),
+    0,
+  );
+  const spendingMode = projectionSettings?.spending_mode
+    ?? (projectionSettings?.annual_spending == null ? 'itemized' : 'manual');
+  const manualWorkingSpending = Number(projectionSettings?.annual_spending ?? 0);
+  const manualRetirementSpending = Number(
+    projectionSettings?.retirement_annual_spending ?? projectionSettings?.annual_spending ?? 0,
+  );
+
   return (
     <>
 <details className="advanced-planning">
@@ -193,6 +229,74 @@ export function PlanningPage({
   </section>
 </details>
 
+<section className="grid two-column">
+  <div className="card">
+    <h2>Spending plan</h2>
+    <p className="muted">Break non-mortgage spending into categories with separate working and retirement amounts. Choose whether projections use the automatically calculated item total or the manually entered household total.</p>
+    {spendingItems.length ? (
+      <>
+        <div className="projection-note">
+          <strong>Automatic item sum:</strong> {formatMoney(String(workingSpendingTotal))} while working · {formatMoney(String(retirementSpendingTotal))} in retirement<br />
+          <strong>Manual total:</strong> {formatMoney(String(manualWorkingSpending))} while working · {formatMoney(String(manualRetirementSpending))} in retirement<br />
+          <strong>Projection source:</strong> {spendingMode === 'itemized' ? 'Automatic item sum' : 'Manual total'}
+        </div>
+        <div className="table-frame">
+          <table className="spaced-table compact-table">
+            <thead>
+              <tr><th>Item</th><th>Category</th><th>Annual</th><th>Monthly</th><th>Retirement</th><th>Growth</th><th /></tr>
+            </thead>
+            <tbody>
+              {spendingItems.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.name}</td>
+                  <td>{readableLabel(item.category)}</td>
+                  <td>{formatMoney(item.annual_amount)}</td>
+                  <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
+                  <td>{formatMoney(item.retirement_annual_amount ?? item.annual_amount)}</td>
+                  <td>{item.growth_rate == null ? 'Default inflation' : formatRate(item.growth_rate)}</td>
+                  <td><button type="button" className="danger-button" onClick={() => onDeleteSpendingItem(item)}>Delete</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    ) : (
+      <p className="muted">No itemized spending yet. Automatic item sum currently produces $0.00; manual mode uses the household total below.</p>
+    )}
+  </div>
+
+  <div className="card">
+    <h2>Add spending item</h2>
+    <form onSubmit={onCreateSpendingItem} className="stacked-form">
+      <label>
+        Name
+        <input name="spending_item_name" placeholder="Groceries" required />
+      </label>
+      <label>
+        Category
+        <select name="spending_item_category" defaultValue="food" required>
+          {SPENDING_CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      <label>
+        Current annual amount
+        <input name="spending_item_annual_amount" inputMode="decimal" placeholder="9000" required />
+      </label>
+      <label>
+        Retirement annual amount
+        <input name="spending_item_retirement_annual_amount" inputMode="decimal" placeholder="Same as current" />
+      </label>
+      <label>
+        Annual growth rate
+        <input name="spending_item_growth_rate" inputMode="decimal" placeholder="Use default inflation" />
+      </label>
+      <p className="muted">Use a retirement amount of 0 for costs that end at retirement. Leave it blank to keep the current amount. A custom growth rate lets healthcare or travel differ from general inflation.</p>
+      <button type="submit">Add spending item</button>
+    </form>
+  </div>
+</section>
+
 <section className="card">
   <h2>Projection</h2>
   <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
@@ -204,7 +308,14 @@ export function PlanningPage({
         <p className="muted">Saved defaults used when a projection run does not provide overrides.</p>
       </div>
       <label>
-        Annual non-mortgage spending
+        Spending calculation
+        <select name="settings_spending_mode" defaultValue={spendingMode}>
+          <option value="manual">Use manual household total</option>
+          <option value="itemized">Automatically sum spending items</option>
+        </select>
+      </label>
+      <label>
+        Manual annual non-mortgage spending
         <input
           name="settings_annual_spending"
           inputMode="decimal"
@@ -230,7 +341,7 @@ export function PlanningPage({
         />
       </label>
       <label>
-        Annual retirement non-mortgage spending
+        Manual annual retirement non-mortgage spending
         <input
           name="settings_retirement_annual_spending"
           inputMode="decimal"
@@ -238,7 +349,7 @@ export function PlanningPage({
           defaultValue={projectionSettings?.retirement_annual_spending ?? ''}
         />
       </label>
-      <p className="muted">Owner-occupied mortgage payments are projected separately from household spending, remain fixed, and stop after the final scheduled payment. The retirement date changes the non-mortgage spending phase. Use income-source dates for salary, pension, and Social Security timing. Retirement withdrawal penalties are only applied when configured as an account liquidation expense.</p>
+      <p className="muted">The manual total is the default when provided. Select automatic item sum to derive spending from the granular plan. Owner-occupied mortgage payments are always projected separately, remain fixed, and stop after the final scheduled payment.</p>
       <label>
         Spending account
         <select name="settings_spending_account_id" defaultValue={projectionSettings?.spending_account_id ?? ''}>
@@ -349,6 +460,9 @@ export function PlanningPage({
       {projection.warnings.map((warning) => (
         <div className="projection-note" key={warning}><strong>Projection warning:</strong> {warning}</div>
       ))}
+      <div className="projection-note">
+        <strong>Spending source:</strong> {projection.spending_mode === 'itemized' ? 'automatic sum of spending items' : 'manual household total'}.
+      </div>
       {projection.retirement_date && (
         <div className="projection-note">
           <strong>Retirement phase:</strong> begins {projection.retirement_date}; first retirement-account withdrawal: {projection.first_retirement_withdrawal_date ?? 'none in projection'}; first unfunded period: {projection.first_unfunded_date ?? 'none in projection'}.
@@ -451,6 +565,29 @@ export function PlanningPage({
           </article>
         ))}
       </div>
+
+      <details className="cash-flow-details">
+        <summary>Show projected spending breakdown</summary>
+        <div className="table-frame cash-flow-table-frame">
+          <table className="spaced-table compact-table" tabIndex={0}>
+            <thead>
+              <tr><th>Period</th><th>Category</th><th>Item</th><th>Amount</th></tr>
+            </thead>
+            <tbody>
+              {projection.points.flatMap((point) =>
+                point.projected_spending_breakdown.map((item, index) => (
+                  <tr key={`${point.as_of_date}-${item.category}-${item.name}-${index}`}>
+                    <td>{projection.interval === 'annual' ? point.year : point.as_of_date}</td>
+                    <td>{readableLabel(item.category)}</td>
+                    <td>{item.name}</td>
+                    <td>{formatMoney(item.amount)}</td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       <details className="cash-flow-details">
         <summary>Show projected account cash flows</summary>

@@ -413,6 +413,156 @@ def test_projection_does_not_infer_spending_from_historical_snapshots(client: Te
     assert point["net_worth"] == "190000.00"
 
 
+def test_projection_uses_itemized_spending_and_retirement_amounts(client: TestClient):
+    household = client.post("/households", json={"name": "Itemized Spending"}).json()
+    household_id = household["id"]
+    cash = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Cash",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{cash['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "100000.00"},
+    )
+    settings_response = client.put(
+        f"/projection-settings/{household_id}",
+        json={
+            "annual_spending": "50000.00",
+            "spending_inflation_rate": "0.100000",
+            "retirement_date": "2027-01-01",
+            "retirement_annual_spending": "22000.00",
+        },
+    )
+    assert settings_response.status_code == 200
+    for payload in (
+        {
+            "household_id": household_id,
+            "name": "Food",
+            "category": "food",
+            "annual_amount": "12000.00",
+            "retirement_annual_amount": "10000.00",
+        },
+        {
+            "household_id": household_id,
+            "name": "Travel",
+            "category": "travel",
+            "annual_amount": "6000.00",
+            "retirement_annual_amount": "12000.00",
+            "growth_rate": "0.000000",
+        },
+    ):
+        assert client.post("/spending-items", json=payload).status_code == 201
+
+    manual_response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
+    )
+    assert manual_response.status_code == 200
+    manual_point = manual_response.json()["points"][0]
+    assert manual_response.json()["spending_mode"] == "manual"
+    assert manual_point["projected_spending"] == "50000.00"
+    assert manual_point["projected_spending_breakdown"] == [
+        {
+            "name": "Unitemized non-mortgage spending",
+            "category": "other",
+            "amount": "50000.00",
+        }
+    ]
+
+    itemized_settings_response = client.put(
+        f"/projection-settings/{household_id}",
+        json={
+            "annual_spending": "50000.00",
+            "spending_mode": "itemized",
+            "spending_inflation_rate": "0.100000",
+            "retirement_date": "2027-01-01",
+            "retirement_annual_spending": "22000.00",
+        },
+    )
+    assert itemized_settings_response.status_code == 200
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027"
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert response.json()["spending_mode"] == "itemized"
+    assert points[0]["projected_spending"] == "18000.00"
+    assert points[0]["projected_spending_breakdown"] == [
+        {"name": "Food", "category": "food", "amount": "12000.00"},
+        {"name": "Travel", "category": "travel", "amount": "6000.00"},
+    ]
+    assert points[1]["projected_spending"] == "23000.00"
+    assert points[1]["projected_spending_breakdown"] == [
+        {"name": "Food", "category": "food", "amount": "11000.00"},
+        {"name": "Travel", "category": "travel", "amount": "12000.00"},
+    ]
+
+    override_response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2026&annual_spending=24000.00"
+    )
+    assert override_response.status_code == 200
+    override_point = override_response.json()["points"][0]
+    assert override_response.json()["spending_mode"] == "manual"
+    assert override_point["projected_spending"] == "24000.00"
+    assert override_point["projected_spending_breakdown"] == [
+        {
+            "name": "Unitemized non-mortgage spending",
+            "category": "other",
+            "amount": "24000.00",
+        }
+    ]
+
+
+def test_spending_item_crud(client: TestClient):
+    household = client.post("/households", json={"name": "Spending CRUD"}).json()
+    create_response = client.post(
+        "/spending-items",
+        json={
+            "household_id": household["id"],
+            "name": "  Groceries  ",
+            "category": "Food",
+            "annual_amount": "9000.00",
+        },
+    )
+    assert create_response.status_code == 201
+    spending_item = create_response.json()
+    assert spending_item["name"] == "Groceries"
+    assert spending_item["category"] == "food"
+
+    list_response = client.get(f"/spending-items?household_id={household['id']}")
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [spending_item["id"]]
+
+    update_response = client.patch(
+        f"/spending-items/{spending_item['id']}",
+        json={"annual_amount": "9600.00", "retirement_annual_amount": "8400.00"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["annual_amount"] == "9600.00"
+    assert update_response.json()["retirement_annual_amount"] == "8400.00"
+
+    projection_response = client.get(
+        f"/dashboard/{household['id']}/projection?start_year=2026&end_year=2026"
+    )
+    assert projection_response.status_code == 200
+    assert projection_response.json()["spending_mode"] == "itemized"
+    assert projection_response.json()["points"][0]["projected_spending"] == "9600.00"
+
+    delete_response = client.delete(f"/spending-items/{spending_item['id']}")
+    assert delete_response.status_code == 204
+    assert client.get(f"/spending-items?household_id={household['id']}").json() == []
+
+
 def test_projection_accepts_explicit_spending_assumption(client: TestClient):
     household = client.post("/households", json={"name": "Spending Assumption"}).json()
     household_id = household["id"]
