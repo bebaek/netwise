@@ -41,6 +41,8 @@ DEFAULT_CATEGORY_YIELDS = {
 }
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
 DEFAULT_INCOME_GROWTH_RATE = Decimal("0.020000")
+DEFAULT_CAPITAL_GAINS_TAX_RATE = Decimal("0.150000")
+TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 
 
 def _current_date() -> date:
@@ -68,12 +70,15 @@ class ProjectionData:
     spending_items: list[SpendingItem]
     projection_settings: ProjectionSettings | None
     tax_rate: Decimal
+    cost_bases: dict[UUID, Decimal]
+    cost_basis_estimates: dict[UUID, tuple[Decimal, date]]
 
 
 @dataclass
 class WithdrawalResult:
     net_amount: Decimal = Decimal("0.00")
     taxable_amount: Decimal = Decimal("0.00")
+    capital_gains_tax: Decimal = Decimal("0.00")
     liquidation_expenses: Decimal = Decimal("0.00")
     explicit_taxes: Decimal = Decimal("0.00")
     unfunded_amount: Decimal = Decimal("0.00")
@@ -81,6 +86,9 @@ class WithdrawalResult:
     def add(self, other: "WithdrawalResult") -> None:
         self.net_amount = (self.net_amount + other.net_amount).quantize(Decimal("0.01"))
         self.taxable_amount = (self.taxable_amount + other.taxable_amount).quantize(Decimal("0.01"))
+        self.capital_gains_tax = (self.capital_gains_tax + other.capital_gains_tax).quantize(
+            Decimal("0.01")
+        )
         self.liquidation_expenses = (
             self.liquidation_expenses + other.liquidation_expenses
         ).quantize(Decimal("0.01"))
@@ -268,6 +276,7 @@ def calculate_net_worth_projection(
             select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
         ).first()
         tax_rate = _latest_effective_tax_rate(db, household_id)
+        cost_bases, cost_basis_estimates = _resolve_cost_bases(db, accounts, start_date)
         _projection_data = ProjectionData(
             accounts=accounts,
             initial_balances=initial_balances,
@@ -281,6 +290,8 @@ def calculate_net_worth_projection(
             spending_items=spending_items,
             projection_settings=projection_settings,
             tax_rate=tax_rate,
+            cost_bases=cost_bases,
+            cost_basis_estimates=cost_basis_estimates,
         )
     else:
         accounts = _projection_data.accounts
@@ -295,8 +306,13 @@ def calculate_net_worth_projection(
         spending_items = _projection_data.spending_items
         projection_settings = _projection_data.projection_settings
         tax_rate = _projection_data.tax_rate
+        cost_bases = _projection_data.cost_bases
+        cost_basis_estimates = _projection_data.cost_basis_estimates
 
     balances = dict(initial_balances)
+    # Cost basis is only tracked for taxable investment accounts and must be
+    # copied because the optimizer reuses ProjectionData across candidate runs.
+    basis_balances = dict(cost_bases)
     mortgage_profiles_by_property = {
         profile.property_account_id: profile
         for profile in mortgage_profiles.values()
@@ -481,6 +497,7 @@ def calculate_net_worth_projection(
                         mortgage_profiles_by_property.get(operation.property_account_id),
                         sold_mortgage_account_ids,
                         tax_rate,
+                        basis_balances,
                     )
                 )
             elif operation_kind == 1:
@@ -502,6 +519,7 @@ def calculate_net_worth_projection(
                         mortgage_profiles_by_property.get(operation.property_account_id),
                         sold_mortgage_account_ids,
                         tax_rate,
+                        basis_balances,
                     )
                 )
             else:
@@ -513,6 +531,7 @@ def calculate_net_worth_projection(
                         operation,
                         tax_rate,
                         automatic_sale_context,
+                        basis_balances,
                     )
                 )
 
@@ -530,6 +549,7 @@ def calculate_net_worth_projection(
                 as_of_date,
                 tax_rate,
                 automatic_sale_context,
+                basis_balances,
             )
             withdrawal_result.add(rental_withdrawal_result)
             rental_mortgage_debt_service, mortgage_withdrawal_result = (
@@ -545,6 +565,7 @@ def calculate_net_worth_projection(
                     sold_mortgage_account_ids,
                     tax_rate,
                     automatic_sale_context,
+                    basis_balances,
                 )
             )
             withdrawal_result.add(mortgage_withdrawal_result)
@@ -640,9 +661,13 @@ def calculate_net_worth_projection(
                     effective_spending_account_id,
                     tax_rate,
                     automatic_sale_context,
+                    basis_balances,
                 )
             )
-        withdrawal_taxes = (withdrawal_result.taxable_amount * tax_rate).quantize(Decimal("0.01"))
+        ordinary_taxable = (withdrawal_result.taxable_amount * tax_rate).quantize(Decimal("0.01"))
+        withdrawal_taxes = (ordinary_taxable + withdrawal_result.capital_gains_tax).quantize(
+            Decimal("0.01")
+        )
         projected_taxes = (
             income_taxes + withdrawal_taxes + withdrawal_result.explicit_taxes
         ).quantize(Decimal("0.01"))
@@ -659,10 +684,12 @@ def calculate_net_worth_projection(
                 effective_tax_account_id,
                 tax_rate,
                 automatic_sale_context,
+                basis_balances,
             )
             projected_taxes = (
                 projected_taxes
                 + (tax_payment_result.taxable_amount * tax_rate)
+                + tax_payment_result.capital_gains_tax
                 + tax_payment_result.explicit_taxes
             ).quantize(Decimal("0.01"))
             projected_liquidation_expenses = (
@@ -689,6 +716,30 @@ def calculate_net_worth_projection(
             )
             if transfer_amount <= Decimal("0.00"):
                 continue
+            if source_account.category in TAXABLE_INVESTMENT_CATEGORIES and (
+                destination_account.category not in TAXABLE_INVESTMENT_CATEGORIES
+            ):
+                available = max(balances[source_account.id] + transfer_amount, Decimal("0.00"))
+                if available > Decimal("0.00"):
+                    gain_fraction = (
+                        max(
+                            available - max(basis_balances.get(source_account.id, Decimal("0.00")), Decimal("0.00")),
+                            Decimal("0.00"),
+                        )
+                        / available
+                    )
+                    basis_balances[source_account.id] = max(
+                        basis_balances.get(source_account.id, Decimal("0.00"))
+                        - (transfer_amount * (Decimal("1.00") - gain_fraction)),
+                        Decimal("0.00"),
+                    ).quantize(Decimal("0.01"))
+            elif (
+                source_account.category not in TAXABLE_INVESTMENT_CATEGORIES
+                and destination_account.category in TAXABLE_INVESTMENT_CATEGORIES
+            ):
+                basis_balances[destination_account.id] = (
+                    basis_balances.get(destination_account.id, Decimal("0.00")) + transfer_amount
+                ).quantize(Decimal("0.01"))
             _apply_account_cash_flow(
                 balances,
                 cash_flows,
@@ -780,6 +831,21 @@ def calculate_net_worth_projection(
             0,
             "Itemized spending mode has no spending items; projected non-mortgage spending is $0.00.",
         )
+    taxable_account_ids = {
+        account.id for account in accounts if account.category in TAXABLE_INVESTMENT_CATEGORIES
+    }
+    if any(account_id in taxable_account_ids for account_id in cost_basis_estimates):
+        estimate_names = sorted(
+            accounts_by_id[account_id].name
+            for account_id in cost_basis_estimates
+            if account_id in taxable_account_ids and account_id in accounts_by_id
+        )
+        if estimate_names:
+            warnings.append(
+                "Taxable investment cost basis estimated from oldest balance snapshots for: "
+                + ", ".join(estimate_names)
+                + ". Enter an explicit cost basis on each account for more accurate capital gains taxes."
+            )
     result = {
         "household_id": household_id,
         "start_year": start_year,
@@ -1279,6 +1345,7 @@ def _apply_rental_cash_flow(
     period_end: date,
     tax_rate: Decimal,
     automatic_sale_context: AutomaticPropertySaleContext | None = None,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> tuple[Decimal, Decimal, WithdrawalResult]:
     """Apply non-debt rental operating cash flow and return income, expenses, and funding."""
     property_account = accounts_by_id.get(property_profile.account_id)
@@ -1345,6 +1412,7 @@ def _apply_rental_cash_flow(
             deposit_account.id if deposit_account is not None else None,
             tax_rate,
             automatic_sale_context,
+            basis_balances,
         )
     return income, expenses, funding_result
 
@@ -1361,6 +1429,7 @@ def _apply_rental_mortgage_debt_service(
     sold_mortgage_account_ids: set[UUID],
     tax_rate: Decimal,
     automatic_sale_context: AutomaticPropertySaleContext | None = None,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> tuple[Decimal, WithdrawalResult]:
     """Deduct a linked rental's scheduled mortgage payment from rental cash flow.
 
@@ -1405,6 +1474,7 @@ def _apply_rental_mortgage_debt_service(
         deposit_account.id if deposit_account is not None else None,
         tax_rate,
         automatic_sale_context,
+        basis_balances,
     )
     return debt_service, funding_result
 
@@ -1488,6 +1558,7 @@ def _apply_real_estate_sale(
     mortgage_profile: MortgageProfile | None,
     sold_mortgage_account_ids: set[UUID],
     tax_rate: Decimal,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> WithdrawalResult:
     property_account = accounts_by_id.get(sale.property_account_id)
     proceeds_account = accounts_by_id.get(sale.proceeds_account_id)
@@ -1561,6 +1632,13 @@ def _apply_real_estate_sale(
     ).quantize(Decimal("0.01"))
     if net_proceeds >= Decimal("0.00"):
         if net_proceeds != Decimal("0.00"):
+            if (
+                basis_balances is not None
+                and proceeds_account.category in TAXABLE_INVESTMENT_CATEGORIES
+            ):
+                basis_balances[proceeds_account.id] = (
+                    basis_balances.get(proceeds_account.id, Decimal("0.00")) + net_proceeds
+                ).quantize(Decimal("0.01"))
             _apply_account_cash_flow(
                 balances,
                 cash_flows,
@@ -1582,6 +1660,8 @@ def _apply_real_estate_sale(
         "property_sale_shortfall",
         None,
         tax_rate,
+        None,
+        basis_balances,
     )
     shortfall_result.liquidation_expenses = (
         shortfall_result.liquidation_expenses + selling_expense
@@ -1599,6 +1679,7 @@ def _apply_projection_event(
     event: AccountEvent,
     tax_rate: Decimal,
     automatic_sale_context: AutomaticPropertySaleContext | None = None,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> WithdrawalResult:
     account = accounts_by_id.get(event.account_id)
     if account is None:
@@ -1619,8 +1700,13 @@ def _apply_projection_event(
             event.account_id,
             tax_rate,
             automatic_sale_context,
+            basis_balances,
         )
 
+    if account.category in TAXABLE_INVESTMENT_CATEGORIES and basis_balances is not None:
+        basis_balances[account.id] = (
+            basis_balances.get(account.id, Decimal("0.00")) + amount
+        ).quantize(Decimal("0.01"))
     _apply_account_cash_flow(balances, cash_flows, account, event.event_type, amount)
     return WithdrawalResult()
 
@@ -1643,6 +1729,7 @@ def _withdraw_from_assets(
     preferred_account_id: UUID | None,
     tax_rate: Decimal,
     automatic_sale_context: AutomaticPropertySaleContext | None = None,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> WithdrawalResult:
     amount = amount.quantize(Decimal("0.01"))
     if automatic_sale_context is None:
@@ -1655,6 +1742,7 @@ def _withdraw_from_assets(
             cash_flow_type,
             preferred_account_id,
             tax_rate,
+            basis_balances,
         )
 
     result = WithdrawalResult()
@@ -1673,6 +1761,7 @@ def _withdraw_from_assets(
         cash_flow_type,
         non_retirement_preference,
         tax_rate,
+        basis_balances,
     )
     remaining = funding_attempt.unfunded_amount
     funding_attempt.unfunded_amount = Decimal("0.00")
@@ -1715,6 +1804,7 @@ def _withdraw_from_assets(
             cash_flow_type,
             non_retirement_preference,
             tax_rate,
+            basis_balances,
         )
         remaining = funding_attempt.unfunded_amount
         funding_attempt.unfunded_amount = Decimal("0.00")
@@ -1736,6 +1826,7 @@ def _withdraw_from_assets(
             cash_flow_type,
             retirement_preference,
             tax_rate,
+            basis_balances,
         )
         remaining = funding_attempt.unfunded_amount
         funding_attempt.unfunded_amount = Decimal("0.00")
@@ -1754,6 +1845,7 @@ def _withdraw_from_account_pool(
     cash_flow_type: str,
     preferred_account_id: UUID | None,
     tax_rate: Decimal,
+    basis_balances: dict[UUID, Decimal] | None = None,
 ) -> WithdrawalResult:
     remaining_net = amount.quantize(Decimal("0.01"))
     result = WithdrawalResult()
@@ -1777,9 +1869,23 @@ def _withdraw_from_account_pool(
             continue
 
         taxes_apply = _withdrawal_has_tax_consequences(account)
-        effective_tax_rate = tax_rate if taxes_apply else Decimal("0.00")
+        has_basis_tracking = (
+            basis_balances is not None
+            and account.id in basis_balances
+            and available > Decimal("0.00")
+        )
+        capital_gain_fraction = Decimal("0.00")
+        if has_basis_tracking:
+            effective_tax_rate = DEFAULT_CAPITAL_GAINS_TAX_RATE
+            basis = max(basis_balances[account.id], Decimal("0.00"))
+            capital_gain_fraction = max(available - basis, Decimal("0.00")) / available
+        else:
+            effective_tax_rate = tax_rate if taxes_apply else Decimal("0.00")
         liquidation_expense_rate = _liquidation_expense_rate(account)
-        drag_rate = effective_tax_rate + liquidation_expense_rate
+        if has_basis_tracking:
+            drag_rate = (effective_tax_rate * capital_gain_fraction) + liquidation_expense_rate
+        else:
+            drag_rate = effective_tax_rate + liquidation_expense_rate
         if drag_rate >= Decimal("1.00"):
             continue
 
@@ -1790,7 +1896,11 @@ def _withdraw_from_account_pool(
         if gross_deduction == Decimal("0.00"):
             continue
 
-        tax_amount = (gross_deduction * effective_tax_rate).quantize(Decimal("0.01"))
+        if has_basis_tracking:
+            taxable_portion = (gross_deduction * capital_gain_fraction).quantize(Decimal("0.01"))
+        else:
+            taxable_portion = gross_deduction if taxes_apply else Decimal("0.00")
+        tax_amount = (taxable_portion * effective_tax_rate).quantize(Decimal("0.01"))
         liquidation_expense = (gross_deduction * liquidation_expense_rate).quantize(Decimal("0.01"))
         net_amount = (gross_deduction - tax_amount - liquidation_expense).quantize(Decimal("0.01"))
         if net_amount == Decimal("0.00"):
@@ -1803,10 +1913,20 @@ def _withdraw_from_account_pool(
             _apply_account_cash_flow(
                 balances, cash_flows, account, "liquidation_expense", -liquidation_expense
             )
+        if has_basis_tracking:
+            basis_balances[account.id] = max(
+                basis_balances[account.id]
+                - (gross_deduction * (Decimal("1.00") - capital_gain_fraction)),
+                Decimal("0.00"),
+            ).quantize(Decimal("0.01"))
 
         result.net_amount = (result.net_amount + net_amount).quantize(Decimal("0.01"))
-        if taxes_apply:
-            result.taxable_amount = (result.taxable_amount + gross_deduction).quantize(
+        if has_basis_tracking:
+            result.capital_gains_tax = (result.capital_gains_tax + tax_amount).quantize(
+                Decimal("0.01")
+            )
+        elif taxes_apply:
+            result.taxable_amount = (result.taxable_amount + taxable_portion).quantize(
                 Decimal("0.01")
             )
         result.liquidation_expenses = (result.liquidation_expenses + liquidation_expense).quantize(
@@ -1901,14 +2021,58 @@ def _latest_balance_on_or_before(db: Session, account_id: UUID, as_of_date: date
     return snapshot.balance if snapshot else None
 
 
+def _earliest_snapshot(
+    db: Session, account_id: UUID
+) -> BalanceSnapshot | None:
+    return db.scalars(
+        select(BalanceSnapshot)
+        .where(BalanceSnapshot.account_id == account_id)
+        .order_by(BalanceSnapshot.as_of_date, BalanceSnapshot.created_at)
+        .limit(1)
+    ).first()
+
+
+def _resolve_cost_bases(
+    db: Session, accounts: list[Account], start_date: date
+) -> tuple[dict[UUID, Decimal], dict[UUID, tuple[Decimal, date]]]:
+    """Resolve starting cost basis for taxable investment accounts.
+
+    Priority: an explicit account cost basis wins; otherwise the account's
+    oldest balance snapshot is used as a simple estimate (returned separately
+    so the projection can warn about it); with no snapshots at all the latest
+    balance is used, implying no embedded gain.
+    """
+    cost_bases: dict[UUID, Decimal] = {}
+    estimates: dict[UUID, tuple[Decimal, date]] = {}
+    for account in accounts:
+        if account.category not in TAXABLE_INVESTMENT_CATEGORIES:
+            continue
+        if account.cost_basis is not None:
+            cost_bases[account.id] = account.cost_basis
+            continue
+        earliest = _earliest_snapshot(db, account.id)
+        if earliest is not None:
+            cost_bases[account.id] = earliest.balance
+            estimates[account.id] = (earliest.balance, earliest.as_of_date)
+            continue
+        latest = _latest_balance_on_or_before(db, account.id, start_date)
+        cost_bases[account.id] = latest if latest is not None else Decimal("0.00")
+    return cost_bases, estimates
+
+
 def _yield_for_account(
     account: Account,
     property_profile: RealEstateProperty | None,
 ) -> Decimal:
+    if account.category == "real_estate":
+        return (
+            property_profile.expected_appreciation_rate
+            if property_profile is not None
+            and property_profile.expected_appreciation_rate is not None
+            else Decimal("0.000000")
+        )
     if account.expected_annual_yield is not None:
         return account.expected_annual_yield
-    if property_profile is not None and property_profile.expected_appreciation_rate is not None:
-        return property_profile.expected_appreciation_rate
     if account.account_kind == AccountKind.liability:
         return Decimal("0.000000")
     return DEFAULT_CATEGORY_YIELDS.get(account.category, Decimal("0.030000"))

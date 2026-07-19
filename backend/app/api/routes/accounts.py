@@ -79,6 +79,8 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)) -> Acc
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
 
     values = payload.model_dump()
+    if values["category"] == "real_estate":
+        values["expected_annual_yield"] = None
     if values["category"] != "retirement":
         values["retirement_tax_treatment"] = None
     elif values["retirement_tax_treatment"] is None:
@@ -119,6 +121,8 @@ def update_account(
 
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(account, key, value)
+    if account.category == "real_estate":
+        account.expected_annual_yield = None
     if account.category != "retirement":
         account.retirement_tax_treatment = None
     elif account.retirement_tax_treatment is None:

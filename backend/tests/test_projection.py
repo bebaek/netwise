@@ -219,9 +219,11 @@ def test_projection_projects_real_estate_and_mortgage_balance(client: TestClient
             "account_kind": "asset",
             "category": "real_estate",
             "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.500000",
             "currency": "USD",
         },
     ).json()
+    assert home["expected_annual_yield"] is None
     mortgage = client.post(
         "/accounts",
         json={
@@ -665,11 +667,11 @@ def test_projection_applies_income_taxes_and_spending_to_selected_accounts(clien
     assert response.status_code == 200
     point = response.json()["points"][0]
     assert point["projected_income"] == "10000.00"
-    assert point["projected_taxes"] == "3772.15"
+    assert point["projected_taxes"] == "2000.00"
     assert point["projected_spending"] == "7000.00"
-    assert point["projected_liquidation_expenses"] == "88.61"
+    assert point["projected_liquidation_expenses"] == "70.71"
     balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
-    assert balances == {"Brokerage": "41139.24", "Checking": "9000.00"}
+    assert balances == {"Brokerage": "42929.29", "Checking": "9000.00"}
     assert point["cash_flows"] == [
         {
             "account_id": checking["id"],
@@ -686,14 +688,8 @@ def test_projection_applies_income_taxes_and_spending_to_selected_accounts(clien
         {
             "account_id": brokerage["id"],
             "account_name": "Brokerage",
-            "cash_flow_type": "tax_payment",
-            "amount": "-1772.15",
-        },
-        {
-            "account_id": brokerage["id"],
-            "account_name": "Brokerage",
             "cash_flow_type": "liquidation_expense",
-            "amount": "-88.61",
+            "amount": "-70.71",
         },
         {
             "account_id": checking["id"],
@@ -1005,10 +1001,12 @@ def test_projection_taxes_non_cash_projection_event_withdrawals(client: TestClie
 
     assert response.status_code == 200
     point = response.json()["points"][0]
-    assert point["projected_taxes"] == "2666.67"
-    assert point["projected_liquidation_expenses"] == "666.67"
+    assert point["projected_taxes"] == "0.00"
+    assert point["projected_liquidation_expenses"] == "526.32"
     balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
-    assert balances == {"Brokerage": "36666.66", "Checking": "5000.00"}
+    assert balances == {"Brokerage": "39473.68", "Checking": "5000.00"}
+    # Zero-gain basis fallback: the full withdrawal is return of capital, so
+    # only the liquidation expense applies; no tax_payment cash flow.
     assert point["cash_flows"] == [
         {
             "account_id": brokerage["id"],
@@ -1019,14 +1017,8 @@ def test_projection_taxes_non_cash_projection_event_withdrawals(client: TestClie
         {
             "account_id": brokerage["id"],
             "account_name": "Brokerage",
-            "cash_flow_type": "tax_payment",
-            "amount": "-2666.67",
-        },
-        {
-            "account_id": brokerage["id"],
-            "account_name": "Brokerage",
             "cash_flow_type": "liquidation_expense",
-            "amount": "-666.67",
+            "amount": "-526.32",
         },
     ]
 
@@ -1038,6 +1030,263 @@ def test_projection_rejects_invalid_year_range(client: TestClient):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "end_year must be greater than or equal to start_year"
+
+
+def test_taxable_investment_withdrawals_tax_only_capital_gains(client: TestClient):
+    household = client.post("/households", json={"name": "Capital Gains"}).json()
+    household_id = household["id"]
+    checking = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Checking",
+            "account_kind": "asset",
+            "category": "checking",
+            "liquidity_class": "liquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "brokerage",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    client.post(
+        f"/accounts/{checking['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "0.00"},
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "100000.00"},
+    )
+    client.patch(
+        f"/accounts/{brokerage['id']}",
+        json={"cost_basis": "80000.00"},
+    )
+    client.post(
+        "/annual-tax-records",
+        json={
+            "household_id": household_id,
+            "tax_year": 2025,
+            "gross_income": "100000.00",
+            "total_taxes_paid": "20000.00",
+        },
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "10000.00",
+            "event_type": "withdrawal",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
+    )
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    # 20% embedded gain taxed at 15% capital gains, not 20% income on the full amount.
+    # Rounded-up gross withdrawal (10309.28) keeps net funding at exactly $10,000.
+    assert point["projected_taxes"] == "309.28"
+    assert point["projected_liquidation_expenses"] == "0.00"
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances == {"Brokerage": "89690.72", "Checking": "0.00"}
+    assert point["cash_flows"] == [
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "withdrawal",
+            "amount": "-10000.00",
+        },
+        {
+            "account_id": brokerage["id"],
+            "account_name": "Brokerage",
+            "cash_flow_type": "tax_payment",
+            "amount": "-309.28",
+        },
+    ]
+
+
+def test_projection_uses_oldest_snapshot_as_cost_basis_estimate(client: TestClient):
+    household = client.post("/households", json={"name": "Basis Fallback"}).json()
+    household_id = household["id"]
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "taxable_investment",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    for as_of_date, balance in (
+        ("2024-01-01", "60000.00"),
+        ("2025-01-01", "75000.00"),
+        ("2026-01-01", "90000.00"),
+    ):
+        client.post(
+            f"/accounts/{brokerage['id']}/snapshots",
+            json={"as_of_date": as_of_date, "balance": balance},
+        )
+    client.post(
+        f"/accounts/{brokerage['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "9000.00",
+            "event_type": "withdrawal",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026")
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    # Oldest snapshot ($60,000) becomes the estimated basis: 1/3 of the $90,000
+    # balance is embedded gain, taxed at 15% instead of the income tax rate.
+    # Rounded-up gross withdrawal (9473.68) keeps net funding at exactly $9,000.
+    assert point["projected_taxes"] == "473.68"
+    assert response.json()["warnings"] == [
+        "Taxable investment cost basis estimated from oldest balance snapshots for: Brokerage. "
+        "Enter an explicit cost basis on each account for more accurate capital gains taxes."
+    ]
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances == {"Brokerage": "80526.31"}
+
+
+def test_explicit_cost_basis_overrides_snapshot_estimate(client: TestClient):
+    household = client.post("/households", json={"name": "Explicit Basis"}).json()
+    household_id = household["id"]
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "taxable_investment",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    for as_of_date, balance in (
+        ("2024-01-01", "60000.00"),
+        ("2026-01-01", "90000.00"),
+    ):
+        client.post(
+            f"/accounts/{brokerage['id']}/snapshots",
+            json={"as_of_date": as_of_date, "balance": balance},
+        )
+    update_response = client.patch(
+        f"/accounts/{brokerage['id']}",
+        json={"cost_basis": "90000.00"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["cost_basis"] == "90000.00"
+    client.post(
+        f"/accounts/{brokerage['id']}/events",
+        json={
+            "event_date": "2026-06-01",
+            "amount": "9000.00",
+            "event_type": "withdrawal",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026")
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    assert point["projected_taxes"] == "0.00"
+    assert response.json()["warnings"] == []
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances == {"Brokerage": "81000.00"}
+
+
+def test_property_sale_proceeds_become_cost_basis(client: TestClient):
+    household_id = client.post("/households", json={"name": "Sale Proceeds Basis"}).json()["id"]
+    brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "brokerage",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+        },
+    ).json()
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.000000",
+            "liquidation_expense_rate": "0.000000",
+        },
+    ).json()
+    for account, balance in ((brokerage, "0.00"), (home, "100000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+    client.post(
+        "/real-estate/properties",
+        json={
+            "account_id": home["id"],
+            "property_type": "residence",
+            "adjusted_tax_basis": "100000.00",
+        },
+    )
+    client.post(
+        "/real-estate/sales",
+        json={
+            "property_account_id": home["id"],
+            "sale_date": "2026-06-01",
+            "gross_sale_price": "100000.00",
+            "selling_expense_rate": "0.000000",
+            "estimated_tax_rate": "0.000000",
+        },
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/events",
+        json={
+            "event_date": "2026-06-02",
+            "amount": "50000.00",
+            "event_type": "withdrawal",
+            "projection_behavior": "projection_only",
+        },
+    )
+
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026")
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    # Sale proceeds carry their own basis, so spending them is not taxed again.
+    assert point["projected_taxes"] == "0.00"
+    balances = {account["name"]: account["projected_balance"] for account in point["accounts"]}
+    assert balances == {"Brokerage": "50000.00", "Home": "0.00"}
 
 
 def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: TestClient):
@@ -1076,11 +1325,18 @@ def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: Test
             "expected_annual_yield": "0.000000",
         },
     ).json()
-    for account, balance in ((home, "500000.00"), (mortgage, "300000.00")):
-        client.post(
-            f"/accounts/{account['id']}/snapshots",
-            json={"as_of_date": "2026-01-01", "balance": balance},
-        )
+    client.post(
+        f"/accounts/{home['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "500000.00"},
+    )
+    client.post(
+        f"/accounts/{mortgage['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "300000.00"},
+    )
+    client.post(
+        f"/accounts/{brokerage['id']}/snapshots",
+        json={"as_of_date": "2026-01-01", "balance": "0.00"},
+    )
     property_response = client.post(
         "/real-estate/properties",
         json={
@@ -1123,8 +1379,11 @@ def test_property_sale_transfers_net_proceeds_and_pays_off_mortgage(client: Test
         assert balances["Home"] == "0.00"
         assert balances["Mortgage"] == "0.00"
         assert balances["Brokerage"] == "136666.67"
-    assert response.json()["warnings"] == []
     assert points[0]["projected_taxes"] == "22500.00"
+    assert response.json()["warnings"] == [
+        "Taxable investment cost basis estimated from oldest balance snapshots for: Brokerage. "
+        "Enter an explicit cost basis on each account for more accurate capital gains taxes."
+    ]
     assert points[0]["cash_flows"] == [
         {
             "account_id": home["id"],

@@ -23,6 +23,7 @@ class AccountCreate(BaseModel):
     retirement_tax_treatment: RetirementTaxTreatment | None = None
     expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    cost_basis: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 
@@ -35,6 +36,7 @@ class AccountUpdate(BaseModel):
     retirement_tax_treatment: RetirementTaxTreatment | None = None
     expected_annual_yield: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
     liquidation_expense_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
+    cost_basis: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     is_active: bool | None = None
 
@@ -50,6 +52,7 @@ class AccountRead(BaseModel):
     retirement_tax_treatment: str | None
     expected_annual_yield: Decimal | None
     liquidation_expense_rate: Decimal | None
+    cost_basis: Decimal | None
     currency: str
     is_active: bool
     created_at: datetime

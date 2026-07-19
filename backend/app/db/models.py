@@ -147,6 +147,7 @@ class Account(Base):
     retirement_tax_treatment: Mapped[str | None] = mapped_column(String(32))
     expected_annual_yield: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
     liquidation_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    cost_basis: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -236,7 +237,9 @@ class RealEstateProperty(Base):
     purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     adjusted_tax_basis: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     down_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
-    expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 6), default=Decimal("0.000000")
+    )
     property_tax_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     tax_and_insurance_annual: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
