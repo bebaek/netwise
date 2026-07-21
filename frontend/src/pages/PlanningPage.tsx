@@ -590,6 +590,7 @@ export function PlanningPage({
               <th>Income</th>
               <th>Taxes</th>
               <th>Total spending</th>
+              <th>Property tax &amp; insurance</th>
               <th>Mortgage portion</th>
               <th>Unfunded</th>
               <th>Net cash flow</th>
@@ -608,6 +609,7 @@ export function PlanningPage({
                 <td>{formatMoney(point.projected_income)}</td>
                 <td>{formatMoney(point.projected_taxes)}</td>
                 <td>{formatMoney(point.projected_spending)}</td>
+                <td>{formatMoney(point.projected_owner_property_spending)}</td>
                 <td>{formatMoney(point.projected_mortgage_spending)}</td>
                 <td>{formatMoney(point.projected_unfunded_cash_flow)}</td>
                 <td>{formatMoney(point.net_cash_flow)}</td>
@@ -650,6 +652,10 @@ export function PlanningPage({
               <div>
                 <dt>Total spending</dt>
                 <dd>{formatMoney(point.projected_spending)}</dd>
+              </div>
+              <div>
+                <dt>Property tax &amp; insurance</dt>
+                <dd>{formatMoney(point.projected_owner_property_spending)}</dd>
               </div>
               <div>
                 <dt>Mortgage portion</dt>

@@ -352,10 +352,84 @@ def test_projection_stops_owner_mortgage_spending_after_final_payment(client: Te
     assert points[1]["projected_mortgage_spending"] == "0.00"
     assert points[1]["projected_spending"] == "13200.00"
     cash_balances = [
-        next(account["projected_balance"] for account in point["accounts"] if account["name"] == "Cash")
+        next(
+            account["projected_balance"]
+            for account in point["accounts"]
+            if account["name"] == "Cash"
+        )
         for point in points
     ]
     assert cash_balances == ["76000.00", "62800.00"]
+
+
+def test_projection_includes_owner_property_tax_and_insurance(client: TestClient):
+    household_id = client.post("/households", json={"name": "Owner Costs"}).json()["id"]
+    cash = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Cash",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    home = client.post(
+        "/accounts",
+        json={
+            "household_id": household_id,
+            "name": "Home",
+            "account_kind": "asset",
+            "category": "real_estate",
+            "liquidity_class": "illiquid",
+            "expected_annual_yield": "0.000000",
+            "currency": "USD",
+        },
+    ).json()
+    for account, balance in ((cash, "100000.00"), (home, "200000.00")):
+        client.post(
+            f"/accounts/{account['id']}/snapshots",
+            json={"as_of_date": "2026-01-01", "balance": balance},
+        )
+    property_response = client.post(
+        "/real-estate/properties",
+        json={
+            "account_id": home["id"],
+            "property_type": "residence",
+            "expected_appreciation_rate": "0.000000",
+            "property_tax_annual": "6000.00",
+            "insurance_annual": "2000.00",
+        },
+    )
+    assert property_response.status_code == 201
+
+    response = client.get(
+        f"/dashboard/{household_id}/projection"
+        "?start_year=2026&end_year=2027&spending_inflation_rate=0.100000"
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert [point["projected_owner_property_spending"] for point in points] == [
+        "8000.00",
+        "8800.00",
+    ]
+    assert [point["projected_spending"] for point in points] == ["8000.00", "8800.00"]
+    assert points[0]["projected_spending_breakdown"] == [
+        {"name": "Home property tax", "category": "housing", "amount": "6000.00"},
+        {"name": "Home homeowners insurance", "category": "housing", "amount": "2000.00"},
+    ]
+    cash_balances = [
+        next(
+            account["projected_balance"]
+            for account in point["accounts"]
+            if account["name"] == "Cash"
+        )
+        for point in points
+    ]
+    assert cash_balances == ["92000.00", "83200.00"]
 
 
 def test_projection_does_not_infer_spending_from_historical_snapshots(client: TestClient):
@@ -490,9 +564,7 @@ def test_projection_uses_itemized_spending_and_retirement_amounts(client: TestCl
     )
     assert itemized_settings_response.status_code == 200
 
-    response = client.get(
-        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027"
-    )
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027")
 
     assert response.status_code == 200
     points = response.json()["points"]
@@ -829,8 +901,7 @@ def test_projection_switches_spending_at_retirement_and_reports_withdrawal(
     assert settings.json()["retirement_annual_spending"] == "600.00"
 
     response = client.get(
-        f"/dashboard/{household_id}/projection"
-        "?start_year=2026&end_year=2026&interval=monthly"
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026&interval=monthly"
     )
 
     assert response.status_code == 200
@@ -915,8 +986,7 @@ def test_recurring_projection_transfer_moves_available_cash_without_changing_net
     assert [transfer["id"] for transfer in listed.json()] == [transfer_id]
 
     response = client.get(
-        f"/dashboard/{household_id}/projection"
-        "?start_year=2026&end_year=2026&interval=monthly"
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026&interval=monthly"
     )
 
     assert response.status_code == 200
@@ -1091,9 +1161,7 @@ def test_taxable_investment_withdrawals_tax_only_capital_gains(client: TestClien
         },
     )
 
-    response = client.get(
-        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026"
-    )
+    response = client.get(f"/dashboard/{household_id}/projection?start_year=2026&end_year=2026")
 
     assert response.status_code == 200
     point = response.json()["points"][0]

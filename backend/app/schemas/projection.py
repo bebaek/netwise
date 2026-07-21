@@ -38,6 +38,7 @@ class ProjectionPointRead(BaseModel):
     projected_rental_expenses: Decimal
     projected_taxes: Decimal
     projected_spending: Decimal
+    projected_owner_property_spending: Decimal
     projected_mortgage_spending: Decimal
     projected_spending_breakdown: list[ProjectionSpendingItemRead]
     projected_liquidation_expenses: Decimal

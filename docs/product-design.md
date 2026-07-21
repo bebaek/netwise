@@ -195,8 +195,10 @@ spending from the category entries. A one-run spending override uses manual mode
 returns its effective mode and per-period item breakdown so total spending remains auditable.
 Owner-occupied mortgage payments are calculated separately from linked
 mortgage profiles, remain fixed rather than inflating with household spending, and stop after the
-final scheduled payment or a property sale. Projected total spending reports both components, with
-the mortgage portion exposed separately.
+final scheduled payment or a property sale. Owner-occupied property tax and homeowners insurance
+are also projected automatically from the property profile, inherit general spending inflation,
+and stop after a sale; users should not duplicate those costs in itemized spending. Projected total
+spending reports the itemized/manual, property-cost, and mortgage components separately.
 
 Income timing remains explicit: salary, pension, Social Security, and similar cash flows are modeled
 as income sources with their own start and end dates. The retirement date does not automatically

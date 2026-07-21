@@ -405,6 +405,7 @@ export type NetWorthProjection = {
     projected_rental_expenses: string;
     projected_taxes: string;
     projected_spending: string;
+    projected_owner_property_spending: string;
     projected_mortgage_spending: string;
     projected_spending_breakdown: Array<{
       name: string;

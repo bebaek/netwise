@@ -318,9 +318,10 @@ def calculate_net_worth_projection(
         for profile in mortgage_profiles.values()
         if profile.property_account_id is not None
     }
-    owner_occupied_property_ids = {
-        profile.account_id for profile in property_profiles.values() if not profile.is_rental
-    }
+    owner_occupied_properties = [
+        profile for profile in property_profiles.values() if not profile.is_rental
+    ]
+    owner_occupied_property_ids = {profile.account_id for profile in owner_occupied_properties}
     owner_occupied_mortgages = [
         profile
         for profile in mortgage_profiles.values()
@@ -627,6 +628,21 @@ def calculate_net_worth_projection(
                 if projected_non_mortgage_spending != Decimal("0.00")
                 else []
             )
+        projected_owner_property_spending_breakdown = _projected_owner_property_spending_for_period(
+            owner_occupied_properties,
+            accounts_by_id,
+            balances,
+            start_year,
+            period_start,
+            as_of_date,
+            months_per_period,
+            effective_spending_inflation_rate,
+        )
+        projected_owner_property_spending = sum(
+            (item["amount"] for item in projected_owner_property_spending_breakdown),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+        projected_spending_breakdown.extend(projected_owner_property_spending_breakdown)
         projected_mortgage_spending = _projected_owner_mortgage_spending_for_period(
             owner_occupied_mortgages,
             period_start,
@@ -642,10 +658,13 @@ def calculate_net_worth_projection(
                 }
             )
         projected_spending = (
-            projected_non_mortgage_spending + projected_mortgage_spending
+            projected_non_mortgage_spending
+            + projected_owner_property_spending
+            + projected_mortgage_spending
         ).quantize(Decimal("0.01"))
         for spending_amount, cash_flow_type in (
             (projected_non_mortgage_spending, "spending"),
+            (projected_owner_property_spending, "owner_property_spending"),
             (projected_mortgage_spending, "mortgage_spending"),
         ):
             if spending_amount == Decimal("0.00"):
@@ -723,7 +742,11 @@ def calculate_net_worth_projection(
                 if available > Decimal("0.00"):
                     gain_fraction = (
                         max(
-                            available - max(basis_balances.get(source_account.id, Decimal("0.00")), Decimal("0.00")),
+                            available
+                            - max(
+                                basis_balances.get(source_account.id, Decimal("0.00")),
+                                Decimal("0.00"),
+                            ),
                             Decimal("0.00"),
                         )
                         / available
@@ -806,6 +829,7 @@ def calculate_net_worth_projection(
                 "projected_rental_expenses": projected_rental_expenses,
                 "projected_taxes": projected_taxes,
                 "projected_spending": projected_spending,
+                "projected_owner_property_spending": projected_owner_property_spending,
                 "projected_mortgage_spending": projected_mortgage_spending,
                 "projected_spending_breakdown": projected_spending_breakdown,
                 "projected_liquidation_expenses": projected_liquidation_expenses,
@@ -856,9 +880,7 @@ def calculate_net_worth_projection(
         "warnings": warnings,
         "points": points,
     }
-    result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(
-        result, accounts
-    )
+    result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(result, accounts)
     result["first_unfunded_date"] = next(
         (
             point["as_of_date"]
@@ -1104,9 +1126,7 @@ def _projected_transfer_for_period(
     )
     growth_rate = transfer.growth_rate or Decimal("0.00")
     years_elapsed = max(period_start.year - transfer.start_date.year, 0)
-    annual_amount = transfer.annual_amount * (
-        (Decimal("1.00") + growth_rate) ** years_elapsed
-    )
+    annual_amount = transfer.annual_amount * ((Decimal("1.00") + growth_rate) ** years_elapsed)
     return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
 
 
@@ -1147,6 +1167,57 @@ def _projected_spending_items_for_period(
     return breakdown
 
 
+def _projected_owner_property_spending_for_period(
+    property_profiles: list[RealEstateProperty],
+    accounts_by_id: dict[UUID, Account],
+    balances: dict[UUID, Decimal],
+    start_year: int,
+    period_start: date,
+    period_end: date,
+    months_per_period: int,
+    spending_inflation_rate: Decimal,
+) -> list[dict]:
+    """Return inflation-adjusted owner property tax and insurance spending.
+
+    Property-level costs are spread evenly across active months. A combined tax
+    and insurance amount takes precedence over the separate fields, matching the
+    rental expense treatment. Costs stop when the property is sold.
+    """
+    years_elapsed = max(period_start.year - start_year, 0)
+    inflation_factor = (Decimal("1") + spending_inflation_rate) ** years_elapsed
+    breakdown: list[dict] = []
+    for profile in property_profiles:
+        account = accounts_by_id.get(profile.account_id)
+        if account is None or balances.get(profile.account_id, Decimal("0.00")) <= Decimal("0.00"):
+            continue
+        active_months = min(
+            _active_months_in_period(profile.purchase_date, period_start, period_end),
+            months_per_period,
+        )
+        if active_months == 0:
+            continue
+        period_fraction = Decimal(active_months) / Decimal("12")
+        if profile.tax_and_insurance_annual is not None:
+            costs = [("property tax and insurance", profile.tax_and_insurance_annual)]
+        else:
+            costs = [
+                ("property tax", profile.property_tax_annual or Decimal("0.00")),
+                ("homeowners insurance", profile.insurance_annual or Decimal("0.00")),
+            ]
+        for label, annual_amount in costs:
+            amount = (annual_amount * inflation_factor * period_fraction).quantize(Decimal("0.01"))
+            if amount == Decimal("0.00"):
+                continue
+            breakdown.append(
+                {
+                    "name": f"{account.name} {label}",
+                    "category": "housing",
+                    "amount": amount,
+                }
+            )
+    return breakdown
+
+
 def _projected_owner_mortgage_spending_for_period(
     mortgage_profiles: list[MortgageProfile],
     period_start: date,
@@ -1162,9 +1233,7 @@ def _projected_owner_mortgage_spending_for_period(
     for profile in mortgage_profiles:
         if profile.liability_account_id in sold_mortgage_account_ids:
             continue
-        active_months = _scheduled_mortgage_payment_months(
-            profile, period_start, period_end
-        )
+        active_months = _scheduled_mortgage_payment_months(profile, period_start, period_end)
         if active_months == 0:
             continue
         monthly_payment = profile.monthly_payment or _amortized_monthly_payment(profile)
@@ -1217,8 +1286,7 @@ def _projected_spending_for_period(
     retirement_days = Decimal((period_end - retirement_date).days + 1)
     working_days = period_days - retirement_days
     blended_annual_spending = (
-        (working_annual_spending * working_days)
-        + (retirement_annual_spending * retirement_days)
+        (working_annual_spending * working_days) + (retirement_annual_spending * retirement_days)
     ) / period_days
     return (blended_annual_spending * period_fraction).quantize(Decimal("0.01"))
 
@@ -1532,7 +1600,9 @@ def _property_sale_tax_basis_warnings(
     warnings = []
     for property_id in sorted(
         property_ids,
-        key=lambda item: accounts_by_id[item].name.casefold() if item in accounts_by_id else str(item),
+        key=lambda item: (
+            accounts_by_id[item].name.casefold() if item in accounts_by_id else str(item)
+        ),
     ):
         account = accounts_by_id.get(property_id)
         profile = property_profiles.get(property_id)
@@ -2024,9 +2094,7 @@ def _latest_balance_on_or_before(db: Session, account_id: UUID, as_of_date: date
     return snapshot.balance if snapshot else None
 
 
-def _earliest_snapshot(
-    db: Session, account_id: UUID
-) -> BalanceSnapshot | None:
+def _earliest_snapshot(db: Session, account_id: UUID) -> BalanceSnapshot | None:
     return db.scalars(
         select(BalanceSnapshot)
         .where(BalanceSnapshot.account_id == account_id)
