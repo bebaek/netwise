@@ -7,6 +7,7 @@ import {
   FintrackImportResult,
   Household,
   HouseholdMembership,
+  HouseholdPerson,
   HouseholdSnapshot,
   IncomeSource,
   MortgageProfile,
@@ -21,6 +22,8 @@ import {
   RealEstateProperty,
   RealEstateSale,
   RetirementTaxTreatment,
+  SocialSecurityEstimate,
+  SocialSecurityEstimateInput,
   SpendingItem,
   User,
   addHouseholdMember,
@@ -28,6 +31,7 @@ import {
   createAccountEvent,
   createAnnualTaxRecord,
   createHousehold,
+  createHouseholdPerson,
   createIncomeSource,
   createMortgageProfile,
   createProjectionTransfer,
@@ -35,11 +39,13 @@ import {
   createRealEstateSale,
   createSnapshot,
   createSnapshotBatch,
+  createSocialSecurityEstimate,
   createSpendingItem,
   createUser,
   deleteAccountEvent,
   deleteProjectionTransfer,
   deleteSnapshot,
+  deleteSocialSecurityEstimate,
   deleteRealEstateLiquidationStrategy,
   deleteRealEstateSale,
   deleteSpendingItem,
@@ -58,12 +64,14 @@ import {
   listHouseholds,
   listHouseholdMembers,
   listHouseholdSnapshots,
+  listHouseholdPeople,
   listIncomeSources,
   listMortgageProfiles,
   listProjectionTransfers,
   listRealEstateLiquidationStrategies,
   listRealEstateProperties,
   listRealEstateSales,
+  listSocialSecurityEstimates,
   listSpendingItems,
   listUsers,
   removeHouseholdMember,
@@ -71,6 +79,7 @@ import {
   updateAccountEvent,
   updateRealEstateProperty,
   updateSnapshot,
+  updateSocialSecurityEstimate,
   updateSpendingItem,
   upsertProjectionSettings,
   upsertRealEstateLiquidationStrategy,
@@ -146,6 +155,30 @@ function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
+function socialSecurityEstimateInput(
+  form: FormData,
+  householdId: string,
+): SocialSecurityEstimateInput {
+  const workYears = optionalString(form, 'completed_work_years');
+  return {
+    household_id: householdId,
+    person_id: requiredString(form, 'social_security_person_id'),
+    calculation_mode: requiredString(form, 'social_security_mode') as 'manual' | 'ballpark',
+    claiming_date: requiredString(form, 'claiming_date'),
+    current_covered_earnings: optionalString(form, 'current_covered_earnings'),
+    completed_work_years: workYears ? Number(workYears) : undefined,
+    expected_work_end_date: optionalString(form, 'expected_work_end_date'),
+    earnings_pattern: optionalString(form, 'earnings_pattern') as
+      | 'lower'
+      | 'steady'
+      | 'rising'
+      | undefined,
+    manual_monthly_benefit: optionalString(form, 'manual_monthly_benefit'),
+    cola_rate: optionalString(form, 'cola_rate') ?? '0.025',
+    deposit_account_id: optionalString(form, 'social_security_deposit_account_id'),
+  };
+}
+
 function exportFilename(name: string): string {
   const safeName = name
     .trim()
@@ -213,6 +246,8 @@ function App() {
   const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
   const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
+  const [socialSecurityEstimates, setSocialSecurityEstimates] = useState<SocialSecurityEstimate[]>([]);
   const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
   const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([]);
   const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
@@ -302,6 +337,8 @@ function App() {
         liquidationStrategyList,
         mortgageList,
         incomeSourceList,
+        householdPersonList,
+        socialSecurityEstimateList,
         projectionTransferList,
         spendingItemList,
         taxRecordList,
@@ -319,6 +356,8 @@ function App() {
         listRealEstateLiquidationStrategies(householdId),
         listMortgageProfiles(householdId),
         listIncomeSources(householdId),
+        listHouseholdPeople(householdId),
+        listSocialSecurityEstimates(householdId),
         listProjectionTransfers(householdId),
         listSpendingItems(householdId),
         listAnnualTaxRecords(householdId),
@@ -347,6 +386,8 @@ function App() {
       setLiquidationStrategies(liquidationStrategyList);
       setMortgages(mortgageList);
       setIncomeSources(incomeSourceList);
+      setHouseholdPeople(householdPersonList);
+      setSocialSecurityEstimates(socialSecurityEstimateList);
       setProjectionTransfers(projectionTransferList);
       setSpendingItems(spendingItemList);
       setTaxRecords(taxRecordList);
@@ -921,6 +962,72 @@ function App() {
     }
   }
 
+  async function handleCreateHouseholdPerson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createHouseholdPerson({
+        household_id: selectedHouseholdId,
+        name: requiredString(form, 'person_name'),
+        date_of_birth: requiredString(form, 'person_date_of_birth'),
+      });
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateSocialSecurityEstimate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await createSocialSecurityEstimate(socialSecurityEstimateInput(form, selectedHouseholdId));
+      target.reset();
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUpdateSocialSecurityEstimate(
+    event: FormEvent<HTMLFormElement>,
+    estimate: SocialSecurityEstimate,
+  ) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    if (!selectedHouseholdId) return;
+    setError('');
+    const form = new FormData(target);
+    try {
+      await updateSocialSecurityEstimate(
+        estimate.id,
+        socialSecurityEstimateInput(form, selectedHouseholdId),
+      );
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+      throw err;
+    }
+  }
+
+  async function handleDeleteSocialSecurityEstimate(estimate: SocialSecurityEstimate) {
+    if (!selectedHouseholdId) return;
+    setError('');
+    try {
+      await deleteSocialSecurityEstimate(estimate.id);
+      await refreshDashboard(selectedHouseholdId);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
@@ -1288,11 +1395,17 @@ function App() {
                   onGetProjection={handleGetProjection}
                   projectionRunning={projectionRunning}
                   incomeSources={incomeSources}
+                  householdPeople={householdPeople}
+                  socialSecurityEstimates={socialSecurityEstimates}
                   projectionTransfers={projectionTransfers}
                   spendingItems={spendingItems}
                   taxRecords={taxRecords}
                   projection={projection}
                   onCreateIncomeSource={handleCreateIncomeSource}
+                  onCreateHouseholdPerson={handleCreateHouseholdPerson}
+                  onCreateSocialSecurityEstimate={handleCreateSocialSecurityEstimate}
+                  onUpdateSocialSecurityEstimate={handleUpdateSocialSecurityEstimate}
+                  onDeleteSocialSecurityEstimate={handleDeleteSocialSecurityEstimate}
                   onCreateProjectionTransfer={handleCreateProjectionTransfer}
                   onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
                   onCreateSpendingItem={handleCreateSpendingItem}

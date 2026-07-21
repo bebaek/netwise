@@ -5,7 +5,76 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import IncomeFrequency
+from app.db.models import (
+    IncomeFrequency,
+    SocialSecurityCalculationMode,
+    SocialSecurityEarningsPattern,
+)
+
+
+class HouseholdPersonCreate(BaseModel):
+    household_id: UUID
+    name: str = Field(min_length=1, max_length=200)
+    date_of_birth: date
+
+
+class HouseholdPersonRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    name: str
+    date_of_birth: date
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SocialSecurityEstimateCreate(BaseModel):
+    household_id: UUID
+    person_id: UUID
+    calculation_mode: SocialSecurityCalculationMode
+    claiming_date: date
+    current_covered_earnings: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=2
+    )
+    completed_work_years: int | None = Field(default=None, ge=0, le=50)
+    expected_work_end_date: date | None = None
+    earnings_pattern: SocialSecurityEarningsPattern | None = None
+    manual_monthly_benefit: Decimal | None = Field(
+        default=None, gt=0, max_digits=18, decimal_places=2
+    )
+    cola_rate: Decimal = Field(default=Decimal("0.025"), ge=0, le=0.2, decimal_places=6)
+    deposit_account_id: UUID | None = None
+
+
+class SocialSecurityEstimateUpdate(SocialSecurityEstimateCreate):
+    pass
+
+
+class SocialSecurityEstimateRead(BaseModel):
+    id: UUID
+    household_id: UUID
+    person_id: UUID
+    income_source_id: UUID
+    calculation_mode: str
+    claiming_date: date
+    current_covered_earnings: Decimal | None
+    completed_work_years: int | None
+    expected_work_end_date: date | None
+    earnings_pattern: str | None
+    manual_monthly_benefit: Decimal | None
+    cola_rate: Decimal
+    estimated_monthly_benefit: Decimal
+    lower_monthly_benefit: Decimal
+    upper_monthly_benefit: Decimal
+    full_retirement_age_months: int
+    benefit_at_full_retirement_age: Decimal
+    calculation_version: str
+    law_assumption_year: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IncomeSourceCreate(BaseModel):

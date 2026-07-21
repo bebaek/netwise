@@ -284,6 +284,53 @@ export type IncomeSource = {
   updated_at: string;
 };
 
+export type HouseholdPerson = {
+  id: string;
+  household_id: string;
+  name: string;
+  date_of_birth: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SocialSecurityEstimate = {
+  id: string;
+  household_id: string;
+  person_id: string;
+  income_source_id: string;
+  calculation_mode: 'manual' | 'ballpark';
+  claiming_date: string;
+  current_covered_earnings: string | null;
+  completed_work_years: number | null;
+  expected_work_end_date: string | null;
+  earnings_pattern: 'lower' | 'steady' | 'rising' | null;
+  manual_monthly_benefit: string | null;
+  cola_rate: string;
+  estimated_monthly_benefit: string;
+  lower_monthly_benefit: string;
+  upper_monthly_benefit: string;
+  full_retirement_age_months: number;
+  benefit_at_full_retirement_age: string;
+  calculation_version: string;
+  law_assumption_year: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SocialSecurityEstimateInput = {
+  household_id: string;
+  person_id: string;
+  calculation_mode: 'manual' | 'ballpark';
+  claiming_date: string;
+  current_covered_earnings?: string;
+  completed_work_years?: number;
+  expected_work_end_date?: string;
+  earnings_pattern?: 'lower' | 'steady' | 'rising';
+  manual_monthly_benefit?: string;
+  cola_rate: string;
+  deposit_account_id?: string;
+};
+
 export type ProjectionTransfer = {
   id: string;
   household_id: string;
@@ -790,6 +837,48 @@ export function createIncomeSource(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function listHouseholdPeople(householdId: string): Promise<HouseholdPerson[]> {
+  return request<HouseholdPerson[]>(`/household-people?household_id=${householdId}`);
+}
+
+export function createHouseholdPerson(payload: {
+  household_id: string;
+  name: string;
+  date_of_birth: string;
+}): Promise<HouseholdPerson> {
+  return request<HouseholdPerson>('/household-people', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listSocialSecurityEstimates(householdId: string): Promise<SocialSecurityEstimate[]> {
+  return request<SocialSecurityEstimate[]>(`/social-security-estimates?household_id=${householdId}`);
+}
+
+export function createSocialSecurityEstimate(
+  payload: SocialSecurityEstimateInput,
+): Promise<SocialSecurityEstimate> {
+  return request<SocialSecurityEstimate>('/social-security-estimates', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSocialSecurityEstimate(
+  estimateId: string,
+  payload: SocialSecurityEstimateInput,
+): Promise<SocialSecurityEstimate> {
+  return request<SocialSecurityEstimate>(`/social-security-estimates/${estimateId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSocialSecurityEstimate(estimateId: string): Promise<void> {
+  return request<void>(`/social-security-estimates/${estimateId}`, { method: 'DELETE' });
 }
 
 export function createProjectionTransfer(payload: {

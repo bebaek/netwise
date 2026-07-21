@@ -64,6 +64,17 @@ class IncomeFrequency(StrEnum):
     annually = "annually"
 
 
+class SocialSecurityCalculationMode(StrEnum):
+    manual = "manual"
+    ballpark = "ballpark"
+
+
+class SocialSecurityEarningsPattern(StrEnum):
+    lower = "lower"
+    steady = "steady"
+    rising = "rising"
+
+
 def now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -101,6 +112,12 @@ class Household(Base):
     income_sources: Mapped[list["IncomeSource"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    people: Mapped[list["HouseholdPerson"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    social_security_estimates: Mapped[list["SocialSecurityEstimate"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
     annual_tax_records: Mapped[list["AnnualTaxRecord"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
@@ -132,6 +149,26 @@ class HouseholdMembership(Base):
         Index("ix_household_memberships_household_id", "household_id"),
         Index("ix_household_memberships_user_id", "user_id"),
     )
+
+
+class HouseholdPerson(Base):
+    __tablename__ = "household_people"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    date_of_birth: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="people")
+    social_security_estimates: Mapped[list["SocialSecurityEstimate"]] = relationship(
+        back_populates="person", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("ix_household_people_household_id", "household_id"),)
 
 
 class Account(Base):
@@ -387,6 +424,48 @@ class IncomeSource(Base):
     __table_args__ = (
         Index("ix_income_sources_household_id", "household_id"),
         Index("ix_income_sources_deposit_account_id", "deposit_account_id"),
+    )
+
+
+class SocialSecurityEstimate(Base):
+    __tablename__ = "social_security_estimates"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    person_id: Mapped[UUID] = mapped_column(ForeignKey("household_people.id"), nullable=False)
+    income_source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("income_sources.id"), nullable=False, unique=True
+    )
+    calculation_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    claiming_date: Mapped[date] = mapped_column(Date, nullable=False)
+    current_covered_earnings: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    completed_work_years: Mapped[int | None] = mapped_column()
+    expected_work_end_date: Mapped[date | None] = mapped_column(Date)
+    earnings_pattern: Mapped[str | None] = mapped_column(String(32))
+    manual_monthly_benefit: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    cola_rate: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    estimated_monthly_benefit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    lower_monthly_benefit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    upper_monthly_benefit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    full_retirement_age_months: Mapped[int] = mapped_column(nullable=False)
+    benefit_at_full_retirement_age: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False
+    )
+    calculation_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    law_assumption_year: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="social_security_estimates")
+    person: Mapped[HouseholdPerson] = relationship(back_populates="social_security_estimates")
+    income_source: Mapped[IncomeSource] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("person_id", name="uq_social_security_estimates_person_id"),
+        Index("ix_social_security_estimates_household_id", "household_id"),
+        Index("ix_social_security_estimates_person_id", "person_id"),
     )
 
 

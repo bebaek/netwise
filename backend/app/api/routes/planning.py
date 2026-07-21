@@ -4,20 +4,32 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.social_security import (
+    SocialSecurityCalculation,
+    age_in_months,
+    calculate_ballpark_benefit,
+    calculate_manual_benefit,
+)
 from app.db.models import (
     Account,
     AccountKind,
     AnnualTaxRecord,
     Household,
+    HouseholdPerson,
+    IncomeFrequency,
     IncomeSource,
     ProjectionSettings,
     ProjectionTransfer,
     SpendingItem,
+    SocialSecurityCalculationMode,
+    SocialSecurityEstimate,
 )
 from app.db.session import get_db
 from app.schemas.planning import (
     AnnualTaxRecordCreate,
     AnnualTaxRecordRead,
+    HouseholdPersonCreate,
+    HouseholdPersonRead,
     IncomeSourceCreate,
     IncomeSourceRead,
     ProjectionSettingsRead,
@@ -27,6 +39,9 @@ from app.schemas.planning import (
     SpendingItemCreate,
     SpendingItemRead,
     SpendingItemUpdate,
+    SocialSecurityEstimateCreate,
+    SocialSecurityEstimateRead,
+    SocialSecurityEstimateUpdate,
 )
 
 router = APIRouter(tags=["planning"])
@@ -43,6 +58,221 @@ def _validate_asset_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{label} must be an asset account in the household",
         )
+
+
+def _calculate_social_security_estimate(
+    person: HouseholdPerson,
+    payload: SocialSecurityEstimateCreate | SocialSecurityEstimateUpdate,
+) -> SocialSecurityCalculation:
+    if age_in_months(person.date_of_birth, payload.claiming_date) < 62 * 12:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Claiming date must be at or after age 62",
+        )
+    try:
+        if payload.calculation_mode == SocialSecurityCalculationMode.manual:
+            if payload.manual_monthly_benefit is None:
+                raise ValueError("Manual monthly benefit is required in manual mode")
+            return calculate_manual_benefit(
+                date_of_birth=person.date_of_birth,
+                monthly_benefit=payload.manual_monthly_benefit,
+            )
+        if (
+            payload.current_covered_earnings is None
+            or payload.completed_work_years is None
+            or payload.earnings_pattern is None
+        ):
+            raise ValueError(
+                "Covered earnings, completed work years, and earnings pattern are required in ballpark mode"
+            )
+        return calculate_ballpark_benefit(
+            date_of_birth=person.date_of_birth,
+            claiming_date=payload.claiming_date,
+            current_covered_earnings=payload.current_covered_earnings,
+            completed_work_years=payload.completed_work_years,
+            expected_work_end_date=payload.expected_work_end_date,
+            earnings_pattern=payload.earnings_pattern,
+            cola_rate=payload.cola_rate,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post(
+    "/household-people",
+    response_model=HouseholdPersonRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_household_person(
+    payload: HouseholdPersonCreate,
+    db: Session = Depends(get_db),
+) -> HouseholdPerson:
+    if db.get(Household, payload.household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    person = HouseholdPerson(**payload.model_dump())
+    person.name = person.name.strip()
+    db.add(person)
+    db.commit()
+    db.refresh(person)
+    return person
+
+
+@router.get("/household-people", response_model=list[HouseholdPersonRead])
+def list_household_people(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[HouseholdPerson]:
+    return list(
+        db.scalars(
+            select(HouseholdPerson)
+            .where(HouseholdPerson.household_id == household_id)
+            .order_by(HouseholdPerson.name)
+        ).all()
+    )
+
+
+@router.post(
+    "/social-security-estimates",
+    response_model=SocialSecurityEstimateRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_social_security_estimate(
+    payload: SocialSecurityEstimateCreate,
+    db: Session = Depends(get_db),
+) -> SocialSecurityEstimate:
+    person = db.get(HouseholdPerson, payload.person_id)
+    if person is None or person.household_id != payload.household_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Person must belong to the household",
+        )
+    _validate_asset_account(db, payload.household_id, payload.deposit_account_id, "Deposit account")
+    existing_estimate = db.scalars(
+        select(SocialSecurityEstimate).where(SocialSecurityEstimate.person_id == payload.person_id)
+    ).first()
+    if existing_estimate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Delete the existing estimate for this person before creating another",
+        )
+    calculation = _calculate_social_security_estimate(person, payload)
+
+    income_source = IncomeSource(
+        household_id=payload.household_id,
+        name=f"{person.name} Social Security",
+        income_type="social_security",
+        amount=calculation.monthly_benefit,
+        currency="USD",
+        frequency=IncomeFrequency.monthly,
+        start_date=payload.claiming_date,
+        growth_rate=payload.cola_rate,
+        deposit_account_id=payload.deposit_account_id,
+    )
+    db.add(income_source)
+    db.flush()
+    estimate = SocialSecurityEstimate(
+        household_id=payload.household_id,
+        person_id=payload.person_id,
+        income_source_id=income_source.id,
+        calculation_mode=payload.calculation_mode,
+        claiming_date=payload.claiming_date,
+        current_covered_earnings=payload.current_covered_earnings,
+        completed_work_years=payload.completed_work_years,
+        expected_work_end_date=payload.expected_work_end_date,
+        earnings_pattern=payload.earnings_pattern,
+        manual_monthly_benefit=payload.manual_monthly_benefit,
+        cola_rate=payload.cola_rate,
+        estimated_monthly_benefit=calculation.monthly_benefit,
+        lower_monthly_benefit=calculation.lower_monthly_benefit,
+        upper_monthly_benefit=calculation.upper_monthly_benefit,
+        full_retirement_age_months=calculation.full_retirement_age_months,
+        benefit_at_full_retirement_age=calculation.benefit_at_full_retirement_age,
+        calculation_version=calculation.calculation_version,
+        law_assumption_year=calculation.law_assumption_year,
+    )
+    db.add(estimate)
+    db.commit()
+    db.refresh(estimate)
+    return estimate
+
+
+@router.get("/social-security-estimates", response_model=list[SocialSecurityEstimateRead])
+def list_social_security_estimates(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[SocialSecurityEstimate]:
+    return list(
+        db.scalars(
+            select(SocialSecurityEstimate)
+            .where(SocialSecurityEstimate.household_id == household_id)
+            .order_by(SocialSecurityEstimate.claiming_date)
+        ).all()
+    )
+
+
+@router.put(
+    "/social-security-estimates/{estimate_id}", response_model=SocialSecurityEstimateRead
+)
+def update_social_security_estimate(
+    estimate_id: UUID,
+    payload: SocialSecurityEstimateUpdate,
+    db: Session = Depends(get_db),
+) -> SocialSecurityEstimate:
+    estimate = db.get(SocialSecurityEstimate, estimate_id)
+    if estimate is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estimate not found")
+    if payload.household_id != estimate.household_id or payload.person_id != estimate.person_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estimate household and person cannot be changed",
+        )
+    person = db.get(HouseholdPerson, estimate.person_id)
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    _validate_asset_account(db, estimate.household_id, payload.deposit_account_id, "Deposit account")
+    calculation = _calculate_social_security_estimate(person, payload)
+
+    income_source = estimate.income_source
+    income_source.name = f"{person.name} Social Security"
+    income_source.amount = calculation.monthly_benefit
+    income_source.start_date = payload.claiming_date
+    income_source.growth_rate = payload.cola_rate
+    income_source.deposit_account_id = payload.deposit_account_id
+
+    estimate.calculation_mode = payload.calculation_mode
+    estimate.claiming_date = payload.claiming_date
+    estimate.current_covered_earnings = payload.current_covered_earnings
+    estimate.completed_work_years = payload.completed_work_years
+    estimate.expected_work_end_date = payload.expected_work_end_date
+    estimate.earnings_pattern = payload.earnings_pattern
+    estimate.manual_monthly_benefit = payload.manual_monthly_benefit
+    estimate.cola_rate = payload.cola_rate
+    estimate.estimated_monthly_benefit = calculation.monthly_benefit
+    estimate.lower_monthly_benefit = calculation.lower_monthly_benefit
+    estimate.upper_monthly_benefit = calculation.upper_monthly_benefit
+    estimate.full_retirement_age_months = calculation.full_retirement_age_months
+    estimate.benefit_at_full_retirement_age = calculation.benefit_at_full_retirement_age
+    estimate.calculation_version = calculation.calculation_version
+    estimate.law_assumption_year = calculation.law_assumption_year
+
+    db.commit()
+    db.refresh(estimate)
+    return estimate
+
+
+@router.delete("/social-security-estimates/{estimate_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_social_security_estimate(
+    estimate_id: UUID,
+    db: Session = Depends(get_db),
+) -> None:
+    estimate = db.get(SocialSecurityEstimate, estimate_id)
+    if estimate is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estimate not found")
+    income_source = estimate.income_source
+    db.delete(estimate)
+    db.flush()
+    db.delete(income_source)
+    db.commit()
 
 
 @router.post(

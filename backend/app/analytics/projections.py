@@ -1261,9 +1261,12 @@ def _projected_income_source_for_period(
     ):
         return Decimal("0.00")
     annual_amount = _projected_income_source_for_year(source, period_start.year)
-    if months_per_period == 12:
-        return annual_amount
-    return (annual_amount * Decimal(months_per_period) / Decimal("12")).quantize(Decimal("0.01"))
+    active_start = max(source.start_date, period_start)
+    active_end = min(source.end_date, period_end) if source.end_date is not None else period_end
+    active_months = (
+        (active_end.year - active_start.year) * 12 + active_end.month - active_start.month + 1
+    )
+    return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
 
 
 def _projected_income_source_for_year(source: IncomeSource, year: int) -> Decimal:

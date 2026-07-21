@@ -3,12 +3,14 @@ import type {
   Account,
   AccountEvent,
   AnnualTaxRecord,
+  HouseholdPerson,
   IncomeSource,
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
+  SocialSecurityEstimate,
   SpendingItem,
 } from '../api';
 import { formatMoney } from '../utils/format';
@@ -90,11 +92,17 @@ export function PlanningPage({
   onGetProjection,
   projectionRunning,
   incomeSources,
+  householdPeople,
+  socialSecurityEstimates,
   projectionTransfers,
   spendingItems,
   taxRecords,
   projection,
   onCreateIncomeSource,
+  onCreateHouseholdPerson,
+  onCreateSocialSecurityEstimate,
+  onUpdateSocialSecurityEstimate,
+  onDeleteSocialSecurityEstimate,
   onCreateProjectionTransfer,
   onDeleteProjectionTransfer,
   onCreateSpendingItem,
@@ -126,11 +134,20 @@ export function PlanningPage({
   onGetProjection: FormEventHandler<HTMLFormElement>;
   projectionRunning: boolean;
   incomeSources: IncomeSource[];
+  householdPeople: HouseholdPerson[];
+  socialSecurityEstimates: SocialSecurityEstimate[];
   projectionTransfers: ProjectionTransfer[];
   spendingItems: SpendingItem[];
   taxRecords: AnnualTaxRecord[];
   projection: NetWorthProjection | null;
   onCreateIncomeSource: FormEventHandler<HTMLFormElement>;
+  onCreateHouseholdPerson: FormEventHandler<HTMLFormElement>;
+  onCreateSocialSecurityEstimate: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onUpdateSocialSecurityEstimate: (
+    event: FormEvent<HTMLFormElement>,
+    estimate: SocialSecurityEstimate,
+  ) => void | Promise<void>;
+  onDeleteSocialSecurityEstimate: (estimate: SocialSecurityEstimate) => void | Promise<void>;
   onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
   onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
   onCreateSpendingItem: FormEventHandler<HTMLFormElement>;
@@ -149,6 +166,8 @@ export function PlanningPage({
   onDeleteAccountEvent: (event: AccountEvent) => void | Promise<void>;
 }) {
   const [spendingItemEditId, setSpendingItemEditId] = useState('');
+  const [socialSecurityMode, setSocialSecurityMode] = useState<'manual' | 'ballpark'>('ballpark');
+  const [socialSecurityEditId, setSocialSecurityEditId] = useState('');
   const workingSpendingTotal = spendingItems.reduce(
     (total, item) => total + Number(item.annual_amount),
     0,
@@ -163,6 +182,27 @@ export function PlanningPage({
   const manualRetirementSpending = Number(
     projectionSettings?.retirement_annual_spending ?? projectionSettings?.annual_spending ?? 0,
   );
+  const editingSocialSecurityEstimate = socialSecurityEstimates.find(
+    (estimate) => estimate.id === socialSecurityEditId,
+  );
+  const editingSocialSecurityIncome = incomeSources.find(
+    (source) => source.id === editingSocialSecurityEstimate?.income_source_id,
+  );
+  const availableSocialSecurityPeople = householdPeople.filter(
+    (person) => !socialSecurityEstimates.some((estimate) => estimate.person_id === person.id),
+  );
+  const estimateFormPeople = editingSocialSecurityEstimate
+    ? householdPeople.filter((person) => person.id === editingSocialSecurityEstimate.person_id)
+    : availableSocialSecurityPeople;
+
+  async function handleSocialSecurityEstimateSubmit(event: FormEvent<HTMLFormElement>) {
+    if (editingSocialSecurityEstimate) {
+      await onUpdateSocialSecurityEstimate(event, editingSocialSecurityEstimate);
+      setSocialSecurityEditId('');
+      return;
+    }
+    await onCreateSocialSecurityEstimate(event);
+  }
 
   return (
     <>
@@ -745,6 +785,137 @@ export function PlanningPage({
       <label>End date<input name="transfer_end_date" type="date" /></label>
       <label>Annual growth rate<input name="transfer_growth_rate" inputMode="decimal" placeholder="0.00" /></label>
       <button type="submit" disabled={assetAccounts.length < 2}>Add transfer</button>
+    </form>
+  </div>
+</section>
+
+<section className="grid two-column">
+  <div className="card">
+    <h2>Social Security estimates</h2>
+    <p className="muted">Planning estimates only. Ballpark calculations use a versioned 2025-law baseline and become projection income at the claiming date.</p>
+    {socialSecurityEstimates.length ? (
+      <table tabIndex={0}>
+        <thead>
+          <tr><th>Person</th><th>Claiming date</th><th>Monthly estimate</th><th>Planning range</th><th>COLA</th><th /></tr>
+        </thead>
+        <tbody>
+          {socialSecurityEstimates.map((estimate) => (
+            <tr key={estimate.id}>
+              <td>{householdPeople.find((person) => person.id === estimate.person_id)?.name ?? 'Unknown'}</td>
+              <td>{estimate.claiming_date}</td>
+              <td>{formatMoney(estimate.estimated_monthly_benefit)}</td>
+              <td>{estimate.calculation_mode === 'manual'
+                ? 'Manual entry'
+                : `${formatMoney(estimate.lower_monthly_benefit)}–${formatMoney(estimate.upper_monthly_benefit)}`}</td>
+              <td>{formatRate(estimate.cola_rate)}</td>
+              <td>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSocialSecurityEditId(estimate.id);
+                    setSocialSecurityMode(estimate.calculation_mode);
+                  }}
+                >
+                  Edit
+                </button>{' '}
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => {
+                    if (socialSecurityEditId === estimate.id) setSocialSecurityEditId('');
+                    onDeleteSocialSecurityEstimate(estimate);
+                  }}
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : <p className="muted">No Social Security estimates yet.</p>}
+  </div>
+
+  <div className="card">
+    <h2>{editingSocialSecurityEstimate ? 'Edit Social Security estimate' : 'Add Social Security estimate'}</h2>
+    {!estimateFormPeople.length && <p className="muted">Add a household person, or delete their existing estimate before creating another.</p>}
+    <form
+      key={editingSocialSecurityEstimate?.id ?? 'new'}
+      onSubmit={handleSocialSecurityEstimateSubmit}
+      className="stacked-form"
+    >
+      <label>
+        Person
+        <select
+          name="social_security_person_id"
+          defaultValue={editingSocialSecurityEstimate?.person_id ?? ''}
+          required
+          disabled={!estimateFormPeople.length}
+        >
+          <option value="" disabled>Select person</option>
+          {estimateFormPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+        </select>
+      </label>
+      <label>
+        Calculation mode
+        <select
+          name="social_security_mode"
+          value={socialSecurityMode}
+          onChange={(event) => setSocialSecurityMode(event.target.value as 'manual' | 'ballpark')}
+        >
+          <option value="ballpark">Ballpark from earnings</option>
+          <option value="manual">Manual SSA estimate</option>
+        </select>
+      </label>
+      <label>Claiming date<input name="claiming_date" type="date" defaultValue={editingSocialSecurityEstimate?.claiming_date ?? ''} required /></label>
+      {socialSecurityMode === 'manual' ? (
+        <label>Monthly benefit at claiming date<input name="manual_monthly_benefit" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.manual_monthly_benefit ?? ''} required /></label>
+      ) : (
+        <>
+          <label>Current covered annual earnings<input name="current_covered_earnings" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.current_covered_earnings ?? ''} required /></label>
+          <label>Completed work years through 2025<input name="completed_work_years" type="number" min="0" max="50" defaultValue={editingSocialSecurityEstimate?.completed_work_years ?? ''} required /></label>
+          <label>Expected work end date<input name="expected_work_end_date" type="date" defaultValue={editingSocialSecurityEstimate?.expected_work_end_date ?? ''} /></label>
+          <label>
+            Historical earnings
+            <select name="earnings_pattern" defaultValue={editingSocialSecurityEstimate?.earnings_pattern ?? 'steady'} required>
+              <option value="lower">Usually lower than current</option>
+              <option value="steady">Roughly current in real terms</option>
+              <option value="rising">Steadily increasing</option>
+            </select>
+          </label>
+        </>
+      )}
+      <label>Annual COLA assumption<input name="cola_rate" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.cola_rate ?? '0.025'} required /></label>
+      <label>
+        Deposit account
+        <select name="social_security_deposit_account_id" defaultValue={editingSocialSecurityIncome?.deposit_account_id ?? ''}>
+          <option value="">Default deposit account</option>
+          {assetAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+        </select>
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={!estimateFormPeople.length}>
+          {editingSocialSecurityEstimate ? 'Save estimate' : 'Create estimate'}
+        </button>
+        {editingSocialSecurityEstimate && (
+          <button
+            type="button"
+            onClick={() => {
+              setSocialSecurityEditId('');
+              setSocialSecurityMode('ballpark');
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
+    <hr />
+    <h3>Add household person</h3>
+    <form onSubmit={onCreateHouseholdPerson} className="stacked-form">
+      <input name="person_name" placeholder="Name" required />
+      <label>Date of birth<input name="person_date_of_birth" type="date" required /></label>
+      <button type="submit">Add person</button>
     </form>
   </div>
 </section>

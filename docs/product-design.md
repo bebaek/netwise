@@ -206,9 +206,22 @@ cash, and do not count as household income or spending.
 
 Projection results identify retirement-phase periods, the first retirement-account withdrawal, and
 the first unfunded period. Retirement accounts do not receive a default early-withdrawal penalty;
-users can model one with an account liquidation-expense rate. The initial model does not derive age
-eligibility, required minimum distributions, Social Security benefits, Medicare costs, or detailed
-tax rules.
+users can model one with an account liquidation-expense rate.
+
+### Social Security planning estimates
+
+Social Security can be entered manually from an SSA statement or estimated with a deliberately
+approximate, versioned calculator. Estimates belong to a household person rather than a login and
+become monthly projection income on the selected claiming date. Ballpark mode uses current covered
+earnings, completed and expected future work years, a broad historical earnings pattern, claiming-age
+adjustments, and a separate COLA assumption. It returns a low/base/high range and records the law year
+and calculator version used. It is not an SSA benefit determination and does not model detailed annual
+earnings histories, eligibility credits, spousal or survivor benefits, disability benefits, or
+Social Security-specific tax rules. The general projection tax approximation currently treats the
+resulting income like other household income.
+
+The initial retirement model does not derive age eligibility, required minimum distributions,
+Medicare costs, or detailed tax rules.
 
 ## Annual tax summaries
 
