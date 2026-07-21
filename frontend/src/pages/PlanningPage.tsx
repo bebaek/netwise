@@ -194,6 +194,9 @@ export function PlanningPage({
   const estimateFormPeople = editingSocialSecurityEstimate
     ? householdPeople.filter((person) => person.id === editingSocialSecurityEstimate.person_id)
     : availableSocialSecurityPeople;
+  const defaultProjectionEndYear = householdPeople.length
+    ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
+    : new Date().getFullYear() + 20;
 
   async function handleSocialSecurityEstimateSubmit(event: FormEvent<HTMLFormElement>) {
     if (editingSocialSecurityEstimate) {
@@ -487,10 +490,11 @@ export function PlanningPage({
       <label>
         End year
         <input
+          key={defaultProjectionEndYear}
           name="projection_end_year"
           inputMode="numeric"
-          placeholder="2036"
-          defaultValue={new Date().getFullYear() + 10}
+          placeholder={String(defaultProjectionEndYear)}
+          defaultValue={defaultProjectionEndYear}
           required
         />
       </label>
