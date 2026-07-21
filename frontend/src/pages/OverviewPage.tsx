@@ -15,6 +15,25 @@ function dateMs(value: string): number {
   return new Date(`${value}T00:00:00`).getTime();
 }
 
+function compactMoney(value: number): string {
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (absolute >= 1_000_000) {
+    return `${sign}$${(absolute / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
+  }
+  if (absolute >= 1_000) {
+    return `${sign}$${(absolute / 1_000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`;
+  }
+  return `${sign}$${absolute.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function niceStep(value: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(value || 1));
+  const normalized = value / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
 function HistoryChart({
   points,
   projectionPoints = [],
@@ -32,71 +51,142 @@ function HistoryChart({
 
   const values = chartPoints.map((point) => Number(point.net_worth));
   const dates = chartPoints.map((point) => dateMs(point.as_of_date));
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
+  const rawMinValue = Math.min(0, ...values);
+  const rawMaxValue = Math.max(0, ...values);
+  const valueStep = niceStep((rawMaxValue - rawMinValue || 1) / 5);
+  const minValue = Math.floor(rawMinValue / valueStep) * valueStep;
+  const maxValue = Math.ceil(rawMaxValue / valueStep) * valueStep || valueStep;
   const minDate = Math.min(...dates);
   const maxDate = Math.max(...dates);
   const valueRange = maxValue - minValue || 1;
   const dateRange = maxDate - minDate || 1;
-  const width = 720;
-  const height = 240;
-  const padding = 28;
-  const leftPadding = 96;
-  const plotWidth = width - leftPadding - padding;
-  const plotHeight = height - padding * 2;
-  const xForDate = (value: string) => leftPadding + ((dateMs(value) - minDate) / dateRange) * plotWidth;
-  const yForValue = (value: number) => padding + plotHeight - ((value - minValue) / valueRange) * plotHeight;
+  const width = 900;
+  const height = 320;
+  const topPadding = 28;
+  const rightPadding = 24;
+  const bottomPadding = 48;
+  const leftPadding = 82;
+  const plotWidth = width - leftPadding - rightPadding;
+  const plotHeight = height - topPadding - bottomPadding;
+  const plotBottom = height - bottomPadding;
+  const xForMs = (value: number) => leftPadding + ((value - minDate) / dateRange) * plotWidth;
+  const xForDate = (value: string) => xForMs(dateMs(value));
+  const yForValue = (value: number) => topPadding + plotHeight - ((value - minValue) / valueRange) * plotHeight;
   const polylineFor = (items: Array<{ as_of_date: string; net_worth: string }>) =>
     items.map((point) => `${xForDate(point.as_of_date)},${yForValue(Number(point.net_worth))}`).join(' ');
-  const historyPolyline = polylineFor(sortedHistory);
   const projectionPolyline = lastHistoryPoint
     ? polylineFor([lastHistoryPoint, ...visibleProjectionPoints])
     : polylineFor(visibleProjectionPoints);
+  const yTicks = Array.from(
+    { length: Math.round((maxValue - minValue) / valueStep) + 1 },
+    (_, index) => minValue + index * valueStep,
+  );
+  const minYear = new Date(minDate).getFullYear();
+  const maxYear = new Date(maxDate).getFullYear();
+  const yearSpan = Math.max(maxYear - minYear, 1);
+  const yearStep = yearSpan > 40 ? 10 : yearSpan > 20 ? 5 : yearSpan > 8 ? 2 : 1;
+  const xTickYears = [
+    minYear,
+    ...Array.from(
+      { length: Math.max(Math.floor((maxYear - Math.ceil(minYear / yearStep) * yearStep) / yearStep) + 1, 0) },
+      (_, index) => Math.ceil(minYear / yearStep) * yearStep + index * yearStep,
+    ),
+    maxYear,
+  ].filter((year, index, years) => year >= minYear && year <= maxYear && years.indexOf(year) === index);
+  const todayMs = Date.now();
+  const showToday = todayMs > minDate && todayMs < maxDate;
+  const finalProjectionPoint = visibleProjectionPoints[visibleProjectionPoints.length - 1];
 
   return (
     <div className="trend-chart" aria-label="Financial trajectory chart">
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         <title>Financial trajectory</title>
-        <line x1={leftPadding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis" />
-        <line x1={leftPadding} y1={padding} x2={leftPadding} y2={height - padding} className="axis" />
-        <text x={leftPadding - 10} y={padding + 4} textAnchor="end" className="axis-label">
-          {formatMoney(String(maxValue))}
-        </text>
-        <text x={leftPadding - 10} y={height - padding + 4} textAnchor="end" className="axis-label">
-          {formatMoney(String(minValue))}
-        </text>
-        <text transform={`translate(18 ${height / 2}) rotate(-90)`} textAnchor="middle" className="axis-title">
+        <desc>Historical net-worth snapshots and future projection over time.</desc>
+        {yTicks.map((tick) => (
+          <g key={`y-${tick}`}>
+            <line
+              x1={leftPadding}
+              y1={yForValue(tick)}
+              x2={width - rightPadding}
+              y2={yForValue(tick)}
+              className="chart-grid-line"
+            />
+            <text x={leftPadding - 12} y={yForValue(tick) + 4} textAnchor="end" className="axis-label">
+              {compactMoney(tick)}
+            </text>
+          </g>
+        ))}
+        {xTickYears.map((year) => {
+          const tickMs = new Date(`${year}-01-01T00:00:00`).getTime();
+          const x = xForMs(Math.min(Math.max(tickMs, minDate), maxDate));
+          return (
+            <g key={`x-${year}`}>
+              <line x1={x} y1={topPadding} x2={x} y2={plotBottom} className="chart-grid-line vertical" />
+              <text x={x} y={height - 19} textAnchor="middle" className="axis-label">{year}</text>
+            </g>
+          );
+        })}
+        <line x1={leftPadding} y1={plotBottom} x2={width - rightPadding} y2={plotBottom} className="axis" />
+        <line x1={leftPadding} y1={topPadding} x2={leftPadding} y2={plotBottom} className="axis" />
+        <text transform={`translate(20 ${height / 2}) rotate(-90)`} textAnchor="middle" className="axis-title">
           Net worth
         </text>
-        <polyline points={historyPolyline} className="trend-line history" />
+        {sortedHistory.slice(1).map((point, index) => {
+          const previous = sortedHistory[index];
+          const estimated = previous.estimated || point.estimated;
+          return (
+            <line
+              key={`history-segment-${previous.as_of_date}-${point.as_of_date}`}
+              x1={xForDate(previous.as_of_date)}
+              y1={yForValue(Number(previous.net_worth))}
+              x2={xForDate(point.as_of_date)}
+              y2={yForValue(Number(point.net_worth))}
+              className={estimated ? 'trend-line estimate' : 'trend-line history'}
+            />
+          );
+        })}
         {visibleProjectionPoints.length > 0 && <polyline points={projectionPolyline} className="trend-line projection" />}
+        {showToday && (
+          <g className="today-marker">
+            <line x1={xForMs(todayMs)} y1={topPadding} x2={xForMs(todayMs)} y2={plotBottom} />
+            <text x={xForMs(todayMs) + 6} y={topPadding + 14}>Today</text>
+          </g>
+        )}
         {sortedHistory.map((point) => (
           <circle
             key={`${point.as_of_date}-${point.estimated ? 'estimate' : 'snapshot'}`}
             cx={xForDate(point.as_of_date)}
             cy={yForValue(Number(point.net_worth))}
-            r={point.estimated ? 3 : 5}
+            r={point.estimated ? 2 : 3.5}
             className={point.estimated ? 'trend-dot estimate' : 'trend-dot snapshot'}
-          />
+          >
+            <title>{`${point.as_of_date}: ${formatMoney(point.net_worth)}${point.estimated ? ' (estimate)' : ''}`}</title>
+          </circle>
         ))}
         {visibleProjectionPoints.map((point) => (
           <circle
-            key={`${point.as_of_date}-projection`}
+            key={`${point.as_of_date}-projection-hit`}
             cx={xForDate(point.as_of_date)}
             cy={yForValue(Number(point.net_worth))}
-            r={4}
-            className="trend-dot projection"
-          />
+            r={7}
+            className="trend-hit-target"
+          >
+            <title>{`${point.as_of_date}: ${formatMoney(point.net_worth)} (projection)`}</title>
+          </circle>
         ))}
+        {finalProjectionPoint && (
+          <circle
+            cx={xForDate(finalProjectionPoint.as_of_date)}
+            cy={yForValue(Number(finalProjectionPoint.net_worth))}
+            r={4}
+            className="trend-dot projection endpoint"
+          />
+        )}
       </svg>
-      <div className="chart-labels">
-        <span>{chartPoints[0]?.as_of_date}</span>
-        <span>{chartPoints[chartPoints.length - 1]?.as_of_date}</span>
-      </div>
       <div className="chart-legend">
-        <span><i className="legend-dot snapshot" />Snapshot</span>
-        <span><i className="legend-dot estimate" />Estimate</span>
-        {visibleProjectionPoints.length > 0 && <span><i className="legend-dot projection" />Projection</span>}
+        <span><i className="legend-line history" />Historical snapshots</span>
+        <span><i className="legend-line estimate" />Interpolated estimate</span>
+        {visibleProjectionPoints.length > 0 && <span><i className="legend-line projection" />Projection</span>}
       </div>
     </div>
   );
@@ -152,7 +242,7 @@ export function OverviewPage({
       </section>
 
       <section className="card">
-        <div className="section-header">
+        <div className="section-header trajectory-header">
           <div>
             <h2>Financial trajectory</h2>
             <p className="muted">Known historical snapshots, optional interpolated estimates, and projected future net worth in one view.</p>

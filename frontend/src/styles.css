@@ -528,8 +528,28 @@ code {
   white-space: nowrap;
 }
 
+.trajectory-header {
+  align-items: center;
+}
+
+.trajectory-header .toggle-group {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-items: initial;
+  padding: 0.55rem 0.75rem;
+}
+
+.trajectory-header .inline-toggle {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .trend-chart {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
 }
 
 .trend-chart svg {
@@ -543,7 +563,17 @@ code {
 
 .axis {
   stroke: var(--color-input-border);
-  stroke-width: 1.5;
+  stroke-width: 1;
+}
+
+.chart-grid-line {
+  stroke: var(--color-border);
+  stroke-opacity: 0.65;
+  stroke-width: 0.8;
+}
+
+.chart-grid-line.vertical {
+  stroke-opacity: 0.35;
 }
 
 .axis-label,
@@ -558,25 +588,30 @@ code {
 
 .trend-line {
   fill: none;
-  stroke: var(--color-primary);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 3;
+  stroke-width: 2.5;
 }
 
 .trend-line.history {
   stroke: var(--color-primary);
 }
 
+.trend-line.estimate {
+  stroke: var(--color-chart-secondary);
+  stroke-dasharray: 3 4;
+  stroke-width: 1.5;
+}
+
 .trend-line.projection,
 .trend-line.expected {
   stroke: var(--color-success);
-  stroke-dasharray: 8 6;
+  stroke-width: 2.5;
 }
 
 .trend-dot {
-  stroke: white;
-  stroke-width: 2;
+  stroke: var(--color-surface-subtle);
+  stroke-width: 1;
 }
 
 .trend-dot.snapshot {
@@ -593,6 +628,28 @@ code {
 
 .trend-dot.projection {
   fill: var(--color-success);
+}
+
+.trend-dot.endpoint {
+  stroke-width: 2;
+}
+
+.trend-hit-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.today-marker line {
+  stroke: var(--color-text-subtle);
+  stroke-dasharray: 4 4;
+  stroke-opacity: 0.8;
+  stroke-width: 1;
+}
+
+.today-marker text {
+  fill: var(--color-text-subtle);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .chart-labels {
@@ -616,6 +673,29 @@ code {
   align-items: center;
   display: inline-flex;
   gap: 0.4rem;
+}
+
+.legend-line {
+  border-radius: 999px;
+  display: inline-block;
+  height: 3px;
+  width: 1.5rem;
+}
+
+.legend-line.history {
+  background: var(--color-primary);
+}
+
+.legend-line.estimate {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-chart-secondary) 0 5px,
+    transparent 5px 8px
+  );
+}
+
+.legend-line.projection {
+  background: var(--color-success);
 }
 
 .legend-dot {
