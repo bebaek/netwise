@@ -135,6 +135,7 @@ The seed command creates a `Demo Household` with accounts, snapshots, real estat
 
 ## Documentation
 
+- [Code Audit Improvement Roadmap](docs/code-audit-roadmap.md)
 - [Product Design](docs/product-design.md)
 - [Technical Design](docs/technical-design.md)
 - [Projection Strategy Architecture](docs/projection-strategy-architecture.md)
