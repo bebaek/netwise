@@ -113,14 +113,15 @@ npm run lint
 npm run build
 ```
 
-Run Chromium end-to-end checks against the Docker Compose application:
+Run Chromium end-to-end checks in an isolated Docker Compose stack:
 
 ```bash
-cd /Users/burm/code/netwise
-npm --prefix frontend run test:e2e:demo
+npm --prefix frontend run test:e2e
 ```
 
-The demo command resets and seeds the local Netwise database before running the desktop and mobile Playwright projects. Use `npm --prefix frontend run test:e2e` to preserve existing local data. Install the browser once with `cd frontend && npx playwright install chromium`; generated screenshots, traces, and HTML reports are written to ignored test output directories.
+This command builds a separate `netwise-e2e` Compose project, creates a disposable PostgreSQL volume, seeds only that database, runs the desktop and mobile Playwright projects against `http://127.0.0.1:55173`, and removes the stack and volume afterward. On failure it prints recent container logs before cleanup. Set `NETWISE_E2E_KEEP=1` to retain the failed stack for inspection, or `NETWISE_E2E_PORT` to use another host port. The older `test:e2e:demo` name is retained as an alias for the same isolated workflow.
+
+Use `npm --prefix frontend run test:e2e:local` only when intentionally testing an already-running application; it does not seed or isolate that application's data. Install the browser once with `cd frontend && npx playwright install chromium`. Generated screenshots, traces, and HTML reports are written to ignored test output directories.
 
 Seed realistic demo data for manual testing:
 

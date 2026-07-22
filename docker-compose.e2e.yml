@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: netwise
+      POSTGRES_PASSWORD: netwise-e2e
+      POSTGRES_DB: netwise
+    volumes:
+      - postgres-e2e-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netwise -d netwise"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise-e2e@postgres:5432/netwise
+      NETWISE_PUBLIC_SIGNUP: "false"
+      NETWISE_SINGLE_HOUSEHOLD_MODE: "true"
+      NETWISE_ENABLE_ADMIN_TOOLS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: /api
+    ports:
+      - "${NETWISE_E2E_PORT:-55173}:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5173/"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-e2e-data:
