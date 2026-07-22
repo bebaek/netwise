@@ -33,7 +33,7 @@ Playwright was not run because its configured workflow requires the live Docker 
 
 | Priority | Improvement | Status |
 | --- | --- | --- |
-| P0 | Add authentication and household-level authorization | not started |
+| P0 | Add authentication and household-level authorization | in progress |
 | P1 | Decompose frontend server state and remove full-dashboard reloads | not started |
 | P1 | Refactor projections around pure, typed inputs and policies | not started |
 | P1 | Separate development deployment from supported production deployment | not started |
@@ -41,17 +41,19 @@ Playwright was not run because its configured workflow requires the live Docker 
 
 ## P0: Authentication and household authorization
 
-**Status:** `not started`
+**Status:** `in progress`
 
-### Directly verified findings
+Authentication foundation implemented in the current working milestone: Argon2 password hashing, revocable database-backed cookie sessions, initial-owner setup, login/logout/status endpoints, authentication gates on application APIs, and frontend setup/sign-in/sign-out flows. Household membership and role authorization remain outstanding.
 
-- API routes do not have an authenticated-user dependency. User records can be listed and created through `backend/app/api/routes/users.py`.
-- Household access is based on caller-supplied identifiers. `list_households` returns every household when `user_id` is omitted.
-- Membership roles are validated, but route authorization does not enforce owner/editor/viewer permissions.
-- `public_signup` and `single_household_mode` are defined in `backend/app/core/config.py` but are not used by application behavior.
-- The default Compose development configuration publishes the backend and enables admin tools.
-- The FinTrack import API accepts a caller-provided directory, resolves it on the backend host/container, and is protected only by the global admin-tools feature flag.
-- `docs/technical-design.md` already identifies household authorization, password hashing, and session revocation as security requirements.
+### Original audit findings
+
+- **Addressed in authentication foundation:** application API routers now require an authenticated user.
+- **Outstanding:** household access is still based on caller-supplied identifiers; membership and role authorization must be enforced.
+- **Outstanding:** membership roles are validated, but route authorization does not yet enforce owner/editor/viewer permissions.
+- **Partially addressed:** initial setup now honors `single_household_mode`; broader setting behavior and invitation/public-signup policy still need authorization work.
+- **Outstanding:** the default Compose development configuration publishes the backend and enables admin tools.
+- **Outstanding:** the FinTrack import API accepts a caller-provided directory. It is now authentication-gated, but still needs owner/admin authorization and an import-root restriction.
+- `docs/technical-design.md` identifies household authorization, password hashing, and session revocation as security requirements. Password hashing and revocable sessions are now implemented.
 
 ### Intended work
 
@@ -254,4 +256,5 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Authentication | Started local password authentication and revocable cookie-session implementation; household authorization remains pending. |
 | 2026-07-22 | Audit roadmap | Initial audit findings accepted and documented. |

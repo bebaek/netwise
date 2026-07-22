@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings, get_settings
+from app.core.security import require_authenticated_user
+from app.db.models import User
 from app.db.session import Base, get_db
 from app.main import create_app
 
@@ -37,6 +40,9 @@ def test_admin_tools_are_disabled_without_explicit_setting():
 
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_settings] = override_get_settings
+        app.dependency_overrides[require_authenticated_user] = lambda: User(
+            id=uuid4(), display_name="Test User", email="test@example.com"
+        )
         with TestClient(app) as test_client:
             household = test_client.post("/households", json={"name": "Home"}).json()
 

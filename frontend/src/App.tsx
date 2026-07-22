@@ -107,7 +107,6 @@ const UpdateBalancesPage = lazy(() =>
   import('./pages/UpdateBalancesPage').then((module) => ({ default: module.UpdateBalancesPage })),
 );
 
-const SELECTED_USER_STORAGE_KEY = 'netwise.selectedUserId';
 const SELECTED_HOUSEHOLD_STORAGE_KEY = 'netwise.selectedHouseholdId';
 const THEME_STORAGE_KEY = 'netwise.theme';
 
@@ -217,13 +216,19 @@ function WorkspaceView({
   );
 }
 
-function App() {
+function App({
+  authenticatedUser,
+  onLogout,
+}: {
+  authenticatedUser: User;
+  onLogout: () => Promise<void>;
+}) {
   const householdRequestId = useRef(0);
   const dashboardRequestId = useRef(0);
   const [themePreference, setThemePreference] = useState<ThemePreference>(storedThemePreference);
   const [systemDarkTheme, setSystemDarkTheme] = useState<boolean>(systemPrefersDarkTheme);
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>(() => storedSelection(SELECTED_USER_STORAGE_KEY));
+  const [users, setUsers] = useState<User[]>([authenticatedUser]);
+  const [selectedUserId] = useState<string>(authenticatedUser.id);
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
@@ -267,8 +272,8 @@ function App() {
   const [householdsLoading, setHouseholdsLoading] = useState<boolean>(false);
 
   const selectedUser = useMemo(
-    () => users.find((user) => user.id === selectedUserId),
-    [users, selectedUserId],
+    () => users.find((user) => user.id === selectedUserId) ?? authenticatedUser,
+    [authenticatedUser, users, selectedUserId],
   );
 
   const selectedHousehold = useMemo(
@@ -299,10 +304,6 @@ function App() {
   async function refreshUsers() {
     const userList = await listUsers();
     setUsers(userList);
-    setSelectedUserId((currentUserId) => {
-      if (userList.length === 0) return '';
-      return userList.some((user) => user.id === currentUserId) ? currentUserId : userList[0].id;
-    });
   }
 
   async function refreshHouseholds(userId: string) {
@@ -399,10 +400,6 @@ function App() {
   }
 
   useEffect(() => {
-    persistSelection(SELECTED_USER_STORAGE_KEY, selectedUserId);
-  }, [selectedUserId]);
-
-  useEffect(() => {
     const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
     const handleColorSchemeChange = (event: MediaQueryListEvent) => setSystemDarkTheme(event.matches);
     colorScheme.addEventListener('change', handleColorSchemeChange);
@@ -470,10 +467,9 @@ function App() {
     const email = String(form.get('email') ?? '').trim();
     if (!displayName) return;
     try {
-      const user = await createUser({ display_name: displayName, email: email || undefined });
+      await createUser({ display_name: displayName, email: email || undefined });
       target.reset();
       await refreshUsers();
-      setSelectedUserId(user.id);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1290,10 +1286,8 @@ function App() {
   return (
     <main className="app-shell">
       <AppHeader
-        users={users}
-        selectedUser={selectedUser}
-        selectedUserId={selectedUserId}
-        onSelectUser={setSelectedUserId}
+        currentUser={authenticatedUser}
+        onLogout={onLogout}
         households={households}
         selectedHousehold={selectedHousehold}
         selectedHouseholdId={selectedHouseholdId}

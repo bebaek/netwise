@@ -266,7 +266,11 @@ Application-level financial values should use Python `Decimal` for persistence-f
 
 ## Authentication
 
-Initial implementation can support local account authentication.
+The current implementation supports local email/password authentication. Passwords are hashed with Argon2 through `pwdlib`; plaintext passwords are never persisted. Login creates a random opaque session token, stores only its SHA-256 digest in `user_sessions`, and sends the token in an HttpOnly, SameSite=Lax cookie. Sessions expire after a configurable number of days and logout deletes the active session. Production HTTPS deployments must set `NETWISE_AUTH_COOKIE_SECURE=true`.
+
+The first registration is treated as installation setup even when public signup is disabled. It becomes owner of existing households so pre-authentication installations can be upgraded, or receives a default `Home` household in a new single-household installation. Subsequent registration is controlled by `NETWISE_PUBLIC_SIGNUP`.
+
+Authentication is required for application API routers. Household membership and role authorization are the next security milestone; authentication alone must not be interpreted as complete tenant isolation.
 
 Design should allow additional identity providers later through a separate identity table:
 

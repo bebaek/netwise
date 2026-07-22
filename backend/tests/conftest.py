@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,6 +8,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings, get_settings
+from app.core.security import require_authenticated_user
+from app.db.models import User
 from app.db.session import Base, get_db
 from app.main import create_app
 
@@ -30,6 +33,25 @@ def db_session() -> Generator[Session, None, None]:
 
 @pytest.fixture
 def client(db_session: Session) -> Generator[TestClient, None, None]:
+    app = create_app()
+
+    def override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    def override_get_settings() -> Settings:
+        return Settings(enable_admin_tools=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_settings] = override_get_settings
+    app.dependency_overrides[require_authenticated_user] = lambda: User(
+        id=uuid4(), display_name="Test User", email="test@example.com"
+    )
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def unauthenticated_client(db_session: Session) -> Generator[TestClient, None, None]:
     app = create_app()
 
     def override_get_db() -> Generator[Session, None, None]:

@@ -157,17 +157,16 @@ test('hides stale household data while a household loads', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Financial trajectory', exact: true })).toBeVisible();
 });
 
-test('preserves the selected user and household across reloads', async ({ page }) => {
-  const selectedUser = page.getByLabel('Selected user');
+test('preserves the authenticated session and selected household across reloads', async ({ page }) => {
   const selectedHousehold = page.getByLabel('Selected household');
-  const userId = await selectedUser.inputValue();
   const householdId = await selectedHousehold.inputValue();
+  const sessionCookie = (await page.context().cookies()).find((cookie) => cookie.name === 'netwise_session');
 
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('netwise.selectedUserId'))).toBe(userId);
+  expect(sessionCookie?.httpOnly).toBe(true);
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('netwise.selectedHouseholdId'))).toBe(householdId);
 
   await page.reload();
-  await expect(selectedUser).toHaveValue(userId);
+  await expect(page.getByText('Signed in as Demo User')).toBeVisible();
   await expect(selectedHousehold).toHaveValue(householdId);
 });
 

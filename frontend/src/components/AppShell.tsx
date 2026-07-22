@@ -24,10 +24,8 @@ export function appViewPath(view: AppView): string {
 }
 
 export function AppHeader({
-  users,
-  selectedUser,
-  selectedUserId,
-  onSelectUser,
+  currentUser,
+  onLogout,
   households,
   selectedHousehold,
   selectedHouseholdId,
@@ -35,10 +33,8 @@ export function AppHeader({
   themePreference,
   onThemePreferenceChange,
 }: {
-  users: User[];
-  selectedUser?: User;
-  selectedUserId: string;
-  onSelectUser: (userId: string) => void;
+  currentUser: User;
+  onLogout: () => Promise<void>;
   households: Household[];
   selectedHousehold?: Household;
   selectedHouseholdId: string;
@@ -54,19 +50,7 @@ export function AppHeader({
         <p className="muted">Balance-snapshot planning without transaction tracking.</p>
       </div>
       <div className="selector-stack">
-        {selectedUser && (
-          <select
-            value={selectedUserId}
-            onChange={(event) => onSelectUser(event.target.value)}
-            aria-label="Selected user"
-          >
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.display_name}
-              </option>
-            ))}
-          </select>
-        )}
+        <span className="muted">Signed in as {currentUser.display_name}</span>
         {selectedHousehold && (
           <select
             value={selectedHouseholdId}
@@ -89,6 +73,7 @@ export function AppHeader({
           <option value="light">Light theme</option>
           <option value="dark">Dark theme</option>
         </select>
+        <button type="button" onClick={() => void onLogout()}>Sign out</button>
       </div>
     </header>
   );

@@ -58,6 +58,8 @@ Open the frontend at:
 http://localhost:5173
 ```
 
+On first launch, create the initial owner account with an email address and a password of at least 12 characters. The initial owner is attached to existing households during upgrades; a new single-household installation receives a default `Home` household. Later visits require sign-in, and application API routes reject unauthenticated requests.
+
 The backend is available directly at:
 
 ```text
@@ -126,7 +128,7 @@ Seed realistic demo data for manual testing:
 docker compose exec backend python -m app.seed_demo --reset
 ```
 
-The seed command creates a `Demo Household` with accounts, snapshots, real estate, mortgage, income, tax records, and future projection events. Omit `--reset` to reuse existing demo data without duplicating records.
+The seed command creates a `Demo Household` with accounts, snapshots, real estate, mortgage, income, tax records, and future projection events. Sign in with `demo@netwise.local` and password `netwise-demo-password`. Omit `--reset` to reuse existing demo data without duplicating records; running the seed command resets the demo account password to this documented local-development value.
 
 ## Planned frontend stack
 

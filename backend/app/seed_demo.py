@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.db.models import (
     Account,
     AccountEvent,
@@ -30,6 +31,7 @@ from app.db.session import SessionLocal
 DEMO_HOUSEHOLD_NAME = "Demo Household"
 DEMO_USER_NAME = "Demo User"
 DEMO_USER_EMAIL = "demo@netwise.local"
+DEMO_USER_PASSWORD = "netwise-demo-password"
 
 
 @dataclass
@@ -166,9 +168,15 @@ def _get_or_create_household(db: Session, name: str) -> Household:
 def _ensure_demo_user_membership(db: Session, household: Household) -> None:
     user = db.scalars(select(User).where(User.email == DEMO_USER_EMAIL)).first()
     if user is None:
-        user = User(display_name=DEMO_USER_NAME, email=DEMO_USER_EMAIL)
+        user = User(
+            display_name=DEMO_USER_NAME,
+            email=DEMO_USER_EMAIL,
+            password_hash=hash_password(DEMO_USER_PASSWORD),
+        )
         db.add(user)
         db.flush()
+    else:
+        user.password_hash = hash_password(DEMO_USER_PASSWORD)
 
     membership = db.scalars(
         select(HouseholdMembership).where(
@@ -494,6 +502,7 @@ def main() -> None:
         summary = seed_demo_data(db, reset=args.reset)
 
     print("Seeded Netwise demo data:")
+    print(f"  login: {DEMO_USER_EMAIL} / {DEMO_USER_PASSWORD}")
     for key, value in asdict(summary).items():
         print(f"  {key}: {value}")
 

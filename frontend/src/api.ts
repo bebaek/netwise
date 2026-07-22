@@ -11,6 +11,12 @@ export type User = {
   updated_at: string;
 };
 
+export type AuthStatus = {
+  setup_required: boolean;
+  public_signup_enabled: boolean;
+  user: User | null;
+};
+
 export type HouseholdMembership = {
   id: string;
   household_id: string;
@@ -449,6 +455,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -461,6 +468,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return request<AuthStatus>('/auth/status');
+}
+
+export function register(payload: {
+  display_name: string;
+  email: string;
+  password: string;
+}): Promise<User> {
+  return request<User>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function login(payload: { email: string; password: string }): Promise<User> {
+  return request<User>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request<void>('/auth/logout', { method: 'POST' });
 }
 
 export function listUsers(): Promise<User[]> {
