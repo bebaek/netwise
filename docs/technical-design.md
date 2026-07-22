@@ -270,7 +270,14 @@ The current implementation supports local email/password authentication. Passwor
 
 The first registration is treated as installation setup even when public signup is disabled. It becomes owner of existing households so pre-authentication installations can be upgraded, or receives a default `Home` household in a new single-household installation. Subsequent registration is controlled by `NETWISE_PUBLIC_SIGNUP`.
 
-Authentication is required for application API routers. Household membership and role authorization are the next security milestone; authentication alone must not be interpreted as complete tenant isolation.
+Authentication is required for application API routers. Household-scoped routes resolve the household from path parameters, request bodies, query parameters, or nested resources and verify the current membership before the handler runs. Non-members receive a non-disclosing 404. Role permissions are:
+
+- `owner`: full financial access, membership administration, exports, and imports;
+- `admin`: financial access, membership administration except granting/removing owners, exports, and imports;
+- `member`: financial read/write access without membership or administrative operations;
+- `viewer`: read-only household access.
+
+New households are always owned by the authenticated creator; caller-supplied owner IDs cannot assign ownership to another user. A household cannot lose its last owner. User listings are limited to the current user and users who share a household.
 
 Design should allow additional identity providers later through a separate identity table:
 

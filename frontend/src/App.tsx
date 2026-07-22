@@ -281,6 +281,11 @@ function App({
     [households, selectedHouseholdId],
   );
 
+  const currentHouseholdRole = useMemo(
+    () => householdMembers.find((membership) => membership.user_id === authenticatedUser.id)?.role ?? 'viewer',
+    [authenticatedUser.id, householdMembers],
+  );
+
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
     [accounts],
@@ -467,9 +472,9 @@ function App({
     const email = String(form.get('email') ?? '').trim();
     if (!displayName) return;
     try {
-      await createUser({ display_name: displayName, email: email || undefined });
+      const user = await createUser({ display_name: displayName, email: email || undefined });
       target.reset();
-      await refreshUsers();
+      setUsers((current) => [...current.filter((item) => item.id !== user.id), user]);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1299,6 +1304,9 @@ function App({
       {selectedHousehold && <AppNavigation />}
 
       {error && <div className="error" role="alert">{error}</div>}
+      {selectedHousehold && currentHouseholdRole === 'viewer' && loadedHouseholdId === selectedHousehold.id && (
+        <div className="card" role="status">You have read-only access to this household.</div>
+      )}
       {loading && <div className="card">Loading…</div>}
 
       {!loading && users.length === 0 && (
@@ -1457,6 +1465,7 @@ function App({
                   members={householdMembers}
                   availableUsers={availableUsersForMembership}
                   adminToolsEnabled={adminToolsEnabled}
+                  currentRole={currentHouseholdRole}
                   onDownloadExport={handleDownloadHouseholdExport}
                   onCreateHousehold={handleCreateHousehold}
                   onCreateUser={handleCreateUser}

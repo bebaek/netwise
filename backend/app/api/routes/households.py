@@ -4,10 +4,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.authorization import get_household_membership
 from app.core.config import Settings, get_settings
+from app.core.security import require_authenticated_user
 from app.db.models import (
     Account,
     AccountEvent,
@@ -197,44 +199,54 @@ _ANNUAL_TAX_RECORD_FIELDS = (
 
 
 @router.post("", response_model=HouseholdRead, status_code=status.HTTP_201_CREATED)
-def create_household(payload: HouseholdCreate, db: Session = Depends(get_db)) -> Household:
+def create_household(
+    payload: HouseholdCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
+) -> Household:
     name = payload.name.strip()
     if not name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Household name is required"
         )
 
-    if payload.owner_user_id is not None and db.get(User, payload.owner_user_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Owner user not found")
+    if payload.owner_user_id is not None and payload.owner_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A household can only be created for the authenticated user",
+        )
 
     household = Household(name=name)
     db.add(household)
     db.flush()
-    if payload.owner_user_id is not None:
-        db.add(
-            HouseholdMembership(
-                household_id=household.id,
-                user_id=payload.owner_user_id,
-                role="owner",
-            )
+    db.add(
+        HouseholdMembership(
+            household_id=household.id,
+            user_id=current_user.id,
+            role="owner",
         )
+    )
     db.commit()
     db.refresh(household)
     return household
 
 
 @router.get("", response_model=list[HouseholdRead])
-def list_households(user_id: UUID | None = None, db: Session = Depends(get_db)) -> list[Household]:
-    if user_id is None:
-        return list(db.scalars(select(Household).order_by(Household.created_at)).all())
-
-    if db.get(User, user_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+def list_households(
+    user_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
+) -> list[Household]:
+    if user_id is not None and user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot list another user's households",
+        )
 
     statement = (
         select(Household)
         .join(HouseholdMembership, HouseholdMembership.household_id == Household.id)
-        .where(HouseholdMembership.user_id == user_id)
+        .where(HouseholdMembership.user_id == current_user.id)
         .order_by(Household.created_at)
     )
     return list(db.scalars(statement).all())
@@ -309,6 +321,7 @@ def add_household_member(
     household_id: UUID,
     payload: HouseholdMembershipCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
 ) -> HouseholdMembership:
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
@@ -327,10 +340,18 @@ def add_household_member(
             detail="User is already a member of this household",
         )
 
+    role = validate_membership_role(payload.role)
+    actor_membership = get_household_membership(db, current_user.id, household_id)
+    if role == MembershipRole.owner and actor_membership.role != MembershipRole.owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an owner can grant the owner role",
+        )
+
     membership = HouseholdMembership(
         household_id=household_id,
         user_id=payload.user_id,
-        role=validate_membership_role(payload.role),
+        role=role,
     )
     db.add(membership)
     db.commit()
@@ -343,6 +364,7 @@ def remove_household_member(
     household_id: UUID,
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
 ) -> None:
     membership = db.scalars(
         select(HouseholdMembership).where(
@@ -352,6 +374,27 @@ def remove_household_member(
     ).first()
     if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
+
+    actor_membership = get_household_membership(db, current_user.id, household_id)
+    if membership.role == MembershipRole.owner:
+        if actor_membership.role != MembershipRole.owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an owner can remove another owner",
+            )
+        owner_count = db.scalar(
+            select(func.count())
+            .select_from(HouseholdMembership)
+            .where(
+                HouseholdMembership.household_id == household_id,
+                HouseholdMembership.role == MembershipRole.owner,
+            )
+        )
+        if owner_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A household must retain at least one owner",
+            )
 
     db.delete(membership)
     db.commit()

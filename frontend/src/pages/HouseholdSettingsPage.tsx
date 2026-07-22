@@ -6,6 +6,7 @@ export function HouseholdSettingsPage({
   members,
   availableUsers,
   adminToolsEnabled,
+  currentRole,
   onDownloadExport,
   onCreateHousehold,
   onCreateUser,
@@ -20,6 +21,7 @@ export function HouseholdSettingsPage({
   members: HouseholdMembership[];
   availableUsers: User[];
   adminToolsEnabled: boolean;
+  currentRole: string;
   onDownloadExport: () => void | Promise<void>;
   onCreateHousehold: FormEventHandler<HTMLFormElement>;
   onCreateUser: FormEventHandler<HTMLFormElement>;
@@ -36,10 +38,10 @@ export function HouseholdSettingsPage({
         <div className="section-header">
           <div>
             <h2>People & household access</h2>
-            <p className="muted">Switch users, switch households, and manage household memberships.</p>
+            <p className="muted">Review household access and manage memberships permitted by your role.</p>
           </div>
           <div className="management-actions">
-            {adminToolsEnabled && (
+            {adminToolsEnabled && ['owner', 'admin'].includes(currentRole) && (
               <button type="button" className="secondary-button" onClick={onDownloadExport}>
                 Download household JSON
               </button>
@@ -48,11 +50,13 @@ export function HouseholdSettingsPage({
               <input name="name" placeholder="New household name" required />
               <button type="submit">Add household</button>
             </form>
-            <form onSubmit={onCreateUser} className="form-row">
-              <input name="display_name" placeholder="New user name" required />
-              <input name="email" type="email" placeholder="Email (optional)" />
-              <button type="submit">Add user</button>
-            </form>
+            {['owner', 'admin'].includes(currentRole) && (
+              <form onSubmit={onCreateUser} className="form-row">
+                <input name="display_name" placeholder="New user name" required />
+                <input name="email" type="email" placeholder="Email (optional)" />
+                <button type="submit">Add user</button>
+              </form>
+            )}
           </div>
         </div>
         <div className="member-list">
@@ -63,13 +67,16 @@ export function HouseholdSettingsPage({
                 <span className="muted"> {membership.user?.email ?? ''}</span>
               </span>
               <span className="pill">{membership.role}</span>
-              <button type="button" className="secondary-button" onClick={() => onRemoveMember(membership.user_id)}>
-                Remove
-              </button>
+              {['owner', 'admin'].includes(currentRole)
+                && (currentRole === 'owner' || membership.role !== 'owner') && (
+                <button type="button" className="secondary-button" onClick={() => onRemoveMember(membership.user_id)}>
+                  Remove
+                </button>
+              )}
             </div>
           ))}
         </div>
-        {availableUsers.length > 0 && (
+        {['owner', 'admin'].includes(currentRole) && availableUsers.length > 0 && (
           <form onSubmit={onAddMember} className="form-row spaced-table">
             <select name="user_id" aria-label="Household member" required defaultValue="">
               <option value="" disabled>Add user to household</option>
@@ -78,7 +85,7 @@ export function HouseholdSettingsPage({
               ))}
             </select>
             <select name="role" aria-label="Household role" defaultValue="member">
-              <option value="owner">Owner</option>
+              {currentRole === 'owner' && <option value="owner">Owner</option>}
               <option value="admin">Admin</option>
               <option value="member">Member</option>
               <option value="viewer">Viewer</option>
@@ -88,7 +95,7 @@ export function HouseholdSettingsPage({
         )}
       </section>
 
-      {adminToolsEnabled && (
+      {adminToolsEnabled && ['owner', 'admin'].includes(currentRole) && (
         <section className="card">
           <div className="section-header">
             <div>

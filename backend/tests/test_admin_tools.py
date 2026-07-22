@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.authorization import authorize_household_request
 from app.core.config import Settings, get_settings
 from app.core.security import require_authenticated_user
 from app.db.models import User
@@ -38,11 +39,14 @@ def test_admin_tools_are_disabled_without_explicit_setting():
         def override_get_settings() -> Settings:
             return Settings(enable_admin_tools=False)
 
+        auth_user = User(id=uuid4(), display_name="Test User", email="test@example.com")
+        db.add(auth_user)
+        db.commit()
+
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_settings] = override_get_settings
-        app.dependency_overrides[require_authenticated_user] = lambda: User(
-            id=uuid4(), display_name="Test User", email="test@example.com"
-        )
+        app.dependency_overrides[require_authenticated_user] = lambda: auth_user
+        app.dependency_overrides[authorize_household_request] = lambda: None
         with TestClient(app) as test_client:
             household = test_client.post("/households", json={"name": "Home"}).json()
 

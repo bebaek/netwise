@@ -43,39 +43,36 @@ Playwright was not run because its configured workflow requires the live Docker 
 
 **Status:** `in progress`
 
-Authentication foundation implemented in the current working milestone: Argon2 password hashing, revocable database-backed cookie sessions, initial-owner setup, login/logout/status endpoints, authentication gates on application APIs, and frontend setup/sign-in/sign-out flows. Household membership and role authorization remain outstanding.
+Authentication and household authorization are implemented: Argon2 password hashing, revocable database-backed cookie sessions, initial-owner setup, login/logout/status endpoints, authentication gates, household-scoped resource checks, and owner/admin/member/viewer role enforcement. Import-root confinement and safer default Compose exposure remain outstanding before this P0 item is complete.
 
 ### Original audit findings
 
-- **Addressed in authentication foundation:** application API routers now require an authenticated user.
-- **Outstanding:** household access is still based on caller-supplied identifiers; membership and role authorization must be enforced.
-- **Outstanding:** membership roles are validated, but route authorization does not yet enforce owner/editor/viewer permissions.
-- **Partially addressed:** initial setup now honors `single_household_mode`; broader setting behavior and invitation/public-signup policy still need authorization work.
+- **Addressed:** application API routers require an authenticated user.
+- **Addressed:** household and nested-resource access is checked against the authenticated user's membership; non-members receive a non-disclosing 404.
+- **Addressed:** owner/admin/member/viewer roles enforce administrative, write, and read-only boundaries.
+- **Partially addressed:** initial setup honors `single_household_mode`, and public signup is enforced; a full invitation workflow is not implemented.
 - **Outstanding:** the default Compose development configuration publishes the backend and enables admin tools.
-- **Outstanding:** the FinTrack import API accepts a caller-provided directory. It is now authentication-gated, but still needs owner/admin authorization and an import-root restriction.
-- `docs/technical-design.md` identifies household authorization, password hashing, and session revocation as security requirements. Password hashing and revocable sessions are now implemented.
+- **Partially addressed:** FinTrack import requires an authenticated owner/admin and the global feature flag, but still needs an import-root restriction.
+- `docs/technical-design.md` identifies household authorization, password hashing, and session revocation as security requirements; these are now implemented.
 
 ### Intended work
 
-1. Choose and document the local authentication/session design.
-2. Add a `get_current_user` dependency.
-3. Centralize authorization dependencies such as:
-   - `require_household_member`
-   - `require_household_editor`
-   - `require_household_owner`
-4. Apply authorization to every household-scoped API, including exports and imports.
-5. Define and enforce permissions for owner, editor, and viewer roles.
-6. Make `public_signup` and `single_household_mode` effective, or remove them until implemented.
-7. Require owner/admin access for administrative tools.
-8. Restrict FinTrack imports to a configured import root and reject resolved paths outside it.
-9. Disable admin tools by default in normal Compose startup; use an explicit development profile or override when needed.
-10. Add negative cross-household and cross-role tests.
+1. [x] Choose and document the local authentication/session design.
+2. [x] Add a `get_current_user` dependency.
+3. [x] Centralize household membership and role authorization.
+4. [x] Apply authorization to every household-scoped API, including exports and imports.
+5. [x] Define and enforce permissions for owner, admin, member, and viewer roles.
+6. [x] Enforce `public_signup` and initial `single_household_mode` setup behavior.
+7. [x] Require owner/admin access for administrative tools.
+8. [ ] Restrict FinTrack imports to a configured import root and reject resolved paths outside it.
+9. [ ] Disable admin tools by default in normal Compose startup; use an explicit development profile or override when needed.
+10. [x] Add negative cross-household and cross-role tests.
 
 ### Completion criteria
 
 - Unauthenticated requests cannot read or mutate financial data.
 - A member of one household cannot access another household by guessing or supplying its UUID.
-- Viewer/editor/owner boundaries are covered by API tests.
+- Viewer/member/admin/owner boundaries are covered by API tests.
 - Signup and single-household settings have documented, tested behavior.
 - Import paths cannot escape the configured import root.
 - Administrative operations require both configuration enablement and an authorized principal.
@@ -256,5 +253,6 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
-| 2026-07-22 | Authentication | Started local password authentication and revocable cookie-session implementation; household authorization remains pending. |
+| 2026-07-22 | Household authorization | Added household/resource isolation, role enforcement, protected membership administration, and cross-household tests. |
+| 2026-07-22 | Authentication | Started local password authentication and revocable cookie-session implementation. |
 | 2026-07-22 | Audit roadmap | Initial audit findings accepted and documented. |

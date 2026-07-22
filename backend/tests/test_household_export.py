@@ -1,11 +1,10 @@
 from fastapi.testclient import TestClient
 
 
-def test_household_export_includes_portable_household_data(client: TestClient):
-    user = client.post("/users", json={"display_name": "Ada", "email": "ada@example.com"}).json()
+def test_household_export_includes_portable_household_data(client: TestClient, auth_user):
     household = client.post(
         "/households",
-        json={"name": "Export Home", "owner_user_id": user["id"]},
+        json={"name": "Export Home", "owner_user_id": str(auth_user.id)},
     ).json()
     household_id = household["id"]
 
@@ -75,7 +74,7 @@ def test_household_export_includes_portable_household_data(client: TestClient):
     assert payload["exported_at"]
     assert payload["household"]["id"] == household_id
     assert payload["household"]["name"] == "Export Home"
-    assert payload["members"][0]["user"]["email"] == "ada@example.com"
+    assert payload["members"][0]["user"]["email"] == "test@example.com"
     assert payload["accounts"][0]["name"] == "Brokerage"
     assert payload["accounts"][0]["expected_annual_yield"] == "0.060000"
     assert payload["snapshots"][0]["balance"] == "1234.56"
