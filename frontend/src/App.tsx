@@ -262,6 +262,7 @@ function App({
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
   const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
+  const [fintrackImportEnabled, setFintrackImportEnabled] = useState<boolean>(false);
   const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
@@ -426,7 +427,10 @@ function App({
 
   useEffect(() => {
     Promise.all([refreshUsers(), getCapabilities()])
-      .then(([, capabilities]) => setAdminToolsEnabled(capabilities.admin_tools_enabled))
+      .then(([, capabilities]) => {
+        setAdminToolsEnabled(capabilities.admin_tools_enabled);
+        setFintrackImportEnabled(capabilities.fintrack_import_enabled);
+      })
       .catch((err: unknown) => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -1465,6 +1469,7 @@ function App({
                   members={householdMembers}
                   availableUsers={availableUsersForMembership}
                   adminToolsEnabled={adminToolsEnabled}
+                  fintrackImportEnabled={fintrackImportEnabled}
                   currentRole={currentHouseholdRole}
                   onDownloadExport={handleDownloadHouseholdExport}
                   onCreateHousehold={handleCreateHousehold}

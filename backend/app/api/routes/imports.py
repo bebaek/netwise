@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,10 +17,35 @@ def require_admin_tools_enabled(settings: Settings = Depends(get_settings)) -> N
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tools are disabled")
 
 
+def resolve_import_directory(data_dir: str, settings: Settings) -> Path:
+    if settings.import_root is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="FinTrack import root is not configured",
+        )
+
+    root = settings.import_root.expanduser().resolve()
+    if not root.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Configured FinTrack import root is unavailable",
+        )
+
+    requested = Path(data_dir).expanduser()
+    resolved = (requested if requested.is_absolute() else root / requested).resolve()
+    if not resolved.is_relative_to(root):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="FinTrack data directory must be inside the configured import root",
+        )
+    return resolved
+
+
 @router.post("/fintrack", response_model=FintrackImportRead, status_code=status.HTTP_201_CREATED)
 def import_fintrack(
     payload: FintrackImportCreate,
     _: None = Depends(require_admin_tools_enabled),
+    settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ):
     if db.get(Household, payload.household_id) is None:
@@ -28,7 +55,7 @@ def import_fintrack(
         return import_fintrack_directory(
             db,
             household_id=payload.household_id,
-            data_dir=payload.data_dir,
+            data_dir=resolve_import_directory(payload.data_dir, settings),
             currency=payload.currency,
             dry_run=payload.dry_run,
         )

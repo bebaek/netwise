@@ -28,6 +28,7 @@ export type HouseholdMembership = {
 
 export type Capabilities = {
   admin_tools_enabled: boolean;
+  fintrack_import_enabled: boolean;
 };
 
 export type HouseholdExport = {

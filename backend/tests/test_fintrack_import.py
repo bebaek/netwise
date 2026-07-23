@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from app.core.config import Settings, get_settings
+
 
 def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
@@ -96,3 +98,71 @@ def test_fintrack_import_is_idempotent_and_supports_dry_run(client, tmp_path):
 
     accounts = client.get(f"/accounts?household_id={household['id']}").json()
     assert {account["name"] for account in accounts} == {"Ally"}
+
+
+def test_fintrack_import_rejects_paths_outside_configured_root(client, tmp_path):
+    household = client.post("/households", json={"name": "Import Home"}).json()
+    allowed_root = tmp_path / "allowed"
+    allowed_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    write_text(outside / "outside-condition.toml", "yield = 0.01\n")
+    write_text(outside / "outside-values.csv", "date,value\n2024-01-01,1.00\n")
+    client.app.dependency_overrides[get_settings] = lambda: Settings(
+        enable_admin_tools=True,
+        import_root=allowed_root,
+    )
+
+    traversal = client.post(
+        "/imports/fintrack",
+        json={"household_id": household["id"], "data_dir": "../outside"},
+    )
+    absolute_outside = client.post(
+        "/imports/fintrack",
+        json={"household_id": household["id"], "data_dir": str(outside)},
+    )
+    symlink = allowed_root / "linked-outside"
+    symlink.symlink_to(outside, target_is_directory=True)
+    symlink_escape = client.post(
+        "/imports/fintrack",
+        json={"household_id": household["id"], "data_dir": "linked-outside"},
+    )
+
+    assert traversal.status_code == 400
+    assert absolute_outside.status_code == 400
+    assert symlink_escape.status_code == 400
+
+
+def test_fintrack_import_accepts_root_relative_directory(client, tmp_path):
+    household = client.post("/households", json={"name": "Import Home"}).json()
+    allowed_root = tmp_path / "allowed"
+    data_dir = allowed_root / "portfolio"
+    data_dir.mkdir(parents=True)
+    write_text(data_dir / "cash-condition.toml", "yield = 0.01\n")
+    write_text(data_dir / "cash-values.csv", "date,value\n2024-01-01,500.00\n")
+    client.app.dependency_overrides[get_settings] = lambda: Settings(
+        enable_admin_tools=True,
+        import_root=allowed_root,
+    )
+
+    response = client.post(
+        "/imports/fintrack",
+        json={"household_id": household["id"], "data_dir": "portfolio"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["accounts_created"] == 1
+    assert response.json()["data_dir"] == str(data_dir.resolve())
+
+
+def test_fintrack_import_requires_configured_root(client, tmp_path):
+    household = client.post("/households", json={"name": "Import Home"}).json()
+    client.app.dependency_overrides[get_settings] = lambda: Settings(enable_admin_tools=True)
+
+    response = client.post(
+        "/imports/fintrack",
+        json={"household_id": household["id"], "data_dir": str(tmp_path)},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "FinTrack import root is not configured"

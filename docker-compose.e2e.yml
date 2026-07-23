@@ -42,7 +42,7 @@ services:
     environment:
       VITE_API_BASE_URL: /api
     ports:
-      - "${NETWISE_E2E_PORT:-55173}:5173"
+      - "127.0.0.1:${NETWISE_E2E_PORT:-55173}:5173"
     depends_on:
       backend:
         condition: service_healthy

@@ -18,7 +18,10 @@ def test_capabilities_report_admin_tools_enabled(client: TestClient):
     response = client.get("/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"admin_tools_enabled": True}
+    assert response.json() == {
+        "admin_tools_enabled": True,
+        "fintrack_import_enabled": True,
+    }
 
 
 def test_admin_tools_are_disabled_without_explicit_setting():
@@ -59,7 +62,10 @@ def test_admin_tools_are_disabled_without_explicit_setting():
 
         assert export_response.status_code == 403
         assert import_response.status_code == 403
-        assert capabilities_response.json() == {"admin_tools_enabled": False}
+        assert capabilities_response.json() == {
+            "admin_tools_enabled": False,
+            "fintrack_import_enabled": False,
+        }
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)

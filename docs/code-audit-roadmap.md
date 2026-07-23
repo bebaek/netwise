@@ -33,7 +33,7 @@ Playwright was not run because its configured workflow requires the live Docker 
 
 | Priority | Improvement | Status |
 | --- | --- | --- |
-| P0 | Add authentication and household-level authorization | in progress |
+| P0 | Add authentication and household-level authorization | completed |
 | P1 | Decompose frontend server state and remove full-dashboard reloads | not started |
 | P1 | Refactor projections around pure, typed inputs and policies | not started |
 | P1 | Separate development deployment from supported production deployment | not started |
@@ -41,9 +41,9 @@ Playwright was not run because its configured workflow requires the live Docker 
 
 ## P0: Authentication and household authorization
 
-**Status:** `in progress`
+**Status:** `completed`
 
-Authentication and household authorization are implemented: Argon2 password hashing, revocable database-backed cookie sessions, initial-owner setup, login/logout/status endpoints, authentication gates, household-scoped resource checks, and owner/admin/member/viewer role enforcement. Import-root confinement and safer default Compose exposure remain outstanding before this P0 item is complete.
+Authentication, household authorization, import-root confinement, and secure development defaults are implemented: Argon2 password hashing, revocable database-backed cookie sessions, initial-owner setup, login/logout/status endpoints, authentication gates, household-scoped resource checks, and owner/admin/member/viewer role enforcement. FinTrack imports require an explicit read-only root and reject paths or symlinks that escape it. Administrative tools are opt-in, and committed development ports bind to localhost.
 
 ### Original audit findings
 
@@ -51,8 +51,8 @@ Authentication and household authorization are implemented: Argon2 password hash
 - **Addressed:** household and nested-resource access is checked against the authenticated user's membership; non-members receive a non-disclosing 404.
 - **Addressed:** owner/admin/member/viewer roles enforce administrative, write, and read-only boundaries.
 - **Partially addressed:** initial setup honors `single_household_mode`, and public signup is enforced; a full invitation workflow is not implemented.
-- **Outstanding:** the default Compose development configuration publishes the backend and enables admin tools.
-- **Partially addressed:** FinTrack import requires an authenticated owner/admin and the global feature flag, but still needs an import-root restriction.
+- **Addressed:** the default Compose development configuration binds published ports to localhost and keeps admin tools disabled.
+- **Addressed:** FinTrack import requires an authenticated owner/admin, the global feature flag, and a configured import root; traversal and symlink escapes are rejected.
 - `docs/technical-design.md` identifies household authorization, password hashing, and session revocation as security requirements; these are now implemented.
 
 ### Intended work
@@ -64,8 +64,8 @@ Authentication and household authorization are implemented: Argon2 password hash
 5. [x] Define and enforce permissions for owner, admin, member, and viewer roles.
 6. [x] Enforce `public_signup` and initial `single_household_mode` setup behavior.
 7. [x] Require owner/admin access for administrative tools.
-8. [ ] Restrict FinTrack imports to a configured import root and reject resolved paths outside it.
-9. [ ] Disable admin tools by default in normal Compose startup; use an explicit development profile or override when needed.
+8. [x] Restrict FinTrack imports to a configured import root and reject resolved paths outside it.
+9. [x] Disable admin tools by default in normal Compose startup; use an explicit development override when needed.
 10. [x] Add negative cross-household and cross-role tests.
 
 ### Completion criteria
@@ -77,9 +77,9 @@ Authentication and household authorization are implemented: Argon2 password hash
 - Import paths cannot escape the configured import root.
 - Administrative operations require both configuration enablement and an authorized principal.
 
-### Interim safety requirement
+### Deployment note
 
-Until this item is complete, documentation should call the application local/trusted-network only. Published ports should bind to localhost where practical, and the application should not be represented as safe for an untrusted multi-user network.
+The P0 local/trusted-network security milestone is complete. Production deployment hardening—including a production frontend server, HTTPS termination, generated credentials, and internal-only service networking—remains tracked separately under the P1 deployment item.
 
 ## P1: Frontend data and state architecture
 
@@ -253,6 +253,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | P0 security | Confined imports to an explicit root, made admin tools opt-in, bound development ports to localhost, and marked the security milestone complete. |
 | 2026-07-22 | Household authorization | Added household/resource isolation, role enforcement, protected membership administration, and cross-household tests. |
 | 2026-07-22 | Authentication | Started local password authentication and revocable cookie-session implementation. |
 | 2026-07-22 | Audit roadmap | Initial audit findings accepted and documented. |

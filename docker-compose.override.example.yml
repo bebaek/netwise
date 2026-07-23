@@ -3,6 +3,9 @@
 
 services:
   backend:
+    environment:
+      NETWISE_ENABLE_ADMIN_TOOLS: "true"
+      NETWISE_IMPORT_ROOT: /import/fintrack
     volumes:
       # Mount exported/importable FinTrack data read-only into the backend container.
       - /path/to/fintrack/data:/import/fintrack:ro

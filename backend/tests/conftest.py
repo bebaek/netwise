@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -48,7 +49,7 @@ def client(db_session: Session, auth_user: User) -> Generator[TestClient, None, 
         yield db_session
 
     def override_get_settings() -> Settings:
-        return Settings(enable_admin_tools=True)
+        return Settings(enable_admin_tools=True, import_root=Path("/"))
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = override_get_settings

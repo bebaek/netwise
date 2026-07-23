@@ -45,18 +45,14 @@ Configuration should be environment-variable based.
 Example variables:
 
 ```text
-NETWISE_DEPLOYMENT_MODE=self_hosted
+NETWISE_DATABASE_URL=postgresql+psycopg://netwise:change-me@postgres:5432/netwise
 NETWISE_PUBLIC_SIGNUP=false
 NETWISE_SINGLE_HOUSEHOLD_MODE=true
-NETWISE_DISABLE_TELEMETRY=true
-NETWISE_ALLOW_LOCAL_AUTH=true
-NETWISE_ENABLE_PLUGINS=false
-DATABASE_URL=postgresql://netwise:netwise@postgres:5432/netwise
-REDIS_URL=redis://redis:6379/0
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USERNAME=
-SMTP_PASSWORD=
+NETWISE_ENABLE_ADMIN_TOOLS=false
+NETWISE_IMPORT_ROOT=/import/fintrack
+NETWISE_AUTH_COOKIE_NAME=netwise_session
+NETWISE_AUTH_COOKIE_SECURE=true
+NETWISE_AUTH_SESSION_DAYS=30
 ```
 
 ## Single-household mode
@@ -99,17 +95,19 @@ Preferred process:
 
 ## Health checks
 
-Planned health endpoints:
+Current health endpoints:
 
 - `/health/live`
 - `/health/ready`
 
-Readiness should check database connectivity and required service dependencies.
+Readiness checks database connectivity.
 
 ## Security defaults
 
+- Bind development ports to localhost unless remote access is explicitly required.
 - Require HTTPS in production deployments.
 - Do not enable public signup by default in self-hosted production examples.
+- Keep administrative tools disabled by default. When FinTrack import is enabled, configure a dedicated read-only `NETWISE_IMPORT_ROOT`; requests outside that root are rejected.
 - Do not enable plugins by default.
 - Generate secure secret keys during setup.
 - Avoid logging financial balances in application logs.

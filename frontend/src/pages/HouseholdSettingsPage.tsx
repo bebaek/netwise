@@ -6,6 +6,7 @@ export function HouseholdSettingsPage({
   members,
   availableUsers,
   adminToolsEnabled,
+  fintrackImportEnabled,
   currentRole,
   onDownloadExport,
   onCreateHousehold,
@@ -21,6 +22,7 @@ export function HouseholdSettingsPage({
   members: HouseholdMembership[];
   availableUsers: User[];
   adminToolsEnabled: boolean;
+  fintrackImportEnabled: boolean;
   currentRole: string;
   onDownloadExport: () => void | Promise<void>;
   onCreateHousehold: FormEventHandler<HTMLFormElement>;
@@ -95,18 +97,18 @@ export function HouseholdSettingsPage({
         )}
       </section>
 
-      {adminToolsEnabled && ['owner', 'admin'].includes(currentRole) && (
+      {fintrackImportEnabled && ['owner', 'admin'].includes(currentRole) && (
         <section className="card">
           <div className="section-header">
             <div>
               <h2>Import FinTrack data</h2>
               <p className="muted">
-                Import a server-local FinTrack data directory into {household.name}. Expected files: <code>*-condition.toml</code>, <code>*-values.csv</code>, and optional <code>*-value-changes.csv</code>.
+                Import a directory beneath the configured FinTrack import root into {household.name}. Expected files: <code>*-condition.toml</code>, <code>*-values.csv</code>, and optional <code>*-value-changes.csv</code>.
               </p>
             </div>
           </div>
           <form onSubmit={onImportFintrack} className="form-row">
-            <input name="data_dir" placeholder="/Users/burm/code/fintrack/data-me" required />
+            <input name="data_dir" placeholder="portfolio" required />
             <input name="currency" placeholder="USD" defaultValue="USD" maxLength={3} />
             <label className="inline-toggle">
               <input

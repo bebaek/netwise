@@ -63,16 +63,16 @@ On first launch, create the initial owner account with an email address and a pa
 The backend is available directly at:
 
 ```text
-http://localhost:8000
+http://localhost:8001
 ```
 
-Admin tools such as FinTrack import and household JSON export are disabled by default in backend configuration. The committed Docker Compose development setup enables them with `NETWISE_ENABLE_ADMIN_TOOLS=true`; only enable this intentionally for trusted deployments.
+Admin tools such as FinTrack import and household JSON export are disabled by default, including in the committed Docker Compose development setup. The published development ports bind to `127.0.0.1` rather than all host interfaces; the backend defaults to host port `8001` to avoid common port conflicts. Override development ports with `NETWISE_BACKEND_PORT`, `NETWISE_FRONTEND_PORT`, or `NETWISE_POSTGRES_PORT` when needed. Only enable administrative tools intentionally for a trusted local deployment.
 
 Health checks:
 
 ```bash
-curl http://localhost:8000/health/live
-curl http://localhost:8000/health/ready
+curl http://localhost:8001/health/live
+curl http://localhost:8001/health/ready
 ```
 
 ### Optional local Docker overrides
@@ -87,7 +87,7 @@ cp docker-compose.override.example.yml docker-compose.override.yml
 docker compose up --build
 ```
 
-The example mounts the host directory read-only at `/import/fintrack` inside the backend container.
+The example enables administrative tools, configures `/import/fintrack` as the only allowed import root, and mounts the host directory there read-only. Import requests may use `.` for the mounted root or a relative child directory; paths and symlinks that resolve outside the configured root are rejected.
 
 Run backend tests and migrations locally:
 

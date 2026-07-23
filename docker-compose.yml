@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: netwise
       POSTGRES_DB: netwise
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${NETWISE_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,9 +22,9 @@ services:
       NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise@postgres:5432/netwise
       NETWISE_PUBLIC_SIGNUP: "false"
       NETWISE_SINGLE_HOUSEHOLD_MODE: "true"
-      NETWISE_ENABLE_ADMIN_TOOLS: "true"
+      NETWISE_ENABLE_ADMIN_TOOLS: "false"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${NETWISE_BACKEND_PORT:-8001}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,7 +35,7 @@ services:
     environment:
       VITE_API_BASE_URL: /api
     ports:
-      - "5173:5173"
+      - "127.0.0.1:${NETWISE_FRONTEND_PORT:-5173}:5173"
     depends_on:
       - backend
 
