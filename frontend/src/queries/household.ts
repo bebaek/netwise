@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createAccount,
+  createAccountEvent,
   createSnapshot,
   createSnapshotBatch,
+  deleteAccountEvent,
   deleteSnapshot,
   getHistoricalTrend,
   getNetWorth,
@@ -11,7 +13,9 @@ import {
   listHouseholdAccountEvents,
   listHouseholdSnapshots,
   updateAccount,
+  updateAccountEvent,
   updateSnapshot,
+  type AccountEvent,
   type HouseholdSnapshot,
 } from '../api';
 
@@ -47,6 +51,48 @@ type UpdateAccountVariables = {
   accountId: string;
   payload: Parameters<typeof updateAccount>[1];
 };
+
+type CreateAccountEventVariables = {
+  accountId: string;
+  payload: Parameters<typeof createAccountEvent>[1];
+};
+
+type UpdateAccountEventVariables = {
+  accountId: string;
+  eventId: string;
+  payload: Parameters<typeof updateAccountEvent>[2];
+};
+
+export function useAccountEventMutations(householdId: string) {
+  const queryClient = useQueryClient();
+  const refreshEvents = () => queryClient.invalidateQueries({
+    queryKey: householdQueryKeys.events(householdId),
+  });
+
+  const create = useMutation({
+    mutationFn: ({ accountId, payload }: CreateAccountEventVariables) => (
+      createAccountEvent(accountId, payload)
+    ),
+    onSuccess: refreshEvents,
+  });
+  const update = useMutation({
+    mutationFn: ({ accountId, eventId, payload }: UpdateAccountEventVariables) => (
+      updateAccountEvent(accountId, eventId, payload)
+    ),
+    onSuccess: refreshEvents,
+  });
+  const remove = useMutation({
+    mutationFn: (event: AccountEvent) => deleteAccountEvent(event.account_id, event.id),
+    onSuccess: refreshEvents,
+  });
+
+  return {
+    create,
+    update,
+    remove,
+    isPending: create.isPending || update.isPending || remove.isPending,
+  };
+}
 
 export function useAccountMutations(householdId: string) {
   const queryClient = useQueryClient();

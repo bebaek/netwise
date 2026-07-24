@@ -3,7 +3,6 @@ import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, 
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
-  AccountEvent,
   AnnualTaxRecord,
   FintrackImportResult,
   Household,
@@ -24,7 +23,6 @@ import {
   User,
   addHouseholdMember,
   createAccount,
-  createAccountEvent,
   createAnnualTaxRecord,
   createHousehold,
   createHouseholdPerson,
@@ -37,7 +35,6 @@ import {
   createSocialSecurityEstimate,
   createSpendingItem,
   createUser,
-  deleteAccountEvent,
   deleteProjectionTransfer,
   deleteSocialSecurityEstimate,
   deleteRealEstateLiquidationStrategy,
@@ -63,7 +60,6 @@ import {
   listSpendingItems,
   listUsers,
   removeHouseholdMember,
-  updateAccountEvent,
   updateRealEstateProperty,
   updateSocialSecurityEstimate,
   updateSpendingItem,
@@ -77,11 +73,9 @@ import {
   type AppView,
   type ThemePreference,
 } from './components/AppShell';
-import type { AccountEventDraft } from './pages/PlanningPage';
 import {
   householdQueryKeys,
   useAccounts,
-  useHouseholdAccountEvents,
   useHouseholdFinancialSummary,
 } from './queries/household';
 import { formatMoney } from './utils/format';
@@ -223,7 +217,6 @@ function App({
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
-  const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [realEstateAnalytics, setRealEstateAnalytics] = useState<RealEstateAnalytics[]>([]);
@@ -253,19 +246,16 @@ function App({
   const [householdsLoading, setHouseholdsLoading] = useState<boolean>(false);
   const queryClient = useQueryClient();
   const accountsQuery = useAccounts(selectedHouseholdId);
-  const accountEventsQuery = useHouseholdAccountEvents(selectedHouseholdId);
   const financialSummary = useHouseholdFinancialSummary(
     selectedHouseholdId,
     showInterpolatedHistory,
   );
   const accounts = accountsQuery.data ?? [];
-  const accountEvents = accountEventsQuery.data ?? [];
   const netWorth = financialSummary.netWorth.data ?? null;
   const history = financialSummary.history.data ?? null;
   const breakdownHistory = financialSummary.breakdownHistory.data ?? null;
   const queryDataLoading = Boolean(selectedHouseholdId) && [
     accountsQuery,
-    accountEventsQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
@@ -273,7 +263,6 @@ function App({
 
   const queryDataError = [
     accountsQuery,
-    accountEventsQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
@@ -393,10 +382,6 @@ function App({
     } finally {
       if (requestId === dashboardRequestId.current) setDashboardLoading(false);
     }
-  }
-
-  async function refreshAccountEvents(householdId: string) {
-    await queryClient.invalidateQueries({ queryKey: householdQueryKeys.events(householdId) });
   }
 
   async function handleLogout() {
@@ -527,81 +512,6 @@ function App({
       if (userId === selectedUserId) {
         await refreshHouseholds(selectedUserId);
       }
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  function startNewAccountEventDraft() {
-    setAccountEventDraft({
-      account_id: accounts[0]?.id ?? '',
-      event_date: today(),
-      amount: '',
-      currency: 'USD',
-      event_type: 'manual_projection_adjustment',
-      description: '',
-      projection_behavior: 'projection_only',
-    });
-  }
-
-  function startEditAccountEventDraft(accountEvent: AccountEvent) {
-    setAccountEventDraft({
-      id: accountEvent.id,
-      original_account_id: accountEvent.account_id,
-      account_id: accountEvent.account_id,
-      event_date: accountEvent.event_date,
-      amount: accountEvent.amount,
-      currency: accountEvent.currency,
-      event_type: accountEvent.event_type,
-      description: accountEvent.description ?? '',
-      projection_behavior: accountEvent.projection_behavior,
-    });
-  }
-
-  async function handleSaveAccountEventDraft(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId || !accountEventDraft) return;
-    setError('');
-    try {
-      const payload = {
-        account_id: accountEventDraft.account_id,
-        event_date: accountEventDraft.event_date,
-        amount: accountEventDraft.amount,
-        currency: accountEventDraft.currency,
-        event_type: accountEventDraft.event_type,
-        description: accountEventDraft.description || null,
-        projection_behavior: accountEventDraft.projection_behavior,
-      };
-      if (accountEventDraft.id && accountEventDraft.original_account_id) {
-        await updateAccountEvent(accountEventDraft.original_account_id, accountEventDraft.id, payload);
-      } else {
-        await createAccountEvent(accountEventDraft.account_id, {
-          event_date: payload.event_date,
-          amount: payload.amount,
-          currency: payload.currency,
-          event_type: payload.event_type,
-          description: accountEventDraft.description || undefined,
-          projection_behavior: payload.projection_behavior,
-        });
-      }
-      setAccountEventDraft(null);
-      await refreshAccountEvents(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleDeleteAccountEvent(accountEvent: AccountEvent) {
-    if (!selectedHouseholdId) return;
-    const confirmed = window.confirm(
-      `Delete ${accountEvent.event_type} event from ${accountEvent.event_date}?`,
-    );
-    if (!confirmed) return;
-    setError('');
-    try {
-      await deleteAccountEvent(accountEvent.account_id, accountEvent.id);
-      if (accountEventDraft?.id === accountEvent.id) setAccountEventDraft(null);
-      await refreshAccountEvents(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1227,6 +1137,7 @@ function App({
             element={
               <WorkspaceView view="plan" householdName={selectedHousehold.name}>
                 <PlanningPage
+                  householdId={selectedHouseholdId}
                   defaultDate={today()}
                   accounts={accounts}
                   assetAccounts={assetAccounts}
@@ -1261,13 +1172,6 @@ function App({
                   realEstateSales={realEstateSales}
                   onDeleteRealEstateSale={handleDeleteRealEstateSale}
                   onCreateRealEstateSale={handleCreateRealEstateSale}
-                  accountEvents={accountEvents}
-                  accountEventDraft={accountEventDraft}
-                  onAccountEventDraft={setAccountEventDraft}
-                  onStartNewAccountEvent={startNewAccountEventDraft}
-                  onStartEditAccountEvent={startEditAccountEventDraft}
-                  onSaveAccountEvent={handleSaveAccountEventDraft}
-                  onDeleteAccountEvent={handleDeleteAccountEvent}
                 />
               </WorkspaceView>
             }

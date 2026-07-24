@@ -92,6 +92,24 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.create_account = recorder.summarize();
 
+  recorder.reset();
+  await page.getByRole('link', { name: 'Plan', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Projection events', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.load_planning_account_events = recorder.summarize();
+
+  await page.getByRole('button', { name: 'Add event', exact: true }).click();
+  const eventForm = page.locator('form').filter({
+    has: page.getByRole('heading', { name: 'Add projection event', exact: true }),
+  });
+  await eventForm.getByPlaceholder('2500.00').fill('321.00');
+  await eventForm.getByPlaceholder('Optional note').fill('Request count event');
+  recorder.reset();
+  await eventForm.getByRole('button', { name: 'Save event', exact: true }).click();
+  await expect(page.getByText('Request count event', { exact: true }).first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_account_event = recorder.summarize();
+
   recorder.dispose();
   await attachMeasurements(testInfo, measurements);
 
@@ -100,7 +118,7 @@ test('records representative frontend API request counts', async ({ page, isMobi
   );
   expect(
     initialPaths.some((path) => /^GET \/api\/households\/[^/]+\/events$/.test(path)),
-  ).toBe(true);
+  ).toBe(false);
   expect(
     initialPaths.some((path) => /^GET \/api\/accounts\/[^/]+\/events$/.test(path)),
   ).toBe(false);
@@ -133,4 +151,15 @@ test('records representative frontend API request counts', async ({ page, isMobi
     /(annual-tax|household-people|income-sources|mortgages|projection-|real-estate|social-security|spending-items|members|snapshots)/.test(path)
   ));
   expect(unrelatedAccountCreatePath).toBeUndefined();
+
+  expect(measurements.load_planning_account_events.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.load_planning_account_events.by_method_and_path)).toEqual([
+    expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
+  ]);
+
+  expect(measurements.create_account_event.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.create_account_event.by_method_and_path).sort()).toEqual([
+    expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
+    expect.stringMatching(/^POST \/api\/accounts\/[^/]+\/events$/),
+  ]);
 });

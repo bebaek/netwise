@@ -13,9 +13,10 @@ import type {
   SocialSecurityEstimate,
   SpendingItem,
 } from '../api';
+import { useAccountEventMutations, useHouseholdAccountEvents } from '../queries/household';
 import { formatMoney } from '../utils/format';
 
-export type AccountEventDraft = {
+type AccountEventDraft = {
   id?: string;
   original_account_id?: string;
   account_id: string;
@@ -78,6 +79,7 @@ function formatRate(value: string): string {
 }
 
 export function PlanningPage({
+  householdId,
   defaultDate,
   accounts,
   assetAccounts,
@@ -112,14 +114,8 @@ export function PlanningPage({
   realEstateSales,
   onDeleteRealEstateSale,
   onCreateRealEstateSale,
-  accountEvents,
-  accountEventDraft,
-  onAccountEventDraft,
-  onStartNewAccountEvent,
-  onStartEditAccountEvent,
-  onSaveAccountEvent,
-  onDeleteAccountEvent,
 }: {
+  householdId: string;
   defaultDate: string;
   accounts: Account[];
   assetAccounts: Account[];
@@ -157,14 +153,12 @@ export function PlanningPage({
   realEstateSales: RealEstateSale[];
   onDeleteRealEstateSale: (sale: RealEstateSale) => void | Promise<void>;
   onCreateRealEstateSale: FormEventHandler<HTMLFormElement>;
-  accountEvents: AccountEvent[];
-  accountEventDraft: AccountEventDraft | null;
-  onAccountEventDraft: (draft: AccountEventDraft | null) => void;
-  onStartNewAccountEvent: () => void;
-  onStartEditAccountEvent: (event: AccountEvent) => void;
-  onSaveAccountEvent: FormEventHandler<HTMLFormElement>;
-  onDeleteAccountEvent: (event: AccountEvent) => void | Promise<void>;
 }) {
+  const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
+  const [accountEventError, setAccountEventError] = useState('');
+  const accountEventsQuery = useHouseholdAccountEvents(householdId);
+  const accountEventMutations = useAccountEventMutations(householdId);
+  const accountEvents = accountEventsQuery.data ?? [];
   const [spendingItemEditId, setSpendingItemEditId] = useState('');
   const [socialSecurityMode, setSocialSecurityMode] = useState<'manual' | 'ballpark'>('ballpark');
   const [socialSecurityEditId, setSocialSecurityEditId] = useState('');
@@ -197,6 +191,84 @@ export function PlanningPage({
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
+
+  function startNewAccountEventDraft() {
+    setAccountEventDraft({
+      account_id: accounts[0]?.id ?? '',
+      event_date: defaultDate,
+      amount: '',
+      currency: 'USD',
+      event_type: 'manual_projection_adjustment',
+      description: '',
+      projection_behavior: 'projection_only',
+    });
+  }
+
+  function startEditAccountEventDraft(accountEvent: AccountEvent) {
+    setAccountEventDraft({
+      id: accountEvent.id,
+      original_account_id: accountEvent.account_id,
+      account_id: accountEvent.account_id,
+      event_date: accountEvent.event_date,
+      amount: accountEvent.amount,
+      currency: accountEvent.currency,
+      event_type: accountEvent.event_type,
+      description: accountEvent.description ?? '',
+      projection_behavior: accountEvent.projection_behavior,
+    });
+  }
+
+  async function handleSaveAccountEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountEventDraft) return;
+    setAccountEventError('');
+    const payload = {
+      account_id: accountEventDraft.account_id,
+      event_date: accountEventDraft.event_date,
+      amount: accountEventDraft.amount,
+      currency: accountEventDraft.currency,
+      event_type: accountEventDraft.event_type,
+      description: accountEventDraft.description || null,
+      projection_behavior: accountEventDraft.projection_behavior,
+    };
+    try {
+      if (accountEventDraft.id && accountEventDraft.original_account_id) {
+        await accountEventMutations.update.mutateAsync({
+          accountId: accountEventDraft.original_account_id,
+          eventId: accountEventDraft.id,
+          payload,
+        });
+      } else {
+        await accountEventMutations.create.mutateAsync({
+          accountId: accountEventDraft.account_id,
+          payload: {
+            event_date: payload.event_date,
+            amount: payload.amount,
+            currency: payload.currency,
+            event_type: payload.event_type,
+            description: accountEventDraft.description || undefined,
+            projection_behavior: payload.projection_behavior,
+          },
+        });
+      }
+      setAccountEventDraft(null);
+    } catch (mutationError: unknown) {
+      setAccountEventError(String(mutationError));
+    }
+  }
+
+  async function handleDeleteAccountEvent(accountEvent: AccountEvent) {
+    if (!window.confirm(`Delete ${accountEvent.event_type} event from ${accountEvent.event_date}?`)) {
+      return;
+    }
+    setAccountEventError('');
+    try {
+      await accountEventMutations.remove.mutateAsync(accountEvent);
+      if (accountEventDraft?.id === accountEvent.id) setAccountEventDraft(null);
+    } catch (mutationError: unknown) {
+      setAccountEventError(String(mutationError));
+    }
+  }
 
   async function handleSocialSecurityEstimateSubmit(event: FormEvent<HTMLFormElement>) {
     if (editingSocialSecurityEstimate) {
@@ -1093,25 +1165,26 @@ export function PlanningPage({
   </div>
 </section>
 
+{accountEventError && <div className="error" role="alert">{accountEventError}</div>}
 <section className="card projection-events-card">
   <div className="section-header">
     <div>
       <h2>Projection events</h2>
       <p className="muted">Capture planned future contributions, withdrawals, purchases, sales, and adjustments.</p>
     </div>
-    <button type="button" onClick={onStartNewAccountEvent} disabled={!accounts.length}>
+    <button type="button" onClick={startNewAccountEventDraft} disabled={!accounts.length}>
       Add event
     </button>
   </div>
 
   {accountEventDraft && (
-    <form onSubmit={onSaveAccountEvent} className="event-editor-card">
+    <form onSubmit={handleSaveAccountEvent} className="event-editor-card">
       <div className="section-header">
         <div>
           <h3>{accountEventDraft.id ? 'Edit projection event' : 'Add projection event'}</h3>
           <p className="muted">Use positive amounts; outflow event types are applied as withdrawals in projections.</p>
         </div>
-        <button type="button" className="secondary-button" onClick={() => onAccountEventDraft(null)}>
+        <button type="button" className="secondary-button" onClick={() => setAccountEventDraft(null)}>
           Cancel
         </button>
       </div>
@@ -1122,7 +1195,7 @@ export function PlanningPage({
             required
             value={accountEventDraft.account_id}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, account_id: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, account_id: changeEvent.target.value })
             }
           >
             {!accountEventDraft.account_id && <option value="">Select account</option>}
@@ -1140,7 +1213,7 @@ export function PlanningPage({
             type="date"
             value={accountEventDraft.event_date}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, event_date: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, event_date: changeEvent.target.value })
             }
           />
         </label>
@@ -1152,7 +1225,7 @@ export function PlanningPage({
             placeholder="2500.00"
             value={accountEventDraft.amount}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, amount: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, amount: changeEvent.target.value })
             }
           />
         </label>
@@ -1162,7 +1235,7 @@ export function PlanningPage({
             required
             value={accountEventDraft.event_type}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, event_type: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, event_type: changeEvent.target.value })
             }
           >
             {ACCOUNT_EVENT_TYPE_OPTIONS.map(([value, label]) => (
@@ -1178,7 +1251,7 @@ export function PlanningPage({
             required
             value={accountEventDraft.projection_behavior}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, projection_behavior: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, projection_behavior: changeEvent.target.value })
             }
           >
             {PROJECTION_BEHAVIOR_OPTIONS.map(([value, label]) => (
@@ -1194,21 +1267,25 @@ export function PlanningPage({
             placeholder="Optional note"
             value={accountEventDraft.description}
             onChange={(changeEvent) =>
-              onAccountEventDraft({ ...accountEventDraft, description: changeEvent.target.value })
+              setAccountEventDraft({ ...accountEventDraft, description: changeEvent.target.value })
             }
           />
         </label>
       </div>
       <div className="action-row">
-        <button type="submit" disabled={!accountEventDraft.account_id}>Save event</button>
-        <button type="button" className="secondary-button" onClick={() => onAccountEventDraft(null)}>
+        <button type="submit" disabled={!accountEventDraft.account_id || accountEventMutations.isPending}>Save event</button>
+        <button type="button" className="secondary-button" onClick={() => setAccountEventDraft(null)}>
           Cancel
         </button>
       </div>
     </form>
   )}
 
-  {accountEvents.length ? (
+  {accountEventsQuery.isPending ? (
+    <p className="muted" role="status">Loading projection events…</p>
+  ) : accountEventsQuery.error ? (
+    <div className="error" role="alert">{String(accountEventsQuery.error)}</div>
+  ) : accountEvents.length ? (
     <>
       <div className="desktop-table table-frame sticky-actions">
         <table className="editable-table compact-table">
@@ -1237,11 +1314,11 @@ export function PlanningPage({
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={() => onStartEditAccountEvent(event)}
+                      onClick={() => startEditAccountEventDraft(event)}
                     >
                       Edit
                     </button>
-                    <button type="button" className="danger-button" onClick={() => onDeleteAccountEvent(event)}>
+                    <button type="button" className="danger-button" disabled={accountEventMutations.isPending} onClick={() => handleDeleteAccountEvent(event)}>
                       Delete
                     </button>
                   </div>
@@ -1279,10 +1356,10 @@ export function PlanningPage({
               )}
             </dl>
             <div className="event-card-actions">
-              <button type="button" className="secondary-button" onClick={() => onStartEditAccountEvent(event)}>
+              <button type="button" className="secondary-button" onClick={() => startEditAccountEventDraft(event)}>
                 Edit
               </button>
-              <button type="button" className="danger-button" onClick={() => onDeleteAccountEvent(event)}>
+              <button type="button" className="danger-button" disabled={accountEventMutations.isPending} onClick={() => handleDeleteAccountEvent(event)}>
                 Delete
               </button>
             </div>
