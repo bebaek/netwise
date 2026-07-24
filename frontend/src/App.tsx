@@ -18,7 +18,6 @@ import {
   RealEstateLiquidationStrategy,
   RealEstateProperty,
   RealEstateSale,
-  RetirementTaxTreatment,
   SocialSecurityEstimate,
   SocialSecurityEstimateInput,
   SpendingItem,
@@ -64,7 +63,6 @@ import {
   listSpendingItems,
   listUsers,
   removeHouseholdMember,
-  updateAccount,
   updateAccountEvent,
   updateRealEstateProperty,
   updateSocialSecurityEstimate,
@@ -79,7 +77,6 @@ import {
   type AppView,
   type ThemePreference,
 } from './components/AppShell';
-import type { AccountEditDraft } from './pages/AssetsPage';
 import type { AccountEventDraft } from './pages/PlanningPage';
 import {
   householdQueryKeys,
@@ -226,7 +223,6 @@ function App({
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
-  const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
@@ -458,7 +454,6 @@ function App({
     if (!selectedHouseholdId) return;
     setProjection(null);
     setProjectionSettings(null);
-    setAccountEditDraft(null);
     setFintrackImportResult(null);
   }, [selectedHouseholdId]);
 
@@ -532,75 +527,6 @@ function App({
       if (userId === selectedUserId) {
         await refreshHouseholds(selectedUserId);
       }
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  function startEditAccount(account: Account) {
-    setAccountEditDraft({
-      id: account.id,
-      name: account.name,
-      institution_name: account.institution_name ?? '',
-      account_kind: account.account_kind,
-      category: account.category,
-      liquidity_class: account.liquidity_class,
-      retirement_tax_treatment: account.retirement_tax_treatment ?? '',
-      expected_annual_yield: account.expected_annual_yield ?? '',
-      liquidation_expense_rate: account.liquidation_expense_rate ?? '',
-      cost_basis: account.cost_basis ?? '',
-      currency: account.currency,
-      is_active: account.is_active,
-    });
-  }
-
-  async function handleSaveAccountEdit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId || !accountEditDraft) return;
-    setError('');
-    try {
-      await updateAccount(accountEditDraft.id, {
-        name: accountEditDraft.name.trim(),
-        institution_name: accountEditDraft.institution_name.trim() || null,
-        account_kind: accountEditDraft.account_kind,
-        category: accountEditDraft.category.trim(),
-        liquidity_class: accountEditDraft.liquidity_class.trim(),
-        retirement_tax_treatment: accountEditDraft.retirement_tax_treatment || null,
-        expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
-        liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
-        cost_basis: accountEditDraft.cost_basis.trim() || null,
-        currency: accountEditDraft.currency.trim().toUpperCase(),
-        is_active: accountEditDraft.is_active,
-      });
-      setAccountEditDraft(null);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createAccount({
-        household_id: selectedHouseholdId,
-        name: String(form.get('name') ?? ''),
-        account_kind: String(form.get('account_kind')) as 'asset' | 'liability',
-        category: String(form.get('category') ?? ''),
-        liquidity_class: String(form.get('liquidity_class') ?? ''),
-        retirement_tax_treatment: optionalString(
-          form,
-          'retirement_tax_treatment',
-        ) as RetirementTaxTreatment | undefined,
-        expected_annual_yield: optionalString(form, 'expected_annual_yield'),
-        currency: 'USD',
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1351,6 +1277,7 @@ function App({
             element={
               <WorkspaceView view="assets" householdName={selectedHousehold.name}>
                 <AssetsPage
+                  householdId={selectedHouseholdId}
                   defaultDate={today()}
                   accounts={accounts}
                   assetAccounts={assetAccounts}
@@ -1365,11 +1292,6 @@ function App({
                   onUpdateProperty={handleUpdateProperty}
                   onCreateProperty={handleCreateProperty}
                   onCreateMortgage={handleCreateMortgage}
-                  accountEditDraft={accountEditDraft}
-                  onAccountEditDraft={setAccountEditDraft}
-                  onSaveAccountEdit={handleSaveAccountEdit}
-                  onStartEditAccount={startEditAccount}
-                  onCreateAccount={handleCreateAccount}
                 />
               </WorkspaceView>
             }

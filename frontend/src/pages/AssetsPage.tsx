@@ -1,4 +1,4 @@
-import type { FormEventHandler } from 'react';
+import { type FormEvent, type FormEventHandler, useState } from 'react';
 import type {
   Account,
   MortgageProfile,
@@ -6,6 +6,7 @@ import type {
   RealEstateProperty,
   RetirementTaxTreatment,
 } from '../api';
+import { useAccountMutations } from '../queries/household';
 import { formatMoney } from '../utils/format';
 
 function formatPercent(value: string | null): string {
@@ -110,7 +111,7 @@ function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalyti
   );
 }
 
-export type AccountEditDraft = {
+type AccountEditDraft = {
   id: string;
   name: string;
   institution_name: string;
@@ -126,6 +127,7 @@ export type AccountEditDraft = {
 };
 
 export function AssetsPage({
+  householdId,
   defaultDate,
   accounts,
   assetAccounts,
@@ -140,12 +142,8 @@ export function AssetsPage({
   onUpdateProperty,
   onCreateProperty,
   onCreateMortgage,
-  accountEditDraft,
-  onAccountEditDraft,
-  onSaveAccountEdit,
-  onStartEditAccount,
-  onCreateAccount,
 }: {
+  householdId: string;
   defaultDate: string;
   accounts: Account[];
   assetAccounts: Account[];
@@ -160,14 +158,84 @@ export function AssetsPage({
   onUpdateProperty: FormEventHandler<HTMLFormElement>;
   onCreateProperty: FormEventHandler<HTMLFormElement>;
   onCreateMortgage: FormEventHandler<HTMLFormElement>;
-  accountEditDraft: AccountEditDraft | null;
-  onAccountEditDraft: (draft: AccountEditDraft | null) => void;
-  onSaveAccountEdit: FormEventHandler<HTMLFormElement>;
-  onStartEditAccount: (account: Account) => void;
-  onCreateAccount: FormEventHandler<HTMLFormElement>;
 }) {
+  const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
+  const [accountError, setAccountError] = useState('');
+  const accountMutations = useAccountMutations(householdId);
+
+  function startEditAccount(account: Account) {
+    setAccountEditDraft({
+      id: account.id,
+      name: account.name,
+      institution_name: account.institution_name ?? '',
+      account_kind: account.account_kind,
+      category: account.category,
+      liquidity_class: account.liquidity_class,
+      retirement_tax_treatment: account.retirement_tax_treatment ?? '',
+      expected_annual_yield: account.expected_annual_yield ?? '',
+      liquidation_expense_rate: account.liquidation_expense_rate ?? '',
+      cost_basis: account.cost_basis ?? '',
+      currency: account.currency,
+      is_active: account.is_active,
+    });
+  }
+
+  async function handleSaveAccountEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountEditDraft) return;
+    setAccountError('');
+    try {
+      await accountMutations.update.mutateAsync({
+        accountId: accountEditDraft.id,
+        payload: {
+          name: accountEditDraft.name.trim(),
+          institution_name: accountEditDraft.institution_name.trim() || null,
+          account_kind: accountEditDraft.account_kind,
+          category: accountEditDraft.category.trim(),
+          liquidity_class: accountEditDraft.liquidity_class.trim(),
+          retirement_tax_treatment: accountEditDraft.retirement_tax_treatment || null,
+          expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
+          liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
+          cost_basis: accountEditDraft.cost_basis.trim() || null,
+          currency: accountEditDraft.currency.trim().toUpperCase(),
+          is_active: accountEditDraft.is_active,
+        },
+      });
+      setAccountEditDraft(null);
+    } catch (mutationError: unknown) {
+      setAccountError(String(mutationError));
+    }
+  }
+
+  async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const retirementTaxTreatment = String(form.get('retirement_tax_treatment') ?? '').trim();
+    const expectedAnnualYield = String(form.get('expected_annual_yield') ?? '').trim();
+    setAccountError('');
+    try {
+      await accountMutations.create.mutateAsync({
+        household_id: householdId,
+        name: String(form.get('name') ?? ''),
+        account_kind: String(form.get('account_kind')) as 'asset' | 'liability',
+        category: String(form.get('category') ?? ''),
+        liquidity_class: String(form.get('liquidity_class') ?? ''),
+        retirement_tax_treatment: retirementTaxTreatment
+          ? retirementTaxTreatment as RetirementTaxTreatment
+          : undefined,
+        expected_annual_yield: expectedAnnualYield || undefined,
+        currency: 'USD',
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setAccountError(String(mutationError));
+    }
+  }
+
   return (
     <>
+      {accountError && <div className="error" role="alert">{accountError}</div>}
 <section className="card">
   <h2>Property details</h2>
   <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
@@ -457,28 +525,28 @@ export function AssetsPage({
     </div>
   </div>
   {accountEditDraft && (
-    <form onSubmit={onSaveAccountEdit} className="event-editor-card">
+    <form onSubmit={handleSaveAccountEdit} className="event-editor-card">
       <div className="section-header">
         <div>
           <h3>Edit account</h3>
           <p className="muted">Category and liquidity class affect projection funding and tax estimates.</p>
         </div>
-        <button type="button" className="secondary-button" onClick={() => onAccountEditDraft(null)}>
+        <button type="button" className="secondary-button" onClick={() => setAccountEditDraft(null)}>
           Cancel
         </button>
       </div>
       <div className="event-editor-grid">
         <label>
           Name
-          <input required value={accountEditDraft.name} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, name: event.target.value })} />
+          <input required value={accountEditDraft.name} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, name: event.target.value })} />
         </label>
         <label>
           Institution
-          <input value={accountEditDraft.institution_name} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, institution_name: event.target.value })} />
+          <input value={accountEditDraft.institution_name} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, institution_name: event.target.value })} />
         </label>
         <label>
           Kind
-          <select value={accountEditDraft.account_kind} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, account_kind: event.target.value as 'asset' | 'liability' })}>
+          <select value={accountEditDraft.account_kind} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, account_kind: event.target.value as 'asset' | 'liability' })}>
             <option value="asset">Asset</option>
             <option value="liability">Liability</option>
           </select>
@@ -489,7 +557,7 @@ export function AssetsPage({
             required
             value={accountEditDraft.category}
             onChange={(event) =>
-              onAccountEditDraft({
+              setAccountEditDraft({
                 ...accountEditDraft,
                 category: event.target.value,
                 retirement_tax_treatment:
@@ -502,7 +570,7 @@ export function AssetsPage({
         </label>
         <label>
           Liquidity class
-          <input required value={accountEditDraft.liquidity_class} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, liquidity_class: event.target.value })} />
+          <input required value={accountEditDraft.liquidity_class} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidity_class: event.target.value })} />
         </label>
         <label>
           Retirement tax treatment
@@ -510,7 +578,7 @@ export function AssetsPage({
             disabled={accountEditDraft.category !== 'retirement'}
             value={accountEditDraft.retirement_tax_treatment}
             onChange={(event) =>
-              onAccountEditDraft({
+              setAccountEditDraft({
                 ...accountEditDraft,
                 retirement_tax_treatment: event.target.value as RetirementTaxTreatment | '',
               })
@@ -527,32 +595,32 @@ export function AssetsPage({
         ) : (
           <label>
             Expected annual yield
-            <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
+            <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
           </label>
         )}
         <label>
           Liquidation expense rate
-          <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
+          <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
         </label>
         <label>
           Cost basis
-          <input inputMode="decimal" placeholder="Taxable accounts only" value={accountEditDraft.cost_basis} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, cost_basis: event.target.value })} />
+          <input inputMode="decimal" placeholder="Taxable accounts only" value={accountEditDraft.cost_basis} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, cost_basis: event.target.value })} />
         </label>
         <p className="muted">
           Cost basis applies to taxable investment accounts; capital gains taxes use it instead of taxing the full withdrawal. Leave blank to estimate basis from the oldest balance snapshot.
         </p>
         <label>
           Currency
-          <input required maxLength={3} value={accountEditDraft.currency} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, currency: event.target.value })} />
+          <input required maxLength={3} value={accountEditDraft.currency} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, currency: event.target.value })} />
         </label>
         <label className="inline-toggle">
-          <input type="checkbox" checked={accountEditDraft.is_active} onChange={(event) => onAccountEditDraft({ ...accountEditDraft, is_active: event.target.checked })} />
+          <input type="checkbox" checked={accountEditDraft.is_active} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, is_active: event.target.checked })} />
           Active account
         </label>
       </div>
       <div className="action-row">
-        <button type="submit">Save account</button>
-        <button type="button" className="secondary-button" onClick={() => onAccountEditDraft(null)}>Cancel</button>
+        <button type="submit" disabled={accountMutations.isPending}>Save account</button>
+        <button type="button" className="secondary-button" onClick={() => setAccountEditDraft(null)}>Cancel</button>
       </div>
     </form>
   )}
@@ -578,7 +646,7 @@ export function AssetsPage({
             <td>{account.retirement_tax_treatment ?? 'Not applicable'}</td>
             <td>{account.category === 'real_estate' ? 'Property details' : account.expected_annual_yield ?? '—'}</td>
             <td>{formatMoney(latestBalanceByAccountId.get(account.id))}</td>
-            <td><button type="button" className="secondary-button" onClick={() => onStartEditAccount(account)}>Edit</button></td>
+            <td><button type="button" className="secondary-button" onClick={() => startEditAccount(account)}>Edit</button></td>
           </tr>
         ))}
       </tbody>
@@ -590,7 +658,7 @@ export function AssetsPage({
 
 <section className="card">
   <h2>Add account</h2>
-    <form onSubmit={onCreateAccount} className="stacked-form">
+    <form onSubmit={handleCreateAccount} className="stacked-form">
       <input name="name" placeholder="Fidelity 401k" required />
       <select name="account_kind" aria-label="Account kind" defaultValue="asset">
         <option value="asset">Asset</option>
@@ -605,7 +673,7 @@ export function AssetsPage({
         <option value="after_tax">After-tax</option>
       </select>
       <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield for non-property accounts, e.g. 0.05" />
-      <button type="submit">Add account</button>
+      <button type="submit" disabled={accountMutations.isPending}>Add account</button>
   </form>
 </section>
     </>

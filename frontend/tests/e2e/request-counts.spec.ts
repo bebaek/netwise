@@ -79,6 +79,19 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.save_household_snapshot = recorder.summarize();
 
+  await page.getByRole('link', { name: 'Assets', exact: true }).click();
+  const addAccountForm = page.getByRole('heading', { name: 'Add account', exact: true })
+    .locator('..')
+    .locator('form');
+  await addAccountForm.locator('input[name="name"]').fill('Request Count Cash');
+  await addAccountForm.locator('input[name="category"]').fill('cash');
+  await addAccountForm.locator('input[name="liquidity_class"]').fill('liquid');
+  recorder.reset();
+  await addAccountForm.getByRole('button', { name: 'Add account', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Request Count Cash', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_account = recorder.summarize();
+
   recorder.dispose();
   await attachMeasurements(testInfo, measurements);
 
@@ -112,4 +125,12 @@ test('records representative frontend API request counts', async ({ page, isMobi
     /(annual-tax|household-people|income-sources|mortgages|projection-|real-estate|social-security|spending-items|members)/.test(path)
   ));
   expect(unrelatedSnapshotSavePath).toBeUndefined();
+
+  expect(measurements.create_account.total).toBeLessThanOrEqual(5);
+  const unrelatedAccountCreatePath = Object.keys(
+    measurements.create_account.by_method_and_path,
+  ).find((path) => (
+    /(annual-tax|household-people|income-sources|mortgages|projection-|real-estate|social-security|spending-items|members|snapshots)/.test(path)
+  ));
+  expect(unrelatedAccountCreatePath).toBeUndefined();
 });

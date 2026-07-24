@@ -87,7 +87,7 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ### Directly verified findings
 
-- `frontend/src/App.tsx` remains over 1,400 lines and still owns most form drafts, mutations, and the server state for domains not yet migrated.
+- `frontend/src/App.tsx` remains over 1,300 lines and still owns most form drafts, mutations, and the server state for domains not yet migrated.
 - The original baseline loaded 18 API collections centrally and requested account events separately for every account. The first implemented slice batches household events and moves accounts, events, snapshots, and financial-summary data into TanStack Query.
 - Snapshot filtering and historical interpolation originally triggered the same full refresh. They now issue one domain-specific request each.
 - Many remaining mutation paths still call `refreshDashboard()`, causing unrelated domains to reload.
@@ -109,7 +109,7 @@ The expected performance and maintainability impact is an inference from this di
 Suggested initial slices:
 
 - Snapshots and snapshot filtering — route-owned query state and mutations implemented
-- Accounts and account events — query reads and event batching implemented; account mutations remain in `App()`
+- Accounts and account events — query reads, event batching, and route-owned account create/edit mutations implemented; account-event mutations remain in `App()`
 - Real estate
 - Planning data
 - Household membership/settings
@@ -122,7 +122,8 @@ Suggested initial slices:
 - [x] Move accounts, events, snapshots, and financial summaries out of component-owned server state.
 - [x] Limit snapshot filters, interpolation toggles, and snapshot mutations to affected query keys.
 - [x] Extract snapshot queries, local state, and mutation handlers from `App()` into the Update route.
-- [ ] Extract account mutation handlers from `App()`.
+- [x] Extract account create/edit state and mutation handlers from `App()` into the Assets route.
+- [ ] Extract account-event mutation handlers from `App()`.
 - [ ] Migrate remaining route domains and eliminate the central dashboard refresh.
 
 ### Completion criteria
@@ -265,6 +266,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Account mutations | Moved account create/edit state and mutations into Assets with targeted account and financial-summary invalidation. |
 | 2026-07-22 | Snapshot domain | Moved snapshot loading, filters, drafts, and mutations into the Update route; Overview no longer requests snapshots. |
 | 2026-07-22 | Frontend server state | Added request-count baselines, household event batching, and the first TanStack Query slice for accounts, snapshots, events, and financial summaries. |
 | 2026-07-22 | P0 security | Confined imports to an explicit root, made admin tools opt-in, bound development ports to localhost, and marked the security milestone complete. |

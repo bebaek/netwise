@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createAccount,
   createSnapshot,
   createSnapshotBatch,
   deleteSnapshot,
@@ -9,6 +10,7 @@ import {
   listAccounts,
   listHouseholdAccountEvents,
   listHouseholdSnapshots,
+  updateAccount,
   updateSnapshot,
   type HouseholdSnapshot,
 } from '../api';
@@ -40,6 +42,34 @@ export const householdQueryKeys = {
     'breakdown-history',
   ] as const,
 };
+
+type UpdateAccountVariables = {
+  accountId: string;
+  payload: Parameters<typeof updateAccount>[1];
+};
+
+export function useAccountMutations(householdId: string) {
+  const queryClient = useQueryClient();
+  const refreshAccountData = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: householdQueryKeys.accounts(householdId) }),
+    queryClient.invalidateQueries({ queryKey: householdQueryKeys.financialSummary(householdId) }),
+  ]);
+
+  const create = useMutation({
+    mutationFn: createAccount,
+    onSuccess: refreshAccountData,
+  });
+  const update = useMutation({
+    mutationFn: ({ accountId, payload }: UpdateAccountVariables) => updateAccount(accountId, payload),
+    onSuccess: refreshAccountData,
+  });
+
+  return {
+    create,
+    update,
+    isPending: create.isPending || update.isPending,
+  };
+}
 
 export function useAccounts(householdId: string) {
   return useQuery({
