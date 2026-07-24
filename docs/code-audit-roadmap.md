@@ -87,8 +87,8 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ### Directly verified findings
 
-- `frontend/src/App.tsx` is now under 900 lines but still owns mutations and server state for planning and household-settings domains not yet migrated.
-- `frontend/src/pages/PlanningPage.tsx` is over 1,500 lines after absorbing route-owned planning workflows, so its internal domain boundaries now need extraction.
+- `frontend/src/App.tsx` is now under 750 lines but still owns projection-transfer, projection-settings, and household-settings workflows.
+- `frontend/src/pages/PlanningPage.tsx` is over 1,600 lines after absorbing route-owned planning workflows, so its internal domain boundaries now need extraction.
 - The original baseline loaded 18 API collections centrally and requested account events separately for every account. The first implemented slice batches household events and moves accounts, events, snapshots, and financial-summary data into TanStack Query.
 - Snapshot filtering and historical interpolation originally triggered the same full refresh. They now issue one domain-specific request each.
 - Many remaining mutation paths still call `refreshDashboard()`, causing unrelated domains to reload.
@@ -112,7 +112,7 @@ Suggested initial slices:
 - Snapshots and snapshot filtering — route-owned query state and mutations implemented
 - Accounts and account events — query reads, event batching, local drafts, and route-owned mutations implemented
 - Real estate — properties, analytics, mortgages, sales, liquidation strategies, and related mutations are route-owned
-- Planning data — account events, real estate, spending items, and tax records are route-owned; income, people, Social Security, transfers, and settings remain in `App()`
+- Planning data — account events, real estate, budget data, income sources, people, and Social Security are route-owned; transfers and settings remain in `App()`
 - Household membership/settings
 
 ### Implementation progress
@@ -128,6 +128,7 @@ Suggested initial slices:
 - [x] Extract property, property-analytics, and mortgage queries and mutations into the Assets route.
 - [x] Extract real-estate sales and liquidation strategies into the Planning route.
 - [x] Extract spending-item and annual-tax-record queries and mutations into the Planning route.
+- [x] Extract income-source, household-person, and Social Security queries and mutations into the Planning route.
 - [ ] Migrate remaining route domains and eliminate the central dashboard refresh.
 
 ### Completion criteria
@@ -270,6 +271,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Planning people data | Moved income sources, household people, and Social Security estimates into Planning; initial Overview requests fell from 28 to 22. |
 | 2026-07-22 | Planning budget data | Moved spending items and annual tax records into Planning; initial Overview requests fell from 32 to 28. |
 | 2026-07-22 | Planning real estate | Moved planned sales and liquidation strategies into Planning; initial Overview requests fell from 36 to 32. |
 | 2026-07-22 | Asset real estate | Moved properties, property analytics, mortgages, and related mutations into Assets; initial Overview requests fell from 42 to 36. |

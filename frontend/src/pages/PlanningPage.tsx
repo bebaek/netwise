@@ -2,18 +2,22 @@ import { useState, type FormEvent, type FormEventHandler } from 'react';
 import type {
   Account,
   AccountEvent,
-  HouseholdPerson,
-  IncomeSource,
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
   SocialSecurityEstimate,
+  SocialSecurityEstimateInput,
   SpendingItem,
 } from '../api';
 import { useAccountEventMutations, useHouseholdAccountEvents } from '../queries/household';
-import { usePlanningBudgetData, usePlanningBudgetMutations } from '../queries/planning';
+import {
+  usePlanningBudgetData,
+  usePlanningBudgetMutations,
+  usePlanningPeopleData,
+  usePlanningPeopleMutations,
+} from '../queries/planning';
 import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
 
@@ -72,6 +76,30 @@ function requiredFormString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
+function socialSecurityEstimateInput(
+  form: FormData,
+  householdId: string,
+): SocialSecurityEstimateInput {
+  const workYears = optionalFormString(form, 'completed_work_years');
+  return {
+    household_id: householdId,
+    person_id: requiredFormString(form, 'social_security_person_id'),
+    calculation_mode: requiredFormString(form, 'social_security_mode') as 'manual' | 'ballpark',
+    claiming_date: requiredFormString(form, 'claiming_date'),
+    current_covered_earnings: optionalFormString(form, 'current_covered_earnings'),
+    completed_work_years: workYears ? Number(workYears) : undefined,
+    expected_work_end_date: optionalFormString(form, 'expected_work_end_date'),
+    earnings_pattern: optionalFormString(form, 'earnings_pattern') as
+      | 'lower'
+      | 'steady'
+      | 'rising'
+      | undefined,
+    manual_monthly_benefit: optionalFormString(form, 'manual_monthly_benefit'),
+    cola_rate: optionalFormString(form, 'cola_rate') ?? '0.025',
+    deposit_account_id: optionalFormString(form, 'social_security_deposit_account_id'),
+  };
+}
+
 function eventTypeLabel(value: string): string {
   return ACCOUNT_EVENT_TYPE_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
 }
@@ -100,17 +128,9 @@ export function PlanningPage({
   onSaveProjectionSettings,
   onGetProjection,
   projectionRunning,
-  incomeSources,
-  householdPeople,
-  socialSecurityEstimates,
   projectionTransfers,
   projection,
   onInvalidateProjection,
-  onCreateIncomeSource,
-  onCreateHouseholdPerson,
-  onCreateSocialSecurityEstimate,
-  onUpdateSocialSecurityEstimate,
-  onDeleteSocialSecurityEstimate,
   onCreateProjectionTransfer,
   onDeleteProjectionTransfer,
 }: {
@@ -125,23 +145,18 @@ export function PlanningPage({
   onSaveProjectionSettings: FormEventHandler<HTMLFormElement>;
   onGetProjection: FormEventHandler<HTMLFormElement>;
   projectionRunning: boolean;
-  incomeSources: IncomeSource[];
-  householdPeople: HouseholdPerson[];
-  socialSecurityEstimates: SocialSecurityEstimate[];
   projectionTransfers: ProjectionTransfer[];
   projection: NetWorthProjection | null;
   onInvalidateProjection: () => void;
-  onCreateIncomeSource: FormEventHandler<HTMLFormElement>;
-  onCreateHouseholdPerson: FormEventHandler<HTMLFormElement>;
-  onCreateSocialSecurityEstimate: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
-  onUpdateSocialSecurityEstimate: (
-    event: FormEvent<HTMLFormElement>,
-    estimate: SocialSecurityEstimate,
-  ) => void | Promise<void>;
-  onDeleteSocialSecurityEstimate: (estimate: SocialSecurityEstimate) => void | Promise<void>;
   onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
   onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
 }) {
+  const [peopleError, setPeopleError] = useState('');
+  const planningPeopleData = usePlanningPeopleData(householdId);
+  const planningPeopleMutations = usePlanningPeopleMutations(householdId);
+  const incomeSources = planningPeopleData.incomeSources.data ?? [];
+  const householdPeople = planningPeopleData.householdPeople.data ?? [];
+  const socialSecurityEstimates = planningPeopleData.socialSecurityEstimates.data ?? [];
   const [budgetError, setBudgetError] = useState('');
   const planningBudgetData = usePlanningBudgetData(householdId);
   const planningBudgetMutations = usePlanningBudgetMutations(householdId);
@@ -189,6 +204,89 @@ export function PlanningPage({
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
+
+  async function onCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setPeopleError('');
+    try {
+      await planningPeopleMutations.createIncome.mutateAsync({
+        household_id: householdId,
+        name: requiredFormString(form, 'income_name'),
+        income_type: optionalFormString(form, 'income_type') ?? 'other',
+        amount: requiredFormString(form, 'amount'),
+        currency: 'USD',
+        frequency: requiredFormString(form, 'frequency'),
+        start_date: requiredFormString(form, 'start_date'),
+        end_date: optionalFormString(form, 'end_date'),
+        growth_rate: optionalFormString(form, 'growth_rate'),
+        deposit_account_id: optionalFormString(form, 'deposit_account_id'),
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setPeopleError(String(mutationError));
+    }
+  }
+
+  async function onCreateHouseholdPerson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setPeopleError('');
+    try {
+      await planningPeopleMutations.createPerson.mutateAsync({
+        household_id: householdId,
+        name: requiredFormString(form, 'person_name'),
+        date_of_birth: requiredFormString(form, 'person_date_of_birth'),
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setPeopleError(String(mutationError));
+    }
+  }
+
+  async function onCreateSocialSecurityEstimate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setPeopleError('');
+    try {
+      await planningPeopleMutations.createSocialSecurity.mutateAsync(
+        socialSecurityEstimateInput(form, householdId),
+      );
+      target.reset();
+    } catch (mutationError: unknown) {
+      setPeopleError(String(mutationError));
+    }
+  }
+
+  async function onUpdateSocialSecurityEstimate(
+    event: FormEvent<HTMLFormElement>,
+    estimate: SocialSecurityEstimate,
+  ) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setPeopleError('');
+    try {
+      await planningPeopleMutations.updateSocialSecurity.mutateAsync({
+        estimateId: estimate.id,
+        payload: socialSecurityEstimateInput(form, householdId),
+      });
+    } catch (mutationError: unknown) {
+      setPeopleError(String(mutationError));
+      throw mutationError;
+    }
+  }
+
+  async function onDeleteSocialSecurityEstimate(estimate: SocialSecurityEstimate) {
+    setPeopleError('');
+    try {
+      await planningPeopleMutations.deleteSocialSecurity.mutateAsync(estimate);
+    } catch (mutationError: unknown) {
+      setPeopleError(String(mutationError));
+    }
+  }
 
   async function onCreateSpendingItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -428,6 +526,23 @@ export function PlanningPage({
 
   return (
     <>
+      {peopleError && <div className="error" role="alert">{peopleError}</div>}
+      {planningPeopleData.incomeSources.error && (
+        <div className="error" role="alert">{String(planningPeopleData.incomeSources.error)}</div>
+      )}
+      {planningPeopleData.householdPeople.error && (
+        <div className="error" role="alert">{String(planningPeopleData.householdPeople.error)}</div>
+      )}
+      {planningPeopleData.socialSecurityEstimates.error && (
+        <div className="error" role="alert">
+          {String(planningPeopleData.socialSecurityEstimates.error)}
+        </div>
+      )}
+      {(planningPeopleData.incomeSources.isPending
+        || planningPeopleData.householdPeople.isPending
+        || planningPeopleData.socialSecurityEstimates.isPending) && (
+        <div className="card" role="status">Loading household planning data…</div>
+      )}
       {budgetError && <div className="error" role="alert">{budgetError}</div>}
       {planningBudgetData.spendingItems.error && (
         <div className="error" role="alert">{String(planningBudgetData.spendingItems.error)}</div>
@@ -1063,6 +1178,7 @@ export function PlanningPage({
               <td>
                 <button
                   type="button"
+                  disabled={planningPeopleMutations.isPending}
                   onClick={() => {
                     setSocialSecurityEditId(estimate.id);
                     setSocialSecurityMode(estimate.calculation_mode);
@@ -1073,6 +1189,7 @@ export function PlanningPage({
                 <button
                   type="button"
                   className="danger-button"
+                  disabled={planningPeopleMutations.isPending}
                   onClick={() => {
                     if (socialSecurityEditId === estimate.id) setSocialSecurityEditId('');
                     onDeleteSocialSecurityEstimate(estimate);
@@ -1146,7 +1263,7 @@ export function PlanningPage({
         </select>
       </label>
       <div className="form-actions">
-        <button type="submit" disabled={!estimateFormPeople.length}>
+        <button type="submit" disabled={!estimateFormPeople.length || planningPeopleMutations.isPending}>
           {editingSocialSecurityEstimate ? 'Save estimate' : 'Create estimate'}
         </button>
         {editingSocialSecurityEstimate && (
@@ -1167,7 +1284,7 @@ export function PlanningPage({
     <form onSubmit={onCreateHouseholdPerson} className="stacked-form">
       <input name="person_name" placeholder="Name" required />
       <label>Date of birth<input name="person_date_of_birth" type="date" required /></label>
-      <button type="submit">Add person</button>
+      <button type="submit" disabled={planningPeopleMutations.isPending}>Add person</button>
     </form>
   </div>
 </section>
@@ -1264,7 +1381,7 @@ export function PlanningPage({
           </option>
         ))}
       </select>
-      <button type="submit">Add income source</button>
+      <button type="submit" disabled={planningPeopleMutations.isPending}>Add income source</button>
     </form>
   </div>
 

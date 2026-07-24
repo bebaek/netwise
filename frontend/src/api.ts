@@ -875,8 +875,11 @@ export function createMortgageProfile(payload: {
   });
 }
 
-export function listIncomeSources(householdId: string): Promise<IncomeSource[]> {
-  return request<IncomeSource[]>(`/income-sources?household_id=${householdId}`);
+export function listIncomeSources(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<IncomeSource[]> {
+  return request<IncomeSource[]>(`/income-sources?household_id=${householdId}`, { signal });
 }
 
 export function createIncomeSource(payload: {
@@ -897,8 +900,11 @@ export function createIncomeSource(payload: {
   });
 }
 
-export function listHouseholdPeople(householdId: string): Promise<HouseholdPerson[]> {
-  return request<HouseholdPerson[]>(`/household-people?household_id=${householdId}`);
+export function listHouseholdPeople(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<HouseholdPerson[]> {
+  return request<HouseholdPerson[]>(`/household-people?household_id=${householdId}`, { signal });
 }
 
 export function createHouseholdPerson(payload: {
@@ -912,8 +918,14 @@ export function createHouseholdPerson(payload: {
   });
 }
 
-export function listSocialSecurityEstimates(householdId: string): Promise<SocialSecurityEstimate[]> {
-  return request<SocialSecurityEstimate[]>(`/social-security-estimates?household_id=${householdId}`);
+export function listSocialSecurityEstimates(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<SocialSecurityEstimate[]> {
+  return request<SocialSecurityEstimate[]>(
+    `/social-security-estimates?household_id=${householdId}`,
+    { signal },
+  );
 }
 
 export function createSocialSecurityEstimate(

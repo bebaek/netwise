@@ -6,23 +6,15 @@ import {
   FintrackImportResult,
   Household,
   HouseholdMembership,
-  HouseholdPerson,
-  IncomeSource,
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
-  SocialSecurityEstimate,
-  SocialSecurityEstimateInput,
   User,
   addHouseholdMember,
   createHousehold,
-  createHouseholdPerson,
-  createIncomeSource,
   createProjectionTransfer,
-  createSocialSecurityEstimate,
   createUser,
   deleteProjectionTransfer,
-  deleteSocialSecurityEstimate,
   exportHousehold,
   getCapabilities,
   getNetWorthProjection,
@@ -30,13 +22,9 @@ import {
   importFintrack,
   listHouseholds,
   listHouseholdMembers,
-  listHouseholdPeople,
-  listIncomeSources,
   listProjectionTransfers,
-  listSocialSecurityEstimates,
   listUsers,
   removeHouseholdMember,
-  updateSocialSecurityEstimate,
   upsertProjectionSettings,
 } from './api';
 import {
@@ -111,30 +99,6 @@ function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
-function socialSecurityEstimateInput(
-  form: FormData,
-  householdId: string,
-): SocialSecurityEstimateInput {
-  const workYears = optionalString(form, 'completed_work_years');
-  return {
-    household_id: householdId,
-    person_id: requiredString(form, 'social_security_person_id'),
-    calculation_mode: requiredString(form, 'social_security_mode') as 'manual' | 'ballpark',
-    claiming_date: requiredString(form, 'claiming_date'),
-    current_covered_earnings: optionalString(form, 'current_covered_earnings'),
-    completed_work_years: workYears ? Number(workYears) : undefined,
-    expected_work_end_date: optionalString(form, 'expected_work_end_date'),
-    earnings_pattern: optionalString(form, 'earnings_pattern') as
-      | 'lower'
-      | 'steady'
-      | 'rising'
-      | undefined,
-    manual_monthly_benefit: optionalString(form, 'manual_monthly_benefit'),
-    cola_rate: optionalString(form, 'cola_rate') ?? '0.025',
-    deposit_account_id: optionalString(form, 'social_security_deposit_account_id'),
-  };
-}
-
 function exportFilename(name: string): string {
   const safeName = name
     .trim()
@@ -191,9 +155,6 @@ function App({
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
-  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
-  const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
-  const [socialSecurityEstimates, setSocialSecurityEstimates] = useState<SocialSecurityEstimate[]>([]);
   const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
@@ -299,16 +260,10 @@ function App({
         ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
         : Promise.resolve();
       const [
-        incomeSourceList,
-        householdPersonList,
-        socialSecurityEstimateList,
         projectionTransferList,
         memberList,
         projectionSettingsResult,
       ] = await Promise.all([
-        listIncomeSources(householdId),
-        listHouseholdPeople(householdId),
-        listSocialSecurityEstimates(householdId),
         listProjectionTransfers(householdId),
         listHouseholdMembers(householdId),
         getProjectionSettings(householdId),
@@ -317,9 +272,6 @@ function App({
       if (requestId !== dashboardRequestId.current) return;
 
       setHouseholdMembers(memberList);
-      setIncomeSources(incomeSourceList);
-      setHouseholdPeople(householdPersonList);
-      setSocialSecurityEstimates(socialSecurityEstimateList);
       setProjectionTransfers(projectionTransferList);
       setProjectionSettings(projectionSettingsResult);
       setLoadedHouseholdId(householdId);
@@ -456,98 +408,6 @@ function App({
       if (userId === selectedUserId) {
         await refreshHouseholds(selectedUserId);
       }
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateHouseholdPerson(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createHouseholdPerson({
-        household_id: selectedHouseholdId,
-        name: requiredString(form, 'person_name'),
-        date_of_birth: requiredString(form, 'person_date_of_birth'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateSocialSecurityEstimate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createSocialSecurityEstimate(socialSecurityEstimateInput(form, selectedHouseholdId));
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleUpdateSocialSecurityEstimate(
-    event: FormEvent<HTMLFormElement>,
-    estimate: SocialSecurityEstimate,
-  ) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await updateSocialSecurityEstimate(
-        estimate.id,
-        socialSecurityEstimateInput(form, selectedHouseholdId),
-      );
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-      throw err;
-    }
-  }
-
-  async function handleDeleteSocialSecurityEstimate(estimate: SocialSecurityEstimate) {
-    if (!selectedHouseholdId) return;
-    setError('');
-    try {
-      await deleteSocialSecurityEstimate(estimate.id);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createIncomeSource({
-        household_id: selectedHouseholdId,
-        name: requiredString(form, 'income_name'),
-        income_type: optionalString(form, 'income_type') ?? 'other',
-        amount: requiredString(form, 'amount'),
-        currency: 'USD',
-        frequency: requiredString(form, 'frequency'),
-        start_date: requiredString(form, 'start_date'),
-        end_date: optionalString(form, 'end_date'),
-        growth_rate: optionalString(form, 'growth_rate'),
-        deposit_account_id: optionalString(form, 'deposit_account_id'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -802,17 +662,9 @@ function App({
                   onSaveProjectionSettings={handleSaveProjectionSettings}
                   onGetProjection={handleGetProjection}
                   projectionRunning={projectionRunning}
-                  incomeSources={incomeSources}
-                  householdPeople={householdPeople}
-                  socialSecurityEstimates={socialSecurityEstimates}
                   projectionTransfers={projectionTransfers}
                   projection={projection}
                   onInvalidateProjection={() => setProjection(null)}
-                  onCreateIncomeSource={handleCreateIncomeSource}
-                  onCreateHouseholdPerson={handleCreateHouseholdPerson}
-                  onCreateSocialSecurityEstimate={handleCreateSocialSecurityEstimate}
-                  onUpdateSocialSecurityEstimate={handleUpdateSocialSecurityEstimate}
-                  onDeleteSocialSecurityEstimate={handleDeleteSocialSecurityEstimate}
                   onCreateProjectionTransfer={handleCreateProjectionTransfer}
                   onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
                 />

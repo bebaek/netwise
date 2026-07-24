@@ -136,6 +136,21 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.create_spending_item = recorder.summarize();
 
+  const personForm = page.getByRole('heading', { name: 'Add household person', exact: true })
+    .locator('..')
+    .locator('form');
+  await personForm.getByPlaceholder('Name').fill('Request Count Person');
+  await personForm.locator('input[name="person_date_of_birth"]').fill('1980-01-01');
+  recorder.reset();
+  await personForm.getByRole('button', { name: 'Add person', exact: true }).click();
+  await expect(
+    page.locator('select[name="social_security_person_id"] option', {
+      hasText: 'Request Count Person',
+    }),
+  ).toHaveCount(1);
+  await page.waitForLoadState('networkidle');
+  measurements.create_household_person = recorder.summarize();
+
   await page.getByRole('button', { name: 'Add event', exact: true }).click();
   const eventForm = page.locator('form').filter({
     has: page.getByRole('heading', { name: 'Add projection event', exact: true }),
@@ -172,6 +187,9 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/spending-items$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/annual-tax-records$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/income-sources$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/household-people$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/social-security-estimates$/.test(path))).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -214,12 +232,15 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ));
   expect(unrelatedPropertyCreatePath).toBeUndefined();
 
-  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(10);
+  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(16);
   expect(Object.keys(measurements.load_planning_route_data.by_method_and_path).sort()).toEqual([
     'GET /api/annual-tax-records',
+    'GET /api/household-people',
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
+    'GET /api/income-sources',
     'GET /api/real-estate/liquidation-strategies',
     'GET /api/real-estate/sales',
+    'GET /api/social-security-estimates',
     'GET /api/spending-items',
   ]);
 
@@ -233,6 +254,12 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(Object.keys(measurements.create_spending_item.by_method_and_path).sort()).toEqual([
     'GET /api/spending-items',
     'POST /api/spending-items',
+  ]);
+
+  expect(measurements.create_household_person.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.create_household_person.by_method_and_path).sort()).toEqual([
+    'GET /api/household-people',
+    'POST /api/household-people',
   ]);
 
   expect(measurements.create_account_event.total).toBeLessThanOrEqual(2);
