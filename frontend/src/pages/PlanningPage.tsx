@@ -2,7 +2,6 @@ import { useState, type FormEvent, type FormEventHandler } from 'react';
 import type {
   Account,
   AccountEvent,
-  AnnualTaxRecord,
   HouseholdPerson,
   IncomeSource,
   NetWorthProjection,
@@ -14,6 +13,7 @@ import type {
   SpendingItem,
 } from '../api';
 import { useAccountEventMutations, useHouseholdAccountEvents } from '../queries/household';
+import { usePlanningBudgetData, usePlanningBudgetMutations } from '../queries/planning';
 import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
 
@@ -104,9 +104,8 @@ export function PlanningPage({
   householdPeople,
   socialSecurityEstimates,
   projectionTransfers,
-  spendingItems,
-  taxRecords,
   projection,
+  onInvalidateProjection,
   onCreateIncomeSource,
   onCreateHouseholdPerson,
   onCreateSocialSecurityEstimate,
@@ -114,10 +113,6 @@ export function PlanningPage({
   onDeleteSocialSecurityEstimate,
   onCreateProjectionTransfer,
   onDeleteProjectionTransfer,
-  onCreateSpendingItem,
-  onUpdateSpendingItem,
-  onDeleteSpendingItem,
-  onCreateTaxRecord,
 }: {
   householdId: string;
   defaultDate: string;
@@ -134,9 +129,8 @@ export function PlanningPage({
   householdPeople: HouseholdPerson[];
   socialSecurityEstimates: SocialSecurityEstimate[];
   projectionTransfers: ProjectionTransfer[];
-  spendingItems: SpendingItem[];
-  taxRecords: AnnualTaxRecord[];
   projection: NetWorthProjection | null;
+  onInvalidateProjection: () => void;
   onCreateIncomeSource: FormEventHandler<HTMLFormElement>;
   onCreateHouseholdPerson: FormEventHandler<HTMLFormElement>;
   onCreateSocialSecurityEstimate: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
@@ -147,11 +141,12 @@ export function PlanningPage({
   onDeleteSocialSecurityEstimate: (estimate: SocialSecurityEstimate) => void | Promise<void>;
   onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
   onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
-  onCreateSpendingItem: FormEventHandler<HTMLFormElement>;
-  onUpdateSpendingItem: (event: FormEvent<HTMLFormElement>, item: SpendingItem) => Promise<void>;
-  onDeleteSpendingItem: (item: SpendingItem) => void | Promise<void>;
-  onCreateTaxRecord: FormEventHandler<HTMLFormElement>;
 }) {
+  const [budgetError, setBudgetError] = useState('');
+  const planningBudgetData = usePlanningBudgetData(householdId);
+  const planningBudgetMutations = usePlanningBudgetMutations(householdId);
+  const spendingItems = planningBudgetData.spendingItems.data ?? [];
+  const taxRecords = planningBudgetData.taxRecords.data ?? [];
   const [realEstateError, setRealEstateError] = useState('');
   const planningRealEstateData = usePlanningRealEstateData(householdId);
   const planningRealEstateMutations = usePlanningRealEstateMutations(householdId);
@@ -194,6 +189,87 @@ export function PlanningPage({
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
+
+  async function onCreateSpendingItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setBudgetError('');
+    try {
+      await planningBudgetMutations.createSpending.mutateAsync({
+        household_id: householdId,
+        name: requiredFormString(form, 'spending_item_name'),
+        category: requiredFormString(form, 'spending_item_category'),
+        annual_amount: requiredFormString(form, 'spending_item_annual_amount'),
+        retirement_annual_amount: optionalFormString(
+          form,
+          'spending_item_retirement_annual_amount',
+        ),
+        growth_rate: optionalFormString(form, 'spending_item_growth_rate'),
+      });
+      target.reset();
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setBudgetError(String(mutationError));
+    }
+  }
+
+  async function onUpdateSpendingItem(
+    event: FormEvent<HTMLFormElement>,
+    spendingItem: SpendingItem,
+  ) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBudgetError('');
+    try {
+      await planningBudgetMutations.updateSpending.mutateAsync({
+        spendingItemId: spendingItem.id,
+        payload: {
+          name: requiredFormString(form, 'spending_item_edit_name'),
+          category: requiredFormString(form, 'spending_item_edit_category'),
+          annual_amount: requiredFormString(form, 'spending_item_edit_annual_amount'),
+          retirement_annual_amount:
+            optionalFormString(form, 'spending_item_edit_retirement_annual_amount') ?? null,
+          growth_rate: optionalFormString(form, 'spending_item_edit_growth_rate') ?? null,
+        },
+      });
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setBudgetError(String(mutationError));
+      throw mutationError;
+    }
+  }
+
+  async function onDeleteSpendingItem(spendingItem: SpendingItem) {
+    if (!window.confirm(`Delete spending item ${spendingItem.name}?`)) return;
+    setBudgetError('');
+    try {
+      await planningBudgetMutations.deleteSpending.mutateAsync(spendingItem);
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setBudgetError(String(mutationError));
+    }
+  }
+
+  async function onCreateTaxRecord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setBudgetError('');
+    try {
+      await planningBudgetMutations.createTaxRecord.mutateAsync({
+        household_id: householdId,
+        tax_year: Number(requiredFormString(form, 'tax_year')),
+        gross_income: optionalFormString(form, 'gross_income'),
+        total_taxes_paid: requiredFormString(form, 'total_taxes_paid'),
+        refund_or_amount_due: optionalFormString(form, 'refund_or_amount_due'),
+        notes: optionalFormString(form, 'notes'),
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setBudgetError(String(mutationError));
+    }
+  }
 
   async function onUpsertLiquidationStrategy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -352,6 +428,16 @@ export function PlanningPage({
 
   return (
     <>
+      {budgetError && <div className="error" role="alert">{budgetError}</div>}
+      {planningBudgetData.spendingItems.error && (
+        <div className="error" role="alert">{String(planningBudgetData.spendingItems.error)}</div>
+      )}
+      {planningBudgetData.taxRecords.error && (
+        <div className="error" role="alert">{String(planningBudgetData.taxRecords.error)}</div>
+      )}
+      {(planningBudgetData.spendingItems.isPending || planningBudgetData.taxRecords.isPending) && (
+        <div className="card" role="status">Loading budget data…</div>
+      )}
       {realEstateError && <div className="error" role="alert">{realEstateError}</div>}
       {planningRealEstateData.sales.error && (
         <div className="error" role="alert">{String(planningRealEstateData.sales.error)}</div>
@@ -476,11 +562,11 @@ export function PlanningPage({
                               await onUpdateSpendingItem(event, item);
                               setSpendingItemEditId('');
                             } catch {
-                              // The app-level handler displays the API error and keeps the row editable.
+                              // The route handler displays the API error and keeps the row editable.
                             }
                           }}
                         >
-                          <button type="submit">Save</button>
+                          <button type="submit" disabled={planningBudgetMutations.isPending}>Save</button>
                           <button type="button" className="secondary-button" onClick={() => setSpendingItemEditId('')}>Cancel</button>
                         </form>
                       </td>
@@ -496,8 +582,8 @@ export function PlanningPage({
                     <td>{formatMoney(item.retirement_annual_amount ?? item.annual_amount)}</td>
                     <td>{item.growth_rate == null ? 'Default inflation' : formatRate(item.growth_rate)}</td>
                     <td className="form-row">
-                      <button type="button" onClick={() => setSpendingItemEditId(item.id)}>Edit</button>
-                      <button type="button" className="danger-button" onClick={() => onDeleteSpendingItem(item)}>Delete</button>
+                      <button type="button" disabled={planningBudgetMutations.isPending} onClick={() => setSpendingItemEditId(item.id)}>Edit</button>
+                      <button type="button" className="danger-button" disabled={planningBudgetMutations.isPending} onClick={() => onDeleteSpendingItem(item)}>Delete</button>
                     </td>
                   </tr>
                 );
@@ -537,7 +623,7 @@ export function PlanningPage({
         <input name="spending_item_growth_rate" inputMode="decimal" placeholder="Use default inflation" />
       </label>
       <p className="muted">Use a retirement amount of 0 for costs that end at retirement. Leave it blank to keep the current amount. A custom growth rate lets healthcare or travel differ from general inflation.</p>
-      <button type="submit">Add spending item</button>
+      <button type="submit" disabled={planningBudgetMutations.isPending}>Add spending item</button>
     </form>
   </div>
 </section>
@@ -1190,7 +1276,7 @@ export function PlanningPage({
       <input name="total_taxes_paid" inputMode="decimal" placeholder="Total taxes paid" required />
       <input name="refund_or_amount_due" inputMode="decimal" placeholder="Refund or amount due" />
       <input name="notes" placeholder="Notes" />
-      <button type="submit">Add tax record</button>
+      <button type="submit" disabled={planningBudgetMutations.isPending}>Add tax record</button>
     </form>
   </div>
 </section>

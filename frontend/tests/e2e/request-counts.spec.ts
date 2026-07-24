@@ -125,6 +125,17 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.create_real_estate_sale = recorder.summarize();
 
+  const spendingForm = page.getByRole('heading', { name: 'Add spending item', exact: true })
+    .locator('..')
+    .locator('form');
+  await spendingForm.locator('input[name="spending_item_name"]').fill('Request Count Spending');
+  await spendingForm.locator('input[name="spending_item_annual_amount"]').fill('1200');
+  recorder.reset();
+  await spendingForm.getByRole('button', { name: 'Add spending item', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Request Count Spending', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_spending_item = recorder.summarize();
+
   await page.getByRole('button', { name: 'Add event', exact: true }).click();
   const eventForm = page.locator('form').filter({
     has: page.getByRole('heading', { name: 'Add projection event', exact: true }),
@@ -159,6 +170,8 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(
     initialPaths.some((path) => /^GET \/api\/real-estate\/liquidation-strategies$/.test(path)),
   ).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/spending-items$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/annual-tax-records$/.test(path))).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -201,17 +214,25 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ));
   expect(unrelatedPropertyCreatePath).toBeUndefined();
 
-  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(6);
+  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(10);
   expect(Object.keys(measurements.load_planning_route_data.by_method_and_path).sort()).toEqual([
+    'GET /api/annual-tax-records',
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
     'GET /api/real-estate/liquidation-strategies',
     'GET /api/real-estate/sales',
+    'GET /api/spending-items',
   ]);
 
   expect(measurements.create_real_estate_sale.total).toBeLessThanOrEqual(2);
   expect(Object.keys(measurements.create_real_estate_sale.by_method_and_path).sort()).toEqual([
     'GET /api/real-estate/sales',
     'POST /api/real-estate/sales',
+  ]);
+
+  expect(measurements.create_spending_item.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.create_spending_item.by_method_and_path).sort()).toEqual([
+    'GET /api/spending-items',
+    'POST /api/spending-items',
   ]);
 
   expect(measurements.create_account_event.total).toBeLessThanOrEqual(2);

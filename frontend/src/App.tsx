@@ -3,7 +3,6 @@ import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, 
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
-  AnnualTaxRecord,
   FintrackImportResult,
   Household,
   HouseholdMembership,
@@ -14,37 +13,30 @@ import {
   ProjectionTransfer,
   SocialSecurityEstimate,
   SocialSecurityEstimateInput,
-  SpendingItem,
   User,
   addHouseholdMember,
-  createAnnualTaxRecord,
   createHousehold,
   createHouseholdPerson,
   createIncomeSource,
   createProjectionTransfer,
   createSocialSecurityEstimate,
-  createSpendingItem,
   createUser,
   deleteProjectionTransfer,
   deleteSocialSecurityEstimate,
-  deleteSpendingItem,
   exportHousehold,
   getCapabilities,
   getNetWorthProjection,
   getProjectionSettings,
   importFintrack,
-  listAnnualTaxRecords,
   listHouseholds,
   listHouseholdMembers,
   listHouseholdPeople,
   listIncomeSources,
   listProjectionTransfers,
   listSocialSecurityEstimates,
-  listSpendingItems,
   listUsers,
   removeHouseholdMember,
   updateSocialSecurityEstimate,
-  updateSpendingItem,
   upsertProjectionSettings,
 } from './api';
 import {
@@ -203,8 +195,6 @@ function App({
   const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
   const [socialSecurityEstimates, setSocialSecurityEstimates] = useState<SocialSecurityEstimate[]>([]);
   const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
-  const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([]);
-  const [taxRecords, setTaxRecords] = useState<AnnualTaxRecord[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
   const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
@@ -313,8 +303,6 @@ function App({
         householdPersonList,
         socialSecurityEstimateList,
         projectionTransferList,
-        spendingItemList,
-        taxRecordList,
         memberList,
         projectionSettingsResult,
       ] = await Promise.all([
@@ -322,8 +310,6 @@ function App({
         listHouseholdPeople(householdId),
         listSocialSecurityEstimates(householdId),
         listProjectionTransfers(householdId),
-        listSpendingItems(householdId),
-        listAnnualTaxRecords(householdId),
         listHouseholdMembers(householdId),
         getProjectionSettings(householdId),
       ]);
@@ -335,8 +321,6 @@ function App({
       setHouseholdPeople(householdPersonList);
       setSocialSecurityEstimates(socialSecurityEstimateList);
       setProjectionTransfers(projectionTransferList);
-      setSpendingItems(spendingItemList);
-      setTaxRecords(taxRecordList);
       setProjectionSettings(projectionSettingsResult);
       setLoadedHouseholdId(householdId);
     } finally {
@@ -605,89 +589,6 @@ function App({
     }
   }
 
-  async function handleCreateSpendingItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createSpendingItem({
-        household_id: selectedHouseholdId,
-        name: requiredString(form, 'spending_item_name'),
-        category: requiredString(form, 'spending_item_category'),
-        annual_amount: requiredString(form, 'spending_item_annual_amount'),
-        retirement_annual_amount: optionalString(form, 'spending_item_retirement_annual_amount'),
-        growth_rate: optionalString(form, 'spending_item_growth_rate'),
-      });
-      target.reset();
-      setProjection(null);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleUpdateSpendingItem(
-    event: FormEvent<HTMLFormElement>,
-    spendingItem: SpendingItem,
-  ) {
-    event.preventDefault();
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(event.currentTarget);
-    try {
-      await updateSpendingItem(spendingItem.id, {
-        name: requiredString(form, 'spending_item_edit_name'),
-        category: requiredString(form, 'spending_item_edit_category'),
-        annual_amount: requiredString(form, 'spending_item_edit_annual_amount'),
-        retirement_annual_amount:
-          optionalString(form, 'spending_item_edit_retirement_annual_amount') ?? null,
-        growth_rate: optionalString(form, 'spending_item_edit_growth_rate') ?? null,
-      });
-      setProjection(null);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-      throw err;
-    }
-  }
-
-  async function handleDeleteSpendingItem(spendingItem: SpendingItem) {
-    if (!selectedHouseholdId) return;
-    if (!window.confirm(`Delete spending item ${spendingItem.name}?`)) return;
-    setError('');
-    try {
-      await deleteSpendingItem(spendingItem.id);
-      setProjection(null);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateTaxRecord(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createAnnualTaxRecord({
-        household_id: selectedHouseholdId,
-        tax_year: Number(requiredString(form, 'tax_year')),
-        gross_income: optionalString(form, 'gross_income'),
-        total_taxes_paid: requiredString(form, 'total_taxes_paid'),
-        refund_or_amount_due: optionalString(form, 'refund_or_amount_due'),
-        notes: optionalString(form, 'notes'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
   async function handleGetProjection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedHouseholdId) return;
@@ -905,9 +806,8 @@ function App({
                   householdPeople={householdPeople}
                   socialSecurityEstimates={socialSecurityEstimates}
                   projectionTransfers={projectionTransfers}
-                  spendingItems={spendingItems}
-                  taxRecords={taxRecords}
                   projection={projection}
+                  onInvalidateProjection={() => setProjection(null)}
                   onCreateIncomeSource={handleCreateIncomeSource}
                   onCreateHouseholdPerson={handleCreateHouseholdPerson}
                   onCreateSocialSecurityEstimate={handleCreateSocialSecurityEstimate}
@@ -915,10 +815,6 @@ function App({
                   onDeleteSocialSecurityEstimate={handleDeleteSocialSecurityEstimate}
                   onCreateProjectionTransfer={handleCreateProjectionTransfer}
                   onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
-                  onCreateSpendingItem={handleCreateSpendingItem}
-                  onUpdateSpendingItem={handleUpdateSpendingItem}
-                  onDeleteSpendingItem={handleDeleteSpendingItem}
-                  onCreateTaxRecord={handleCreateTaxRecord}
                 />
               </WorkspaceView>
             }

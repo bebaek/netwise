@@ -977,8 +977,11 @@ export function createSpendingItem(payload: {
   });
 }
 
-export function listSpendingItems(householdId: string): Promise<SpendingItem[]> {
-  return request<SpendingItem[]>(`/spending-items?household_id=${householdId}`);
+export function listSpendingItems(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<SpendingItem[]> {
+  return request<SpendingItem[]>(`/spending-items?household_id=${householdId}`, { signal });
 }
 
 export function updateSpendingItem(
@@ -1028,8 +1031,11 @@ export function upsertProjectionSettings(
   });
 }
 
-export function listAnnualTaxRecords(householdId: string): Promise<AnnualTaxRecord[]> {
-  return request<AnnualTaxRecord[]>(`/annual-tax-records?household_id=${householdId}`);
+export function listAnnualTaxRecords(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<AnnualTaxRecord[]> {
+  return request<AnnualTaxRecord[]>(`/annual-tax-records?household_id=${householdId}`, { signal });
 }
 
 export function createAnnualTaxRecord(payload: {
