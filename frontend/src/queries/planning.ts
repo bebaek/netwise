@@ -3,17 +3,23 @@ import {
   createAnnualTaxRecord,
   createHouseholdPerson,
   createIncomeSource,
+  createProjectionTransfer,
   createSocialSecurityEstimate,
   createSpendingItem,
   deleteSocialSecurityEstimate,
+  deleteProjectionTransfer,
   deleteSpendingItem,
+  getProjectionSettings,
   listAnnualTaxRecords,
   listHouseholdPeople,
   listIncomeSources,
+  listProjectionTransfers,
   listSocialSecurityEstimates,
   listSpendingItems,
   updateSocialSecurityEstimate,
   updateSpendingItem,
+  upsertProjectionSettings,
+  type ProjectionTransfer,
   type SocialSecurityEstimate,
   type SpendingItem,
 } from '../api';
@@ -44,6 +50,14 @@ export const planningQueryKeys = {
     ...planningQueryKeys.all(householdId),
     'social-security-estimates',
   ] as const,
+  projectionTransfers: (householdId: string) => [
+    ...planningQueryKeys.all(householdId),
+    'projection-transfers',
+  ] as const,
+  projectionSettings: (householdId: string) => [
+    ...planningQueryKeys.all(householdId),
+    'projection-settings',
+  ] as const,
 };
 
 type UpdateSpendingItemVariables = {
@@ -55,6 +69,53 @@ type UpdateSocialSecurityEstimateVariables = {
   estimateId: string;
   payload: Parameters<typeof updateSocialSecurityEstimate>[1];
 };
+
+export function usePlanningProjectionData(householdId: string) {
+  const projectionTransfers = useQuery({
+    queryKey: planningQueryKeys.projectionTransfers(householdId),
+    queryFn: ({ signal }) => listProjectionTransfers(householdId, signal),
+    enabled: Boolean(householdId),
+  });
+  const projectionSettings = useQuery({
+    queryKey: planningQueryKeys.projectionSettings(householdId),
+    queryFn: ({ signal }) => getProjectionSettings(householdId, signal),
+    enabled: Boolean(householdId),
+  });
+
+  return { projectionTransfers, projectionSettings };
+}
+
+export function usePlanningProjectionMutations(householdId: string) {
+  const queryClient = useQueryClient();
+  const refreshProjectionTransfers = () => queryClient.invalidateQueries({
+    queryKey: planningQueryKeys.projectionTransfers(householdId),
+  });
+
+  const createTransfer = useMutation({
+    mutationFn: createProjectionTransfer,
+    onSuccess: refreshProjectionTransfers,
+  });
+  const deleteTransfer = useMutation({
+    mutationFn: (transfer: ProjectionTransfer) => deleteProjectionTransfer(transfer.id),
+    onSuccess: refreshProjectionTransfers,
+  });
+  const saveSettings = useMutation({
+    mutationFn: (payload: Parameters<typeof upsertProjectionSettings>[1]) => (
+      upsertProjectionSettings(householdId, payload)
+    ),
+    onSuccess: (settings) => queryClient.setQueryData(
+      planningQueryKeys.projectionSettings(householdId),
+      settings,
+    ),
+  });
+
+  return {
+    createTransfer,
+    deleteTransfer,
+    saveSettings,
+    isPending: createTransfer.isPending || deleteTransfer.isPending || saveSettings.isPending,
+  };
+}
 
 export function usePlanningPeopleData(householdId: string) {
   const incomeSources = useQuery({

@@ -151,6 +151,36 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.create_household_person = recorder.summarize();
 
+  const transferForm = page.getByRole('heading', { name: 'Add recurring transfer', exact: true })
+    .locator('..')
+    .locator('form');
+  const transferAccountIds = await transferForm
+    .locator('select[name="transfer_from_account_id"] option:not([disabled])')
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  expect(transferAccountIds.length).toBeGreaterThanOrEqual(2);
+  await transferForm.getByPlaceholder('401k contribution').fill('Request Count Transfer');
+  await transferForm.locator('select[name="transfer_from_account_id"]')
+    .selectOption(transferAccountIds[0]);
+  await transferForm.locator('select[name="transfer_to_account_id"]')
+    .selectOption(transferAccountIds[1]);
+  await transferForm.locator('input[name="transfer_annual_amount"]').fill('1200');
+  await transferForm.locator('input[name="transfer_start_date"]').fill('2026-01-01');
+  recorder.reset();
+  await transferForm.getByRole('button', { name: 'Add transfer', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Request Count Transfer', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_projection_transfer = recorder.summarize();
+
+  const projectionSettingsForm = page.locator('form').filter({
+    has: page.getByRole('heading', { name: 'Projection assumptions', exact: true }),
+  });
+  await projectionSettingsForm.locator('input[name="settings_spending_inflation_rate"]')
+    .fill('0.031');
+  recorder.reset();
+  await projectionSettingsForm.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await page.waitForLoadState('networkidle');
+  measurements.save_projection_settings = recorder.summarize();
+
   await page.getByRole('button', { name: 'Add event', exact: true }).click();
   const eventForm = page.locator('form').filter({
     has: page.getByRole('heading', { name: 'Add projection event', exact: true }),
@@ -190,6 +220,8 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(initialPaths.some((path) => /^GET \/api\/income-sources$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/household-people$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/social-security-estimates$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/projection-transfers$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/projection-settings\/[^/]+$/.test(path))).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -232,12 +264,14 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ));
   expect(unrelatedPropertyCreatePath).toBeUndefined();
 
-  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(16);
+  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(20);
   expect(Object.keys(measurements.load_planning_route_data.by_method_and_path).sort()).toEqual([
     'GET /api/annual-tax-records',
     'GET /api/household-people',
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
     'GET /api/income-sources',
+    expect.stringMatching(/^GET \/api\/projection-settings\/[^/]+$/),
+    'GET /api/projection-transfers',
     'GET /api/real-estate/liquidation-strategies',
     'GET /api/real-estate/sales',
     'GET /api/social-security-estimates',
@@ -260,6 +294,17 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(Object.keys(measurements.create_household_person.by_method_and_path).sort()).toEqual([
     'GET /api/household-people',
     'POST /api/household-people',
+  ]);
+
+  expect(measurements.create_projection_transfer.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.create_projection_transfer.by_method_and_path).sort()).toEqual([
+    'GET /api/projection-transfers',
+    'POST /api/projection-transfers',
+  ]);
+
+  expect(measurements.save_projection_settings.total).toBe(1);
+  expect(Object.keys(measurements.save_projection_settings.by_method_and_path)).toEqual([
+    expect.stringMatching(/^PUT \/api\/projection-settings\/[^/]+$/),
   ]);
 
   expect(measurements.create_account_event.total).toBeLessThanOrEqual(2);

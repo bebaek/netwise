@@ -967,8 +967,11 @@ export function createProjectionTransfer(payload: {
   });
 }
 
-export function listProjectionTransfers(householdId: string): Promise<ProjectionTransfer[]> {
-  return request<ProjectionTransfer[]>(`/projection-transfers?household_id=${householdId}`);
+export function listProjectionTransfers(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<ProjectionTransfer[]> {
+  return request<ProjectionTransfer[]>(`/projection-transfers?household_id=${householdId}`, { signal });
 }
 
 export function deleteProjectionTransfer(projectionTransferId: string): Promise<void> {
@@ -1016,9 +1019,12 @@ export function deleteSpendingItem(spendingItemId: string): Promise<void> {
   return request<void>(`/spending-items/${spendingItemId}`, { method: 'DELETE' });
 }
 
-export async function getProjectionSettings(householdId: string): Promise<ProjectionSettings | null> {
+export async function getProjectionSettings(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<ProjectionSettings | null> {
   try {
-    return await request<ProjectionSettings>(`/projection-settings/${householdId}`);
+    return await request<ProjectionSettings>(`/projection-settings/${householdId}`, { signal });
   } catch (error) {
     if (String(error).includes('404')) return null;
     throw error;

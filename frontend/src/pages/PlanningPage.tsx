@@ -3,7 +3,6 @@ import type {
   Account,
   AccountEvent,
   NetWorthProjection,
-  ProjectionSettings,
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
@@ -17,6 +16,8 @@ import {
   usePlanningBudgetMutations,
   usePlanningPeopleData,
   usePlanningPeopleMutations,
+  usePlanningProjectionData,
+  usePlanningProjectionMutations,
 } from '../queries/planning';
 import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
@@ -123,16 +124,10 @@ export function PlanningPage({
   assetAccounts,
   propertyAccounts,
   accountNameById,
-  projectionSettings,
-  onSpendingModeChange,
-  onSaveProjectionSettings,
   onGetProjection,
   projectionRunning,
-  projectionTransfers,
   projection,
   onInvalidateProjection,
-  onCreateProjectionTransfer,
-  onDeleteProjectionTransfer,
 }: {
   householdId: string;
   defaultDate: string;
@@ -140,17 +135,16 @@ export function PlanningPage({
   assetAccounts: Account[];
   propertyAccounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
-  projectionSettings: ProjectionSettings | null;
-  onSpendingModeChange: (mode: 'manual' | 'itemized') => void | Promise<void>;
-  onSaveProjectionSettings: FormEventHandler<HTMLFormElement>;
   onGetProjection: FormEventHandler<HTMLFormElement>;
   projectionRunning: boolean;
-  projectionTransfers: ProjectionTransfer[];
   projection: NetWorthProjection | null;
   onInvalidateProjection: () => void;
-  onCreateProjectionTransfer: FormEventHandler<HTMLFormElement>;
-  onDeleteProjectionTransfer: (transfer: ProjectionTransfer) => void | Promise<void>;
 }) {
+  const [projectionConfigError, setProjectionConfigError] = useState('');
+  const planningProjectionData = usePlanningProjectionData(householdId);
+  const planningProjectionMutations = usePlanningProjectionMutations(householdId);
+  const projectionSettings = planningProjectionData.projectionSettings.data ?? null;
+  const projectionTransfers = planningProjectionData.projectionTransfers.data ?? [];
   const [peopleError, setPeopleError] = useState('');
   const planningPeopleData = usePlanningPeopleData(householdId);
   const planningPeopleMutations = usePlanningPeopleMutations(householdId);
@@ -204,6 +198,81 @@ export function PlanningPage({
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
+
+  async function onCreateProjectionTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setProjectionConfigError('');
+    try {
+      await planningProjectionMutations.createTransfer.mutateAsync({
+        household_id: householdId,
+        name: requiredFormString(form, 'transfer_name'),
+        from_account_id: requiredFormString(form, 'transfer_from_account_id'),
+        to_account_id: requiredFormString(form, 'transfer_to_account_id'),
+        annual_amount: requiredFormString(form, 'transfer_annual_amount'),
+        start_date: requiredFormString(form, 'transfer_start_date'),
+        end_date: optionalFormString(form, 'transfer_end_date'),
+        growth_rate: optionalFormString(form, 'transfer_growth_rate'),
+      });
+      target.reset();
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setProjectionConfigError(String(mutationError));
+    }
+  }
+
+  async function onDeleteProjectionTransfer(transfer: ProjectionTransfer) {
+    if (!window.confirm(`Delete recurring transfer ${transfer.name}?`)) return;
+    setProjectionConfigError('');
+    try {
+      await planningProjectionMutations.deleteTransfer.mutateAsync(transfer);
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setProjectionConfigError(String(mutationError));
+    }
+  }
+
+  async function onSpendingModeChange(mode: 'manual' | 'itemized') {
+    setProjectionConfigError('');
+    try {
+      await planningProjectionMutations.saveSettings.mutateAsync({
+        annual_spending: projectionSettings?.annual_spending ?? undefined,
+        spending_mode: mode,
+        spending_inflation_rate: projectionSettings?.spending_inflation_rate ?? undefined,
+        retirement_date: projectionSettings?.retirement_date ?? undefined,
+        retirement_annual_spending: projectionSettings?.retirement_annual_spending ?? undefined,
+        spending_account_id: projectionSettings?.spending_account_id ?? undefined,
+        tax_account_id: projectionSettings?.tax_account_id ?? undefined,
+      });
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setProjectionConfigError(String(mutationError));
+    }
+  }
+
+  async function onSaveProjectionSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setProjectionConfigError('');
+    try {
+      await planningProjectionMutations.saveSettings.mutateAsync({
+        annual_spending: optionalFormString(form, 'settings_annual_spending'),
+        spending_mode: requiredFormString(form, 'settings_spending_mode') as 'manual' | 'itemized',
+        spending_inflation_rate: optionalFormString(form, 'settings_spending_inflation_rate'),
+        retirement_date: optionalFormString(form, 'settings_retirement_date'),
+        retirement_annual_spending: optionalFormString(
+          form,
+          'settings_retirement_annual_spending',
+        ),
+        spending_account_id: optionalFormString(form, 'settings_spending_account_id'),
+        tax_account_id: optionalFormString(form, 'settings_tax_account_id'),
+      });
+      onInvalidateProjection();
+    } catch (mutationError: unknown) {
+      setProjectionConfigError(String(mutationError));
+    }
+  }
 
   async function onCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -526,6 +595,23 @@ export function PlanningPage({
 
   return (
     <>
+      {projectionConfigError && (
+        <div className="error" role="alert">{projectionConfigError}</div>
+      )}
+      {planningProjectionData.projectionTransfers.error && (
+        <div className="error" role="alert">
+          {String(planningProjectionData.projectionTransfers.error)}
+        </div>
+      )}
+      {planningProjectionData.projectionSettings.error && (
+        <div className="error" role="alert">
+          {String(planningProjectionData.projectionSettings.error)}
+        </div>
+      )}
+      {(planningProjectionData.projectionTransfers.isPending
+        || planningProjectionData.projectionSettings.isPending) && (
+        <div className="card" role="status">Loading projection configuration…</div>
+      )}
       {peopleError && <div className="error" role="alert">{peopleError}</div>}
       {planningPeopleData.incomeSources.error && (
         <div className="error" role="alert">{String(planningPeopleData.incomeSources.error)}</div>
@@ -748,7 +834,12 @@ export function PlanningPage({
   <p className="muted">Project net worth from current balances, account yields, mortgages, estimated spending, projected income, taxes, and future projection events.</p>
 
   <div className="projection-panels">
-    <form onSubmit={onSaveProjectionSettings} className="projection-form">
+    <form
+      key={projectionSettings?.updated_at ?? 'new'}
+      onSubmit={onSaveProjectionSettings}
+      className="projection-form"
+      aria-busy={planningProjectionMutations.saveSettings.isPending}
+    >
       <div>
         <h3>Projection assumptions</h3>
         <p className="muted">Saved defaults used when a projection run does not provide overrides.</p>
@@ -758,6 +849,8 @@ export function PlanningPage({
         <select
           name="settings_spending_mode"
           value={spendingMode}
+          disabled={planningProjectionData.projectionSettings.isPending
+            || planningProjectionMutations.saveSettings.isPending}
           onChange={(event) => onSpendingModeChange(event.target.value as 'manual' | 'itemized')}
         >
           <option value="manual">Use manual household total</option>
@@ -822,7 +915,8 @@ export function PlanningPage({
           ))}
         </select>
       </label>
-      <button type="submit">Save settings</button>
+      <button type="submit" disabled={planningProjectionData.projectionSettings.isPending
+        || planningProjectionMutations.saveSettings.isPending}>Save settings</button>
     </form>
 
     <form
@@ -1121,7 +1215,12 @@ export function PlanningPage({
               <td>{accountNameById.get(transfer.to_account_id) ?? transfer.to_account_id}</td>
               <td>{formatMoney(transfer.annual_amount)}</td>
               <td>{transfer.start_date} – {transfer.end_date ?? 'ongoing'}</td>
-              <td><button type="button" className="danger-button" onClick={() => onDeleteProjectionTransfer(transfer)}>Delete</button></td>
+              <td><button
+                type="button"
+                className="danger-button"
+                disabled={planningProjectionMutations.isPending}
+                onClick={() => onDeleteProjectionTransfer(transfer)}
+              >Delete</button></td>
             </tr>
           ))}
         </tbody>
@@ -1151,7 +1250,10 @@ export function PlanningPage({
       <label>Start date<input name="transfer_start_date" type="date" defaultValue={defaultDate} required /></label>
       <label>End date<input name="transfer_end_date" type="date" /></label>
       <label>Annual growth rate<input name="transfer_growth_rate" inputMode="decimal" placeholder="0.00" /></label>
-      <button type="submit" disabled={assetAccounts.length < 2}>Add transfer</button>
+      <button
+        type="submit"
+        disabled={assetAccounts.length < 2 || planningProjectionMutations.isPending}
+      >Add transfer</button>
     </form>
   </div>
 </section>

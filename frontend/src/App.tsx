@@ -7,25 +7,18 @@ import {
   Household,
   HouseholdMembership,
   NetWorthProjection,
-  ProjectionSettings,
-  ProjectionTransfer,
   User,
   addHouseholdMember,
   createHousehold,
-  createProjectionTransfer,
   createUser,
-  deleteProjectionTransfer,
   exportHousehold,
   getCapabilities,
   getNetWorthProjection,
-  getProjectionSettings,
   importFintrack,
   listHouseholds,
   listHouseholdMembers,
-  listProjectionTransfers,
   listUsers,
   removeHouseholdMember,
-  upsertProjectionSettings,
 } from './api';
 import {
   AppHeader,
@@ -155,10 +148,8 @@ function App({
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
-  const [projectionTransfers, setProjectionTransfers] = useState<ProjectionTransfer[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
-  const [projectionSettings, setProjectionSettings] = useState<ProjectionSettings | null>(null);
   const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
   const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
@@ -259,21 +250,11 @@ function App({
       const queryRefresh = refreshQueryData
         ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
         : Promise.resolve();
-      const [
-        projectionTransferList,
-        memberList,
-        projectionSettingsResult,
-      ] = await Promise.all([
-        listProjectionTransfers(householdId),
-        listHouseholdMembers(householdId),
-        getProjectionSettings(householdId),
-      ]);
+      const memberList = await listHouseholdMembers(householdId);
       await queryRefresh;
       if (requestId !== dashboardRequestId.current) return;
 
       setHouseholdMembers(memberList);
-      setProjectionTransfers(projectionTransferList);
-      setProjectionSettings(projectionSettingsResult);
       setLoadedHouseholdId(householdId);
     } finally {
       if (requestId === dashboardRequestId.current) setDashboardLoading(false);
@@ -334,7 +315,6 @@ function App({
   useEffect(() => {
     if (!selectedHouseholdId) return;
     setProjection(null);
-    setProjectionSettings(null);
     setFintrackImportResult(null);
   }, [selectedHouseholdId]);
 
@@ -413,42 +393,6 @@ function App({
     }
   }
 
-  async function handleCreateProjectionTransfer(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createProjectionTransfer({
-        household_id: selectedHouseholdId,
-        name: requiredString(form, 'transfer_name'),
-        from_account_id: requiredString(form, 'transfer_from_account_id'),
-        to_account_id: requiredString(form, 'transfer_to_account_id'),
-        annual_amount: requiredString(form, 'transfer_annual_amount'),
-        start_date: requiredString(form, 'transfer_start_date'),
-        end_date: optionalString(form, 'transfer_end_date'),
-        growth_rate: optionalString(form, 'transfer_growth_rate'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleDeleteProjectionTransfer(projectionTransfer: ProjectionTransfer) {
-    if (!selectedHouseholdId) return;
-    if (!window.confirm(`Delete recurring transfer ${projectionTransfer.name}?`)) return;
-    setError('');
-    try {
-      await deleteProjectionTransfer(projectionTransfer.id);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
   async function handleGetProjection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedHouseholdId) return;
@@ -474,51 +418,6 @@ function App({
       setError(String(err));
     } finally {
       setProjectionRunning(false);
-    }
-  }
-
-  async function handleSpendingModeChange(mode: 'manual' | 'itemized') {
-    if (!selectedHouseholdId) return;
-    setError('');
-    try {
-      const result = await upsertProjectionSettings(selectedHouseholdId, {
-        annual_spending: projectionSettings?.annual_spending ?? undefined,
-        spending_mode: mode,
-        spending_inflation_rate: projectionSettings?.spending_inflation_rate ?? undefined,
-        retirement_date: projectionSettings?.retirement_date ?? undefined,
-        retirement_annual_spending: projectionSettings?.retirement_annual_spending ?? undefined,
-        spending_account_id: projectionSettings?.spending_account_id ?? undefined,
-        tax_account_id: projectionSettings?.tax_account_id ?? undefined,
-      });
-      setProjectionSettings(result);
-      setProjection(null);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleSaveProjectionSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(event.currentTarget);
-    try {
-      const result = await upsertProjectionSettings(selectedHouseholdId, {
-        annual_spending: optionalString(form, 'settings_annual_spending'),
-        spending_mode: requiredString(form, 'settings_spending_mode') as 'manual' | 'itemized',
-        spending_inflation_rate: optionalString(form, 'settings_spending_inflation_rate'),
-        retirement_date: optionalString(form, 'settings_retirement_date'),
-        retirement_annual_spending: optionalString(
-          form,
-          'settings_retirement_annual_spending',
-        ),
-        spending_account_id: optionalString(form, 'settings_spending_account_id'),
-        tax_account_id: optionalString(form, 'settings_tax_account_id'),
-      });
-      setProjectionSettings(result);
-      setProjection(null);
-    } catch (err: unknown) {
-      setError(String(err));
     }
   }
 
@@ -657,16 +556,10 @@ function App({
                   assetAccounts={assetAccounts}
                   propertyAccounts={propertyAccounts}
                   accountNameById={accountNameById}
-                  projectionSettings={projectionSettings}
-                  onSpendingModeChange={handleSpendingModeChange}
-                  onSaveProjectionSettings={handleSaveProjectionSettings}
                   onGetProjection={handleGetProjection}
                   projectionRunning={projectionRunning}
-                  projectionTransfers={projectionTransfers}
                   projection={projection}
                   onInvalidateProjection={() => setProjection(null)}
-                  onCreateProjectionTransfer={handleCreateProjectionTransfer}
-                  onDeleteProjectionTransfer={handleDeleteProjectionTransfer}
                 />
               </WorkspaceView>
             }
