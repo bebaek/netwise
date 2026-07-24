@@ -79,7 +79,22 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.save_household_snapshot = recorder.summarize();
 
+  recorder.reset();
   await page.getByRole('link', { name: 'Assets', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Property details', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.load_asset_real_estate_data = recorder.summarize();
+
+  const addPropertyForm = page.getByRole('heading', { name: 'Add property', exact: true })
+    .locator('..')
+    .locator('form');
+  await addPropertyForm.locator('input[name="property_name"]').fill('Request Count Property');
+  recorder.reset();
+  await addPropertyForm.getByRole('button', { name: 'Add property', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Request Count Property', exact: true }).first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_property = recorder.summarize();
+
   const addAccountForm = page.getByRole('heading', { name: 'Add account', exact: true })
     .locator('..')
     .locator('form');
@@ -125,6 +140,9 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(
     initialPaths.some((path) => /^GET \/api\/households\/[^/]+\/snapshots$/.test(path)),
   ).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/real-estate\/properties$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/real-estate\/analytics$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/mortgages$/.test(path))).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -151,6 +169,21 @@ test('records representative frontend API request counts', async ({ page, isMobi
     /(annual-tax|household-people|income-sources|mortgages|projection-|real-estate|social-security|spending-items|members|snapshots)/.test(path)
   ));
   expect(unrelatedAccountCreatePath).toBeUndefined();
+
+  expect(measurements.load_asset_real_estate_data.total).toBeLessThanOrEqual(6);
+  expect(Object.keys(measurements.load_asset_real_estate_data.by_method_and_path).sort()).toEqual([
+    'GET /api/mortgages',
+    'GET /api/real-estate/analytics',
+    'GET /api/real-estate/properties',
+  ]);
+
+  expect(measurements.create_property.total).toBeLessThanOrEqual(8);
+  const unrelatedPropertyCreatePath = Object.keys(
+    measurements.create_property.by_method_and_path,
+  ).find((path) => (
+    /(annual-tax|household-people|income-sources|mortgages|projection-|liquidation-strategies|real-estate\/sales|social-security|spending-items|members|snapshots)/.test(path)
+  ));
+  expect(unrelatedPropertyCreatePath).toBeUndefined();
 
   expect(measurements.load_planning_account_events.total).toBeLessThanOrEqual(2);
   expect(Object.keys(measurements.load_planning_account_events.by_method_and_path)).toEqual([

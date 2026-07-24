@@ -1,13 +1,21 @@
-import { type FormEvent, type FormEventHandler, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import type {
   Account,
-  MortgageProfile,
   RealEstateAnalytics,
-  RealEstateProperty,
   RetirementTaxTreatment,
 } from '../api';
 import { useAccountMutations } from '../queries/household';
+import { useRealEstateAssetData, useRealEstateAssetMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
+
+function optionalFormString(form: FormData, key: string): string | undefined {
+  const value = String(form.get(key) ?? '').trim();
+  return value || undefined;
+}
+
+function requiredFormString(form: FormData, key: string): string {
+  return String(form.get(key) ?? '').trim();
+}
 
 function formatPercent(value: string | null): string {
   if (value == null) return '—';
@@ -132,33 +140,24 @@ export function AssetsPage({
   accounts,
   assetAccounts,
   propertyAccounts,
-  properties,
-  realEstateAnalytics,
-  mortgages,
-  propertyEditId,
-  onPropertyEditId,
   accountNameById,
   latestBalanceByAccountId,
-  onUpdateProperty,
-  onCreateProperty,
-  onCreateMortgage,
 }: {
   householdId: string;
   defaultDate: string;
   accounts: Account[];
   assetAccounts: Account[];
   propertyAccounts: Account[];
-  properties: RealEstateProperty[];
-  realEstateAnalytics: RealEstateAnalytics[];
-  mortgages: MortgageProfile[];
-  propertyEditId: string;
-  onPropertyEditId: (propertyId: string) => void;
   accountNameById: ReadonlyMap<string, string>;
   latestBalanceByAccountId: ReadonlyMap<string, string | null>;
-  onUpdateProperty: FormEventHandler<HTMLFormElement>;
-  onCreateProperty: FormEventHandler<HTMLFormElement>;
-  onCreateMortgage: FormEventHandler<HTMLFormElement>;
 }) {
+  const [propertyEditId, setPropertyEditId] = useState('');
+  const [realEstateError, setRealEstateError] = useState('');
+  const realEstateData = useRealEstateAssetData(householdId);
+  const realEstateMutations = useRealEstateAssetMutations(householdId);
+  const properties = realEstateData.properties.data ?? [];
+  const realEstateAnalytics = realEstateData.analytics.data ?? [];
+  const mortgages = realEstateData.mortgages.data ?? [];
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountError, setAccountError] = useState('');
   const accountMutations = useAccountMutations(householdId);
@@ -201,6 +200,7 @@ export function AssetsPage({
           is_active: accountEditDraft.is_active,
         },
       });
+      await realEstateMutations.refreshAnalytics();
       setAccountEditDraft(null);
     } catch (mutationError: unknown) {
       setAccountError(String(mutationError));
@@ -233,15 +233,162 @@ export function AssetsPage({
     }
   }
 
+  async function handleUpdateProperty(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!propertyEditId) return;
+    const form = new FormData(event.currentTarget);
+    setRealEstateError('');
+    try {
+      await realEstateMutations.updateProperty.mutateAsync({
+        propertyId: propertyEditId,
+        payload: {
+          property_type: requiredFormString(form, 'property_type'),
+          purchase_date: optionalFormString(form, 'purchase_date') ?? null,
+          purchase_price: optionalFormString(form, 'purchase_price') ?? null,
+          adjusted_tax_basis: optionalFormString(form, 'adjusted_tax_basis') ?? null,
+          down_payment: optionalFormString(form, 'down_payment') ?? null,
+          expected_appreciation_rate: optionalFormString(form, 'expected_appreciation_rate') ?? null,
+          is_rental: form.get('is_rental') === 'on',
+          rental_start_date: optionalFormString(form, 'rental_start_date') ?? null,
+          monthly_market_rent: optionalFormString(form, 'monthly_market_rent') ?? null,
+          other_monthly_income: optionalFormString(form, 'other_monthly_income') ?? null,
+          rent_growth_rate: optionalFormString(form, 'rent_growth_rate') ?? null,
+          vacancy_rate: optionalFormString(form, 'vacancy_rate') ?? null,
+          management_fee_rate: optionalFormString(form, 'management_fee_rate') ?? null,
+          property_tax_annual: optionalFormString(form, 'property_tax_annual') ?? null,
+          insurance_annual: optionalFormString(form, 'insurance_annual') ?? null,
+          tax_and_insurance_annual: optionalFormString(form, 'tax_and_insurance_annual') ?? null,
+          maintenance_rate: optionalFormString(form, 'maintenance_rate') ?? null,
+          hoa_monthly: optionalFormString(form, 'hoa_monthly') ?? null,
+          utilities_annual: optionalFormString(form, 'utilities_annual') ?? null,
+          other_operating_expense_annual:
+            optionalFormString(form, 'other_operating_expense_annual') ?? null,
+          capital_reserve_rate: optionalFormString(form, 'capital_reserve_rate') ?? null,
+          rental_deposit_account_id:
+            optionalFormString(form, 'rental_deposit_account_id') ?? null,
+        },
+      });
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  async function handleCreateProperty(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const currentValue = optionalFormString(form, 'current_value');
+    setRealEstateError('');
+    try {
+      await realEstateMutations.createProperty.mutateAsync({
+        account: {
+          household_id: householdId,
+          name: requiredFormString(form, 'property_name'),
+          account_kind: 'asset',
+          category: 'real_estate',
+          liquidity_class: 'illiquid',
+          currency: 'USD',
+        },
+        property: {
+          property_type: optionalFormString(form, 'property_type') ?? 'residence',
+          purchase_date: optionalFormString(form, 'purchase_date'),
+          purchase_price: optionalFormString(form, 'purchase_price'),
+          adjusted_tax_basis: optionalFormString(form, 'adjusted_tax_basis'),
+          down_payment: optionalFormString(form, 'down_payment'),
+          expected_appreciation_rate: optionalFormString(form, 'expected_appreciation_rate'),
+          property_tax_annual: optionalFormString(form, 'property_tax_annual'),
+          insurance_annual: optionalFormString(form, 'insurance_annual'),
+          tax_and_insurance_annual: optionalFormString(form, 'tax_and_insurance_annual'),
+          maintenance_rate: optionalFormString(form, 'maintenance_rate'),
+          hoa_monthly: optionalFormString(form, 'hoa_monthly'),
+          is_rental: form.get('is_rental') === 'on',
+          rental_start_date: optionalFormString(form, 'rental_start_date'),
+          monthly_market_rent: optionalFormString(form, 'monthly_market_rent'),
+          other_monthly_income: optionalFormString(form, 'other_monthly_income'),
+          rent_growth_rate: optionalFormString(form, 'rent_growth_rate'),
+          vacancy_rate: optionalFormString(form, 'vacancy_rate'),
+          management_fee_rate: optionalFormString(form, 'management_fee_rate'),
+          utilities_annual: optionalFormString(form, 'utilities_annual'),
+          other_operating_expense_annual:
+            optionalFormString(form, 'other_operating_expense_annual'),
+          capital_reserve_rate: optionalFormString(form, 'capital_reserve_rate'),
+          rental_deposit_account_id: optionalFormString(form, 'rental_deposit_account_id'),
+        },
+        snapshot: currentValue ? {
+          as_of_date: optionalFormString(form, 'valuation_date') ?? defaultDate,
+          balance: currentValue,
+          currency: 'USD',
+        } : undefined,
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  async function handleCreateMortgage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const originalPrincipal = requiredFormString(form, 'original_principal');
+    const startDate = requiredFormString(form, 'start_date');
+    const currentBalance = optionalFormString(form, 'current_balance') ?? originalPrincipal;
+    setRealEstateError('');
+    try {
+      await realEstateMutations.createMortgage.mutateAsync({
+        account: {
+          household_id: householdId,
+          name: requiredFormString(form, 'mortgage_name'),
+          account_kind: 'liability',
+          category: 'mortgage',
+          liquidity_class: 'debt',
+          expected_annual_yield: '0.000000',
+          currency: 'USD',
+        },
+        mortgage: {
+          property_account_id: optionalFormString(form, 'property_account_id'),
+          original_principal: originalPrincipal,
+          interest_rate: requiredFormString(form, 'interest_rate'),
+          term_months: Number(requiredFormString(form, 'term_months')),
+          start_date: startDate,
+          monthly_payment: optionalFormString(form, 'monthly_payment'),
+          rate_type: optionalFormString(form, 'rate_type') ?? 'fixed',
+        },
+        snapshot: {
+          as_of_date: optionalFormString(form, 'balance_date') ?? startDate,
+          balance: currentBalance,
+          currency: 'USD',
+        },
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  const realEstateQueryError = [
+    realEstateData.properties,
+    realEstateData.analytics,
+    realEstateData.mortgages,
+  ].find((query) => query.error)?.error;
+  const realEstateLoading = [
+    realEstateData.properties,
+    realEstateData.analytics,
+    realEstateData.mortgages,
+  ].some((query) => query.isPending);
+
   return (
     <>
       {accountError && <div className="error" role="alert">{accountError}</div>}
+      {realEstateError && <div className="error" role="alert">{realEstateError}</div>}
+      {realEstateQueryError && <div className="error" role="alert">{String(realEstateQueryError)}</div>}
+      {realEstateLoading && <div className="card" role="status">Loading real estate data…</div>}
 <section className="card">
   <h2>Property details</h2>
   <p className="muted">Classify existing properties and configure rental cash flow assumptions.</p>
   {properties.length ? (
     <>
-      <select aria-label="Property to edit" value={propertyEditId} onChange={(event) => onPropertyEditId(event.target.value)}>
+      <select aria-label="Property to edit" value={propertyEditId} onChange={(event) => setPropertyEditId(event.target.value)}>
         <option value="">Select property to edit</option>
         {properties.map((property) => (
           <option key={property.id} value={property.id}>
@@ -250,7 +397,7 @@ export function AssetsPage({
         ))}
       </select>
       {properties.filter((property) => property.id === propertyEditId).map((property) => (
-        <form key={property.id} onSubmit={onUpdateProperty} className="projection-form">
+        <form key={property.id} onSubmit={handleUpdateProperty} className="projection-form">
           <select name="property_type" aria-label="Property type" defaultValue={property.property_type}>
             <option value="residence">Primary residence</option>
             <option value="rental">Rental</option>
@@ -283,7 +430,7 @@ export function AssetsPage({
             <option value="">Default cash-flow account</option>
             {assetAccounts.filter((account) => account.id !== property.account_id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
           </select>
-          <button type="submit">Save property details</button>
+          <button type="submit" disabled={realEstateMutations.isPending}>Save property details</button>
         </form>
       ))}
     </>
@@ -432,7 +579,7 @@ export function AssetsPage({
   <div className="card">
     <h2>Add property</h2>
     <p className="muted">Creates a real estate asset account, property profile, and optional valuation snapshot.</p>
-    <form onSubmit={onCreateProperty} className="stacked-form">
+    <form onSubmit={handleCreateProperty} className="stacked-form">
       <input name="property_name" placeholder="Primary residence" required />
       <select name="property_type" aria-label="Property type" defaultValue="residence">
         <option value="residence">Residence</option>
@@ -478,14 +625,14 @@ export function AssetsPage({
         Valuation date
         <input name="valuation_date" type="date" defaultValue={defaultDate} />
       </label>
-      <button type="submit">Add property</button>
+      <button type="submit" disabled={realEstateMutations.isPending}>Add property</button>
     </form>
   </div>
 
   <div className="card">
     <h2>Add mortgage</h2>
     <p className="muted">Creates a mortgage liability account, mortgage profile, and initial balance snapshot.</p>
-    <form onSubmit={onCreateMortgage} className="stacked-form">
+    <form onSubmit={handleCreateMortgage} className="stacked-form">
       <input name="mortgage_name" placeholder="Primary residence mortgage" required />
       <select name="property_account_id" aria-label="Linked property" defaultValue="">
         <option value="">No linked property</option>
@@ -512,7 +659,7 @@ export function AssetsPage({
         Balance date
         <input name="balance_date" type="date" />
       </label>
-      <button type="submit">Add mortgage</button>
+      <button type="submit" disabled={realEstateMutations.isPending}>Add mortgage</button>
     </form>
   </div>
 </section>

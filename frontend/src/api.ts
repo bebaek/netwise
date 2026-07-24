@@ -728,12 +728,18 @@ export function getNetWorthHistory(householdId: string): Promise<NetWorthHistory
   return request<NetWorthHistory>(`/dashboard/${householdId}/net-worth/history`);
 }
 
-export function getRealEstateAnalytics(householdId: string): Promise<RealEstateAnalytics[]> {
-  return request<RealEstateAnalytics[]>(`/real-estate/analytics?household_id=${householdId}`);
+export function getRealEstateAnalytics(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<RealEstateAnalytics[]> {
+  return request<RealEstateAnalytics[]>(`/real-estate/analytics?household_id=${householdId}`, { signal });
 }
 
-export function listRealEstateProperties(householdId: string): Promise<RealEstateProperty[]> {
-  return request<RealEstateProperty[]>(`/real-estate/properties?household_id=${householdId}`);
+export function listRealEstateProperties(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<RealEstateProperty[]> {
+  return request<RealEstateProperty[]>(`/real-estate/properties?household_id=${householdId}`, { signal });
 }
 
 export function createRealEstateProperty(payload: {
@@ -841,8 +847,11 @@ export function deleteRealEstateLiquidationStrategy(propertyAccountId: string): 
   });
 }
 
-export function listMortgageProfiles(householdId: string): Promise<MortgageProfile[]> {
-  return request<MortgageProfile[]>(`/mortgages?household_id=${householdId}`);
+export function listMortgageProfiles(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<MortgageProfile[]> {
+  return request<MortgageProfile[]>(`/mortgages?household_id=${householdId}`, { signal });
 }
 
 export function createMortgageProfile(payload: {

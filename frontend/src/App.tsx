@@ -9,29 +9,22 @@ import {
   HouseholdMembership,
   HouseholdPerson,
   IncomeSource,
-  MortgageProfile,
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
-  RealEstateAnalytics,
   RealEstateLiquidationStrategy,
-  RealEstateProperty,
   RealEstateSale,
   SocialSecurityEstimate,
   SocialSecurityEstimateInput,
   SpendingItem,
   User,
   addHouseholdMember,
-  createAccount,
   createAnnualTaxRecord,
   createHousehold,
   createHouseholdPerson,
   createIncomeSource,
-  createMortgageProfile,
   createProjectionTransfer,
-  createRealEstateProperty,
   createRealEstateSale,
-  createSnapshot,
   createSocialSecurityEstimate,
   createSpendingItem,
   createUser,
@@ -44,23 +37,19 @@ import {
   getCapabilities,
   getNetWorthProjection,
   getProjectionSettings,
-  getRealEstateAnalytics,
   importFintrack,
   listAnnualTaxRecords,
   listHouseholds,
   listHouseholdMembers,
   listHouseholdPeople,
   listIncomeSources,
-  listMortgageProfiles,
   listProjectionTransfers,
   listRealEstateLiquidationStrategies,
-  listRealEstateProperties,
   listRealEstateSales,
   listSocialSecurityEstimates,
   listSpendingItems,
   listUsers,
   removeHouseholdMember,
-  updateRealEstateProperty,
   updateSocialSecurityEstimate,
   updateSpendingItem,
   upsertProjectionSettings,
@@ -218,12 +207,8 @@ function App({
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
-  const [properties, setProperties] = useState<RealEstateProperty[]>([]);
-  const [realEstateAnalytics, setRealEstateAnalytics] = useState<RealEstateAnalytics[]>([]);
-  const [propertyEditId, setPropertyEditId] = useState<string>('');
   const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
   const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
-  const [mortgages, setMortgages] = useState<MortgageProfile[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
   const [socialSecurityEstimates, setSocialSecurityEstimates] = useState<SocialSecurityEstimate[]>([]);
@@ -334,11 +319,8 @@ function App({
         ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
         : Promise.resolve();
       const [
-        propertyList,
-        realEstateAnalyticsResult,
         realEstateSaleList,
         liquidationStrategyList,
-        mortgageList,
         incomeSourceList,
         householdPersonList,
         socialSecurityEstimateList,
@@ -348,11 +330,8 @@ function App({
         memberList,
         projectionSettingsResult,
       ] = await Promise.all([
-        listRealEstateProperties(householdId),
-        getRealEstateAnalytics(householdId),
         listRealEstateSales(householdId),
         listRealEstateLiquidationStrategies(householdId),
-        listMortgageProfiles(householdId),
         listIncomeSources(householdId),
         listHouseholdPeople(householdId),
         listSocialSecurityEstimates(householdId),
@@ -366,11 +345,8 @@ function App({
       if (requestId !== dashboardRequestId.current) return;
 
       setHouseholdMembers(memberList);
-      setProperties(propertyList);
-      setRealEstateAnalytics(realEstateAnalyticsResult);
       setRealEstateSales(realEstateSaleList);
       setLiquidationStrategies(liquidationStrategyList);
-      setMortgages(mortgageList);
       setIncomeSources(incomeSourceList);
       setHouseholdPeople(householdPersonList);
       setSocialSecurityEstimates(socialSecurityEstimateList);
@@ -517,98 +493,6 @@ function App({
     }
   }
 
-  async function handleUpdateProperty(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId || !propertyEditId) return;
-    const form = new FormData(event.currentTarget);
-    try {
-      await updateRealEstateProperty(propertyEditId, {
-        property_type: requiredString(form, 'property_type'),
-        purchase_date: optionalString(form, 'purchase_date') || null,
-        purchase_price: optionalString(form, 'purchase_price') || null,
-        adjusted_tax_basis: optionalString(form, 'adjusted_tax_basis') || null,
-        down_payment: optionalString(form, 'down_payment') || null,
-        expected_appreciation_rate: optionalString(form, 'expected_appreciation_rate') || null,
-        is_rental: form.get('is_rental') === 'on',
-        rental_start_date: optionalString(form, 'rental_start_date') || null,
-        monthly_market_rent: optionalString(form, 'monthly_market_rent') || null,
-        other_monthly_income: optionalString(form, 'other_monthly_income') || null,
-        rent_growth_rate: optionalString(form, 'rent_growth_rate') || null,
-        vacancy_rate: optionalString(form, 'vacancy_rate') || null,
-        management_fee_rate: optionalString(form, 'management_fee_rate') || null,
-        property_tax_annual: optionalString(form, 'property_tax_annual') || null,
-        insurance_annual: optionalString(form, 'insurance_annual') || null,
-        tax_and_insurance_annual: optionalString(form, 'tax_and_insurance_annual') || null,
-        maintenance_rate: optionalString(form, 'maintenance_rate') || null,
-        hoa_monthly: optionalString(form, 'hoa_monthly') || null,
-        utilities_annual: optionalString(form, 'utilities_annual') || null,
-        other_operating_expense_annual: optionalString(form, 'other_operating_expense_annual') || null,
-        capital_reserve_rate: optionalString(form, 'capital_reserve_rate') || null,
-        rental_deposit_account_id: optionalString(form, 'rental_deposit_account_id') || null,
-      });
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateProperty(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      const propertyName = requiredString(form, 'property_name');
-      const currentValue = optionalString(form, 'current_value');
-      const valuationDate = optionalString(form, 'valuation_date') ?? today();
-      const propertyAccount = await createAccount({
-        household_id: selectedHouseholdId,
-        name: propertyName,
-        account_kind: 'asset',
-        category: 'real_estate',
-        liquidity_class: 'illiquid',
-        currency: 'USD',
-      });
-      await createRealEstateProperty({
-        account_id: propertyAccount.id,
-        property_type: optionalString(form, 'property_type') ?? 'residence',
-        purchase_date: optionalString(form, 'purchase_date'),
-        purchase_price: optionalString(form, 'purchase_price'),
-        adjusted_tax_basis: optionalString(form, 'adjusted_tax_basis'),
-        down_payment: optionalString(form, 'down_payment'),
-        expected_appreciation_rate: optionalString(form, 'expected_appreciation_rate'),
-        property_tax_annual: optionalString(form, 'property_tax_annual'),
-        insurance_annual: optionalString(form, 'insurance_annual'),
-        tax_and_insurance_annual: optionalString(form, 'tax_and_insurance_annual'),
-        maintenance_rate: optionalString(form, 'maintenance_rate'),
-        hoa_monthly: optionalString(form, 'hoa_monthly'),
-        is_rental: form.get('is_rental') === 'on',
-        rental_start_date: optionalString(form, 'rental_start_date'),
-        monthly_market_rent: optionalString(form, 'monthly_market_rent'),
-        other_monthly_income: optionalString(form, 'other_monthly_income'),
-        rent_growth_rate: optionalString(form, 'rent_growth_rate'),
-        vacancy_rate: optionalString(form, 'vacancy_rate'),
-        management_fee_rate: optionalString(form, 'management_fee_rate'),
-        utilities_annual: optionalString(form, 'utilities_annual'),
-        other_operating_expense_annual: optionalString(form, 'other_operating_expense_annual'),
-        capital_reserve_rate: optionalString(form, 'capital_reserve_rate'),
-        rental_deposit_account_id: optionalString(form, 'rental_deposit_account_id'),
-      });
-      if (currentValue) {
-        await createSnapshot(propertyAccount.id, {
-          as_of_date: valuationDate,
-          balance: currentValue,
-          currency: 'USD',
-        });
-      }
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
   async function handleCreateRealEstateSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
@@ -673,51 +557,6 @@ function App({
     setError('');
     try {
       await deleteRealEstateLiquidationStrategy(strategy.property_account_id);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateMortgage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      const originalPrincipal = requiredString(form, 'original_principal');
-      const startDate = requiredString(form, 'start_date');
-      const currentBalance = optionalString(form, 'current_balance') ?? originalPrincipal;
-      const balanceDate = optionalString(form, 'balance_date') ?? startDate;
-      const propertyAccountId = optionalString(form, 'property_account_id');
-      const liabilityAccount = await createAccount({
-        household_id: selectedHouseholdId,
-        name: requiredString(form, 'mortgage_name'),
-        account_kind: 'liability',
-        category: 'mortgage',
-        liquidity_class: 'debt',
-        expected_annual_yield: '0.000000',
-        currency: 'USD',
-      });
-      await createMortgageProfile({
-        liability_account_id: liabilityAccount.id,
-        property_account_id: propertyAccountId,
-        original_principal: originalPrincipal,
-        interest_rate: requiredString(form, 'interest_rate'),
-        term_months: Number(requiredString(form, 'term_months')),
-        start_date: startDate,
-        monthly_payment: optionalString(form, 'monthly_payment'),
-        rate_type: optionalString(form, 'rate_type') ?? 'fixed',
-      });
-      if (currentBalance) {
-        await createSnapshot(liabilityAccount.id, {
-          as_of_date: balanceDate,
-          balance: currentBalance,
-          currency: 'USD',
-        });
-      }
-      target.reset();
       await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
@@ -1186,16 +1025,8 @@ function App({
                   accounts={accounts}
                   assetAccounts={assetAccounts}
                   propertyAccounts={propertyAccounts}
-                  properties={properties}
-                  realEstateAnalytics={realEstateAnalytics}
-                  mortgages={mortgages}
-                  propertyEditId={propertyEditId}
-                  onPropertyEditId={setPropertyEditId}
                   accountNameById={accountNameById}
                   latestBalanceByAccountId={latestBalanceByAccountId}
-                  onUpdateProperty={handleUpdateProperty}
-                  onCreateProperty={handleCreateProperty}
-                  onCreateMortgage={handleCreateMortgage}
                 />
               </WorkspaceView>
             }

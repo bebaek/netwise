@@ -16,12 +16,12 @@ React Strict Mode intentionally re-runs mount behavior in the development build,
 
 ## Results
 
-| Scenario | Baseline | First query-cache slice | Route-owned snapshots | Route-owned events | Reduction from baseline |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Initial authenticated workspace load | 50 | 46 | 44 | 42 | 16% |
-| Change snapshot account filter | 18 | 1 | 1 | 1 | 94% |
-| Toggle interpolated history | 24 | 1 | 1 | 1 | 96% |
-| Save one household snapshot | 19 | 5 | 5 | 5 | 74% |
+| Scenario | Baseline | First query-cache slice | Route-owned snapshots | Route-owned events | Route-owned asset real estate | Reduction from baseline |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Initial authenticated workspace load | 50 | 46 | 44 | 42 | 36 | 28% |
+| Change snapshot account filter | 18 | 1 | 1 | 1 | 1 | 94% |
+| Toggle interpolated history | 24 | 1 | 1 | 1 | 1 | 96% |
+| Save one household snapshot | 19 | 5 | 5 | 5 | 5 | 74% |
 
 Current request budgets added after the original baseline:
 
@@ -30,10 +30,12 @@ Current request budgets added after the original baseline:
 | Create an account | 5 | Mutation, accounts, net worth, historical trend, and breakdown history |
 | Enter Planning and load account events | 2 | Household account events only; doubled by development Strict Mode |
 | Create an account event | 2 | Event mutation and household account-events refresh |
+| Enter Assets and load property data | 6 | Properties, analytics, and mortgages; each doubled by development Strict Mode |
+| Create a property without a valuation | 8 | Two mutations plus targeted account, financial-summary, property, and analytics refreshes |
 
 ## Interpretation
 
-The first slice moved accounts, household account events, snapshots, net worth, historical trend, and breakdown history into TanStack Query. Subsequent route-owned slices moved snapshots into `UpdateBalancesPage` and account events into `PlanningPage`, including their local drafts and mutations. Overview now fetches neither snapshots nor account events; each loads on demand when its route mounts. Snapshot filters request only filtered snapshots, and interpolation changes request only historical trend data. Saving a household snapshot performs one mutation followed by four relevant refreshes: snapshots, net worth, historical trend, and breakdown history.
+The first slice moved accounts, household account events, snapshots, net worth, historical trend, and breakdown history into TanStack Query. Subsequent route-owned slices moved snapshots into `UpdateBalancesPage`, account events into `PlanningPage`, and properties, property analytics, and mortgages into `AssetsPage`, including their local drafts and mutations. Overview now fetches none of those route-only collections; each loads on demand when its route mounts. Snapshot filters request only filtered snapshots, and interpolation changes request only historical trend data. Saving a household snapshot performs one mutation followed by four relevant refreshes: snapshots, net worth, historical trend, and breakdown history.
 
 The initial-load improvement is still limited because most remaining domains are loaded centrally by `App.refreshDashboard()`, and the Vite/Strict Mode test environment invokes mount behavior twice. The household events batch endpoint replaces six account-specific requests with one logical route query when Planning mounts.
 
@@ -47,6 +49,8 @@ The Playwright measurement test enforces these stable request boundaries:
 - Account creation makes no more than five API requests and does not reload unrelated route domains.
 - Entering Planning requests only the household account-events endpoint for event data.
 - Account-event creation makes two requests: the mutation and one batched event refresh.
-- Initial Overview loading does not issue per-account event requests and fetches neither snapshots nor account events.
+- Entering Assets requests only properties, property analytics, and mortgages for the real-estate asset domain.
+- Property creation avoids unrelated planning, membership, tax, sales, and mortgage collection refreshes.
+- Initial Overview loading does not issue per-account event requests and fetches neither snapshots, account events, properties, property analytics, nor mortgages.
 
 Future frontend slices should append results to the table rather than replacing the original baseline.
