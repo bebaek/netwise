@@ -1,11 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createSnapshot,
+  createSnapshotBatch,
+  deleteSnapshot,
   getHistoricalTrend,
   getNetWorth,
   getNetWorthBreakdownHistory,
   listAccounts,
   listHouseholdAccountEvents,
   listHouseholdSnapshots,
+  updateSnapshot,
+  type HouseholdSnapshot,
 } from '../api';
 
 export const householdQueryKeys = {
@@ -58,6 +63,55 @@ export function useHouseholdSnapshots(householdId: string, accountId: string) {
     queryFn: ({ signal }) => listHouseholdSnapshots(householdId, accountId || undefined, signal),
     enabled: Boolean(householdId),
   });
+}
+
+type CreateSnapshotVariables = {
+  accountId: string;
+  payload: { as_of_date: string; balance: string; currency: string };
+};
+
+type UpdateSnapshotVariables = {
+  snapshot: HouseholdSnapshot;
+  payload: { as_of_date: string; balance: string; currency: string };
+};
+
+export function useSnapshotMutations(householdId: string) {
+  const queryClient = useQueryClient();
+  const refreshSnapshotData = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: householdQueryKeys.snapshotsAll(householdId) }),
+    queryClient.invalidateQueries({ queryKey: householdQueryKeys.financialSummary(householdId) }),
+  ]);
+
+  const createOne = useMutation({
+    mutationFn: ({ accountId, payload }: CreateSnapshotVariables) => createSnapshot(accountId, payload),
+    onSuccess: refreshSnapshotData,
+  });
+  const createBatch = useMutation({
+    mutationFn: (payload: {
+      as_of_date: string;
+      currency: string;
+      snapshots: Array<{ account_id: string; balance: string }>;
+    }) => createSnapshotBatch(householdId, payload),
+    onSuccess: refreshSnapshotData,
+  });
+  const update = useMutation({
+    mutationFn: ({ snapshot, payload }: UpdateSnapshotVariables) => (
+      updateSnapshot(snapshot.account_id, snapshot.id, payload)
+    ),
+    onSuccess: refreshSnapshotData,
+  });
+  const remove = useMutation({
+    mutationFn: (snapshot: HouseholdSnapshot) => deleteSnapshot(snapshot.account_id, snapshot.id),
+    onSuccess: refreshSnapshotData,
+  });
+
+  return {
+    createOne,
+    createBatch,
+    update,
+    remove,
+    isPending: createOne.isPending || createBatch.isPending || update.isPending || remove.isPending,
+  };
 }
 
 export function useHouseholdFinancialSummary(householdId: string, interpolate: boolean) {

@@ -9,7 +9,6 @@ import {
   Household,
   HouseholdMembership,
   HouseholdPerson,
-  HouseholdSnapshot,
   IncomeSource,
   MortgageProfile,
   NetWorthProjection,
@@ -36,13 +35,11 @@ import {
   createRealEstateProperty,
   createRealEstateSale,
   createSnapshot,
-  createSnapshotBatch,
   createSocialSecurityEstimate,
   createSpendingItem,
   createUser,
   deleteAccountEvent,
   deleteProjectionTransfer,
-  deleteSnapshot,
   deleteSocialSecurityEstimate,
   deleteRealEstateLiquidationStrategy,
   deleteRealEstateSale,
@@ -70,7 +67,6 @@ import {
   updateAccount,
   updateAccountEvent,
   updateRealEstateProperty,
-  updateSnapshot,
   updateSocialSecurityEstimate,
   updateSpendingItem,
   upsertProjectionSettings,
@@ -85,13 +81,11 @@ import {
 } from './components/AppShell';
 import type { AccountEditDraft } from './pages/AssetsPage';
 import type { AccountEventDraft } from './pages/PlanningPage';
-import type { SnapshotEditDraft } from './pages/UpdateBalancesPage';
 import {
   householdQueryKeys,
   useAccounts,
   useHouseholdAccountEvents,
   useHouseholdFinancialSummary,
-  useHouseholdSnapshots,
 } from './queries/household';
 import { formatMoney } from './utils/format';
 import './styles.css';
@@ -235,8 +229,6 @@ function App({
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
-  const [snapshotAccountFilter, setSnapshotAccountFilter] = useState<string>('');
-  const [snapshotEditDraft, setSnapshotEditDraft] = useState<SnapshotEditDraft | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [realEstateAnalytics, setRealEstateAnalytics] = useState<RealEstateAnalytics[]>([]);
   const [propertyEditId, setPropertyEditId] = useState<string>('');
@@ -256,7 +248,6 @@ function App({
   const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
   const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
   const [fintrackImportEnabled, setFintrackImportEnabled] = useState<boolean>(false);
-  const [snapshotBatchMessage, setSnapshotBatchMessage] = useState<string>('');
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -267,21 +258,18 @@ function App({
   const queryClient = useQueryClient();
   const accountsQuery = useAccounts(selectedHouseholdId);
   const accountEventsQuery = useHouseholdAccountEvents(selectedHouseholdId);
-  const snapshotsQuery = useHouseholdSnapshots(selectedHouseholdId, snapshotAccountFilter);
   const financialSummary = useHouseholdFinancialSummary(
     selectedHouseholdId,
     showInterpolatedHistory,
   );
   const accounts = accountsQuery.data ?? [];
   const accountEvents = accountEventsQuery.data ?? [];
-  const householdSnapshots = snapshotsQuery.data ?? [];
   const netWorth = financialSummary.netWorth.data ?? null;
   const history = financialSummary.history.data ?? null;
   const breakdownHistory = financialSummary.breakdownHistory.data ?? null;
   const queryDataLoading = Boolean(selectedHouseholdId) && [
     accountsQuery,
     accountEventsQuery,
-    snapshotsQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
@@ -290,7 +278,6 @@ function App({
   const queryDataError = [
     accountsQuery,
     accountEventsQuery,
-    snapshotsQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
@@ -412,13 +399,6 @@ function App({
     }
   }
 
-  async function refreshSnapshotData(householdId: string) {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: householdQueryKeys.snapshotsAll(householdId) }),
-      queryClient.invalidateQueries({ queryKey: householdQueryKeys.financialSummary(householdId) }),
-    ]);
-  }
-
   async function refreshAccountEvents(householdId: string) {
     await queryClient.invalidateQueries({ queryKey: householdQueryKeys.events(householdId) });
   }
@@ -480,8 +460,6 @@ function App({
     setProjectionSettings(null);
     setAccountEditDraft(null);
     setFintrackImportResult(null);
-    setSnapshotBatchMessage('');
-    setSnapshotEditDraft(null);
   }, [selectedHouseholdId]);
 
   useEffect(() => {
@@ -623,90 +601,6 @@ function App({
       });
       target.reset();
       await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateSnapshot(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createSnapshot(String(form.get('account_id')), {
-        as_of_date: String(form.get('as_of_date')),
-        balance: String(form.get('balance')),
-        currency: 'USD',
-      });
-      target.reset();
-      await refreshSnapshotData(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateSnapshotBatch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    setSnapshotBatchMessage('');
-    const form = new FormData(target);
-    const snapshots = accounts
-      .map((account) => ({
-        account_id: account.id,
-        balance: String(form.get(`balance:${account.id}`) ?? '').trim(),
-      }))
-      .filter((snapshot) => snapshot.balance !== '');
-    if (snapshots.length === 0) {
-      setError('Enter at least one account balance for the snapshot date.');
-      return;
-    }
-    try {
-      const result = await createSnapshotBatch(selectedHouseholdId, {
-        as_of_date: requiredString(form, 'as_of_date'),
-        currency: 'USD',
-        snapshots,
-      });
-      target.reset();
-      setSnapshotBatchMessage(
-        `Saved ${result.created_count} new and ${result.updated_count} updated snapshot${result.snapshots.length === 1 ? '' : 's'}.`,
-      );
-      await refreshSnapshotData(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleUpdateSnapshot(snapshot: HouseholdSnapshot) {
-    if (!selectedHouseholdId || snapshotEditDraft?.id !== snapshot.id) return;
-    setError('');
-    try {
-      await updateSnapshot(snapshot.account_id, snapshot.id, {
-        as_of_date: snapshotEditDraft.as_of_date,
-        balance: snapshotEditDraft.balance,
-        currency: snapshot.currency,
-      });
-      setSnapshotEditDraft(null);
-      await refreshSnapshotData(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleDeleteSnapshot(snapshot: HouseholdSnapshot) {
-    if (!selectedHouseholdId) return;
-    const confirmed = window.confirm(
-      `Delete ${snapshot.account_name} snapshot from ${snapshot.as_of_date}?`,
-    );
-    if (!confirmed) return;
-    setError('');
-    try {
-      await deleteSnapshot(snapshot.account_id, snapshot.id);
-      if (snapshotEditDraft?.id === snapshot.id) setSnapshotEditDraft(null);
-      await refreshSnapshotData(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1394,19 +1288,10 @@ function App({
             element={
               <WorkspaceView view="update" householdName={selectedHousehold.name}>
                 <UpdateBalancesPage
+                  householdId={selectedHouseholdId}
                   accounts={accounts}
                   latestBalanceByAccountId={latestBalanceByAccountId}
                   defaultDate={today()}
-                  snapshotBatchMessage={snapshotBatchMessage}
-                  onCreateSnapshotBatch={handleCreateSnapshotBatch}
-                  householdSnapshots={householdSnapshots}
-                  snapshotAccountFilter={snapshotAccountFilter}
-                  onSnapshotAccountFilter={setSnapshotAccountFilter}
-                  snapshotEditDraft={snapshotEditDraft}
-                  onSnapshotEditDraft={setSnapshotEditDraft}
-                  onUpdateSnapshot={handleUpdateSnapshot}
-                  onDeleteSnapshot={handleDeleteSnapshot}
-                  onCreateSnapshot={handleCreateSnapshot}
                 />
               </WorkspaceView>
             }

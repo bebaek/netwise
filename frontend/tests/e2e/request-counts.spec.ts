@@ -57,6 +57,7 @@ test('records representative frontend API request counts', async ({ page, isMobi
 
   await page.getByRole('link', { name: 'Update', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Snapshot history', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
   const snapshotFilter = page.getByLabel('Filter snapshot history by account');
   recorder.reset();
   await snapshotFilter.selectOption({ index: 1 });
@@ -89,6 +90,9 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ).toBe(true);
   expect(
     initialPaths.some((path) => /^GET \/api\/accounts\/[^/]+\/events$/.test(path)),
+  ).toBe(false);
+  expect(
+    initialPaths.some((path) => /^GET \/api\/households\/[^/]+\/snapshots$/.test(path)),
   ).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);

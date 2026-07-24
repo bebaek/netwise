@@ -1,49 +1,124 @@
-import type { FormEventHandler } from 'react';
+import { type FormEvent, useState } from 'react';
 import type { Account, HouseholdSnapshot } from '../api';
+import { useHouseholdSnapshots, useSnapshotMutations } from '../queries/household';
 import { formatMoney } from '../utils/format';
 
-export type SnapshotEditDraft = {
+type SnapshotEditDraft = {
   id: string;
   as_of_date: string;
   balance: string;
 };
 
 export function UpdateBalancesPage({
+  householdId,
   accounts,
   latestBalanceByAccountId,
   defaultDate,
-  snapshotBatchMessage,
-  onCreateSnapshotBatch,
-  householdSnapshots,
-  snapshotAccountFilter,
-  onSnapshotAccountFilter,
-  snapshotEditDraft,
-  onSnapshotEditDraft,
-  onUpdateSnapshot,
-  onDeleteSnapshot,
-  onCreateSnapshot,
 }: {
+  householdId: string;
   accounts: Account[];
   latestBalanceByAccountId: ReadonlyMap<string, string | null>;
   defaultDate: string;
-  snapshotBatchMessage: string;
-  onCreateSnapshotBatch: FormEventHandler<HTMLFormElement>;
-  householdSnapshots: HouseholdSnapshot[];
-  snapshotAccountFilter: string;
-  onSnapshotAccountFilter: (accountId: string) => void;
-  snapshotEditDraft: SnapshotEditDraft | null;
-  onSnapshotEditDraft: (draft: SnapshotEditDraft | null) => void;
-  onUpdateSnapshot: (snapshot: HouseholdSnapshot) => void | Promise<void>;
-  onDeleteSnapshot: (snapshot: HouseholdSnapshot) => void | Promise<void>;
-  onCreateSnapshot: FormEventHandler<HTMLFormElement>;
 }) {
+  const [snapshotBatchMessage, setSnapshotBatchMessage] = useState('');
+  const [snapshotAccountFilter, setSnapshotAccountFilter] = useState('');
+  const [snapshotEditDraft, setSnapshotEditDraft] = useState<SnapshotEditDraft | null>(null);
+  const [error, setError] = useState('');
+  const snapshotsQuery = useHouseholdSnapshots(householdId, snapshotAccountFilter);
+  const snapshotMutations = useSnapshotMutations(householdId);
+  const householdSnapshots = snapshotsQuery.data ?? [];
+
+  async function handleCreateSnapshotBatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    setError('');
+    setSnapshotBatchMessage('');
+    const form = new FormData(target);
+    const snapshots = accounts
+      .map((account) => ({
+        account_id: account.id,
+        balance: String(form.get(`balance:${account.id}`) ?? '').trim(),
+      }))
+      .filter((snapshot) => snapshot.balance !== '');
+    if (snapshots.length === 0) {
+      setError('Enter at least one account balance for the snapshot date.');
+      return;
+    }
+
+    try {
+      const result = await snapshotMutations.createBatch.mutateAsync({
+        as_of_date: String(form.get('as_of_date')),
+        currency: 'USD',
+        snapshots,
+      });
+      target.reset();
+      setSnapshotBatchMessage(
+        `Saved ${result.created_count} new and ${result.updated_count} updated snapshot${result.snapshots.length === 1 ? '' : 's'}.`,
+      );
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function handleCreateSnapshot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setError('');
+    try {
+      await snapshotMutations.createOne.mutateAsync({
+        accountId: String(form.get('account_id')),
+        payload: {
+          as_of_date: String(form.get('as_of_date')),
+          balance: String(form.get('balance')),
+          currency: 'USD',
+        },
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function handleUpdateSnapshot(snapshot: HouseholdSnapshot) {
+    if (snapshotEditDraft?.id !== snapshot.id) return;
+    setError('');
+    try {
+      await snapshotMutations.update.mutateAsync({
+        snapshot,
+        payload: {
+          as_of_date: snapshotEditDraft.as_of_date,
+          balance: snapshotEditDraft.balance,
+          currency: snapshot.currency,
+        },
+      });
+      setSnapshotEditDraft(null);
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function handleDeleteSnapshot(snapshot: HouseholdSnapshot) {
+    if (!window.confirm(`Delete ${snapshot.account_name} snapshot from ${snapshot.as_of_date}?`)) {
+      return;
+    }
+    setError('');
+    try {
+      await snapshotMutations.remove.mutateAsync(snapshot);
+      if (snapshotEditDraft?.id === snapshot.id) setSnapshotEditDraft(null);
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
   return (
     <>
+      {error && <div className="error" role="alert">{error}</div>}
       <section className="card">
         <h2>Add household snapshot</h2>
         <p className="muted">Capture a snapshot day across many accounts. Empty balances are skipped; existing same-day snapshots are updated.</p>
         {accounts.length ? (
-          <form onSubmit={onCreateSnapshotBatch} className="stacked-form">
+          <form onSubmit={handleCreateSnapshotBatch} className="stacked-form">
             <label>
               Snapshot date
               <input name="as_of_date" type="date" defaultValue={defaultDate} required />
@@ -68,7 +143,7 @@ export function UpdateBalancesPage({
                 </div>
               ))}
             </div>
-            <button type="submit">Save household snapshot</button>
+            <button type="submit" disabled={snapshotMutations.isPending}>Save household snapshot</button>
             {snapshotBatchMessage && <p className="success-message" role="status">{snapshotBatchMessage}</p>}
           </form>
         ) : (
@@ -84,7 +159,7 @@ export function UpdateBalancesPage({
           </div>
           <select
             value={snapshotAccountFilter}
-            onChange={(event) => onSnapshotAccountFilter(event.target.value)}
+            onChange={(event) => setSnapshotAccountFilter(event.target.value)}
             aria-label="Filter snapshot history by account"
           >
             <option value="">All accounts</option>
@@ -95,7 +170,11 @@ export function UpdateBalancesPage({
             ))}
           </select>
         </div>
-        {householdSnapshots.length ? (
+        {snapshotsQuery.isPending ? (
+          <p className="muted" role="status">Loading snapshot history…</p>
+        ) : snapshotsQuery.error ? (
+          <div className="error" role="alert">{String(snapshotsQuery.error)}</div>
+        ) : householdSnapshots.length ? (
           <table className="spaced-table" tabIndex={0}>
             <thead>
               <tr>
@@ -118,7 +197,7 @@ export function UpdateBalancesPage({
                           aria-label={`Snapshot date for ${snapshot.account_name}`}
                           value={snapshotEditDraft.as_of_date}
                           onChange={(event) =>
-                            onSnapshotEditDraft({ ...snapshotEditDraft, as_of_date: event.target.value })
+                            setSnapshotEditDraft({ ...snapshotEditDraft, as_of_date: event.target.value })
                           }
                         />
                       ) : (
@@ -136,7 +215,7 @@ export function UpdateBalancesPage({
                           aria-label={`Snapshot balance for ${snapshot.account_name}`}
                           value={snapshotEditDraft.balance}
                           onChange={(event) =>
-                            onSnapshotEditDraft({ ...snapshotEditDraft, balance: event.target.value })
+                            setSnapshotEditDraft({ ...snapshotEditDraft, balance: event.target.value })
                           }
                         />
                       ) : (
@@ -148,8 +227,8 @@ export function UpdateBalancesPage({
                       <div className="action-row">
                         {isEditing ? (
                           <>
-                            <button type="button" onClick={() => onUpdateSnapshot(snapshot)}>Save</button>
-                            <button type="button" className="secondary-button" onClick={() => onSnapshotEditDraft(null)}>
+                            <button type="button" disabled={snapshotMutations.isPending} onClick={() => handleUpdateSnapshot(snapshot)}>Save</button>
+                            <button type="button" className="secondary-button" onClick={() => setSnapshotEditDraft(null)}>
                               Cancel
                             </button>
                           </>
@@ -159,7 +238,7 @@ export function UpdateBalancesPage({
                               type="button"
                               className="secondary-button"
                               onClick={() =>
-                                onSnapshotEditDraft({
+                                setSnapshotEditDraft({
                                   id: snapshot.id,
                                   as_of_date: snapshot.as_of_date,
                                   balance: snapshot.balance,
@@ -168,7 +247,7 @@ export function UpdateBalancesPage({
                             >
                               Edit
                             </button>
-                            <button type="button" className="danger-button" onClick={() => onDeleteSnapshot(snapshot)}>
+                            <button type="button" className="danger-button" disabled={snapshotMutations.isPending} onClick={() => handleDeleteSnapshot(snapshot)}>
                               Delete
                             </button>
                           </>
@@ -188,7 +267,7 @@ export function UpdateBalancesPage({
       <section className="card">
         <h2>Add a single snapshot</h2>
         <p className="muted">Use this for a one-off account update. For routine updates, capture the household snapshot above.</p>
-        <form onSubmit={onCreateSnapshot} className="stacked-form">
+        <form onSubmit={handleCreateSnapshot} className="stacked-form">
           <label>
             Account
             <select name="account_id" required defaultValue="">
@@ -206,7 +285,7 @@ export function UpdateBalancesPage({
             Balance
             <input name="balance" inputMode="decimal" placeholder="100000.00" required />
           </label>
-          <button type="submit">Add snapshot</button>
+          <button type="submit" disabled={snapshotMutations.isPending}>Add snapshot</button>
         </form>
       </section>
     </>
