@@ -27,6 +27,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas.account import (
+    AccountEventRead,
     BalanceSnapshotBatchCreate,
     BalanceSnapshotBatchRead,
     HouseholdBalanceSnapshotRead,
@@ -292,6 +293,23 @@ def list_household_snapshots(
         }
         for snapshot, account in rows
     ]
+
+
+@router.get("/{household_id}/events", response_model=list[AccountEventRead])
+def list_household_account_events(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[AccountEvent]:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+    return list(
+        db.scalars(
+            select(AccountEvent)
+            .where(AccountEvent.household_id == household_id)
+            .order_by(AccountEvent.event_date.desc(), AccountEvent.created_at.desc())
+        ).all()
+    )
 
 
 @router.get("/{household_id}/members", response_model=list[HouseholdMembershipRead])

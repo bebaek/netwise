@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
@@ -11,9 +12,6 @@ import {
   HouseholdSnapshot,
   IncomeSource,
   MortgageProfile,
-  NetWorth,
-  NetWorthBreakdownHistory,
-  NetWorthHistory,
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
@@ -51,19 +49,13 @@ import {
   deleteSpendingItem,
   exportHousehold,
   getCapabilities,
-  getHistoricalTrend,
-  getNetWorth,
-  getNetWorthBreakdownHistory,
   getNetWorthProjection,
   getProjectionSettings,
   getRealEstateAnalytics,
   importFintrack,
-  listAccounts,
-  listAccountEvents,
   listAnnualTaxRecords,
   listHouseholds,
   listHouseholdMembers,
-  listHouseholdSnapshots,
   listHouseholdPeople,
   listIncomeSources,
   listMortgageProfiles,
@@ -94,6 +86,13 @@ import {
 import type { AccountEditDraft } from './pages/AssetsPage';
 import type { AccountEventDraft } from './pages/PlanningPage';
 import type { SnapshotEditDraft } from './pages/UpdateBalancesPage';
+import {
+  householdQueryKeys,
+  useAccounts,
+  useHouseholdAccountEvents,
+  useHouseholdFinancialSummary,
+  useHouseholdSnapshots,
+} from './queries/household';
 import { formatMoney } from './utils/format';
 import './styles.css';
 
@@ -233,17 +232,11 @@ function App({
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
-  const [accountEvents, setAccountEvents] = useState<AccountEvent[]>([]);
   const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
-  const [householdSnapshots, setHouseholdSnapshots] = useState<HouseholdSnapshot[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [snapshotAccountFilter, setSnapshotAccountFilter] = useState<string>('');
   const [snapshotEditDraft, setSnapshotEditDraft] = useState<SnapshotEditDraft | null>(null);
-  const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
-  const [history, setHistory] = useState<NetWorthHistory | null>(null);
-  const [breakdownHistory, setBreakdownHistory] = useState<NetWorthBreakdownHistory | null>(null);
   const [properties, setProperties] = useState<RealEstateProperty[]>([]);
   const [realEstateAnalytics, setRealEstateAnalytics] = useState<RealEstateAnalytics[]>([]);
   const [propertyEditId, setPropertyEditId] = useState<string>('');
@@ -271,6 +264,37 @@ function App({
   const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
   const [loadedHouseholdId, setLoadedHouseholdId] = useState<string>('');
   const [householdsLoading, setHouseholdsLoading] = useState<boolean>(false);
+  const queryClient = useQueryClient();
+  const accountsQuery = useAccounts(selectedHouseholdId);
+  const accountEventsQuery = useHouseholdAccountEvents(selectedHouseholdId);
+  const snapshotsQuery = useHouseholdSnapshots(selectedHouseholdId, snapshotAccountFilter);
+  const financialSummary = useHouseholdFinancialSummary(
+    selectedHouseholdId,
+    showInterpolatedHistory,
+  );
+  const accounts = accountsQuery.data ?? [];
+  const accountEvents = accountEventsQuery.data ?? [];
+  const householdSnapshots = snapshotsQuery.data ?? [];
+  const netWorth = financialSummary.netWorth.data ?? null;
+  const history = financialSummary.history.data ?? null;
+  const breakdownHistory = financialSummary.breakdownHistory.data ?? null;
+  const queryDataLoading = Boolean(selectedHouseholdId) && [
+    accountsQuery,
+    accountEventsQuery,
+    snapshotsQuery,
+    financialSummary.netWorth,
+    financialSummary.history,
+    financialSummary.breakdownHistory,
+  ].some((query) => query.isPending);
+
+  const queryDataError = [
+    accountsQuery,
+    accountEventsQuery,
+    snapshotsQuery,
+    financialSummary.netWorth,
+    financialSummary.history,
+    financialSummary.breakdownHistory,
+  ].find((query) => query.error)?.error;
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) ?? authenticatedUser,
@@ -330,14 +354,14 @@ function App({
     }
   }
 
-  async function refreshDashboard(householdId: string) {
+  async function refreshDashboard(householdId: string, refreshQueryData = true) {
     const requestId = ++dashboardRequestId.current;
     setDashboardLoading(true);
     try {
+      const queryRefresh = refreshQueryData
+        ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
+        : Promise.resolve();
       const [
-        accountList,
-        netWorthResult,
-        historyResult,
         propertyList,
         realEstateAnalyticsResult,
         realEstateSaleList,
@@ -349,14 +373,9 @@ function App({
         projectionTransferList,
         spendingItemList,
         taxRecordList,
-        snapshotList,
-        breakdownResult,
         memberList,
         projectionSettingsResult,
       ] = await Promise.all([
-        listAccounts(householdId),
-        getNetWorth(householdId),
-        getHistoricalTrend(householdId, showInterpolatedHistory),
         listRealEstateProperties(householdId),
         getRealEstateAnalytics(householdId),
         listRealEstateSales(householdId),
@@ -368,25 +387,13 @@ function App({
         listProjectionTransfers(householdId),
         listSpendingItems(householdId),
         listAnnualTaxRecords(householdId),
-        listHouseholdSnapshots(householdId, snapshotAccountFilter || undefined),
-        getNetWorthBreakdownHistory(householdId),
         listHouseholdMembers(householdId),
         getProjectionSettings(householdId),
       ]);
+      await queryRefresh;
       if (requestId !== dashboardRequestId.current) return;
 
-      const accountEventList = (await Promise.all(accountList.map((account) => listAccountEvents(account.id))))
-        .flat()
-        .sort((left, right) => right.event_date.localeCompare(left.event_date));
-      if (requestId !== dashboardRequestId.current) return;
-
-      setAccounts(accountList);
-      setAccountEvents(accountEventList);
-      setHouseholdSnapshots(snapshotList);
       setHouseholdMembers(memberList);
-      setNetWorth(netWorthResult);
-      setHistory(historyResult);
-      setBreakdownHistory(breakdownResult);
       setProperties(propertyList);
       setRealEstateAnalytics(realEstateAnalyticsResult);
       setRealEstateSales(realEstateSaleList);
@@ -404,6 +411,26 @@ function App({
       if (requestId === dashboardRequestId.current) setDashboardLoading(false);
     }
   }
+
+  async function refreshSnapshotData(householdId: string) {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: householdQueryKeys.snapshotsAll(householdId) }),
+      queryClient.invalidateQueries({ queryKey: householdQueryKeys.financialSummary(householdId) }),
+    ]);
+  }
+
+  async function refreshAccountEvents(householdId: string) {
+    await queryClient.invalidateQueries({ queryKey: householdQueryKeys.events(householdId) });
+  }
+
+  async function handleLogout() {
+    queryClient.clear();
+    await onLogout();
+  }
+
+  useEffect(() => {
+    if (queryDataError) setError(String(queryDataError));
+  }, [queryDataError]);
 
   useEffect(() => {
     const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -464,8 +491,8 @@ function App({
       setDashboardLoading(false);
       return;
     }
-    refreshDashboard(selectedHouseholdId).catch((err: unknown) => setError(String(err)));
-  }, [selectedHouseholdId, showInterpolatedHistory, snapshotAccountFilter]);
+    refreshDashboard(selectedHouseholdId, false).catch((err: unknown) => setError(String(err)));
+  }, [selectedHouseholdId]);
 
   async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -614,7 +641,7 @@ function App({
         currency: 'USD',
       });
       target.reset();
-      await refreshDashboard(selectedHouseholdId);
+      await refreshSnapshotData(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -647,7 +674,7 @@ function App({
       setSnapshotBatchMessage(
         `Saved ${result.created_count} new and ${result.updated_count} updated snapshot${result.snapshots.length === 1 ? '' : 's'}.`,
       );
-      await refreshDashboard(selectedHouseholdId);
+      await refreshSnapshotData(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -663,7 +690,7 @@ function App({
         currency: snapshot.currency,
       });
       setSnapshotEditDraft(null);
-      await refreshDashboard(selectedHouseholdId);
+      await refreshSnapshotData(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -679,7 +706,7 @@ function App({
     try {
       await deleteSnapshot(snapshot.account_id, snapshot.id);
       if (snapshotEditDraft?.id === snapshot.id) setSnapshotEditDraft(null);
-      await refreshDashboard(selectedHouseholdId);
+      await refreshSnapshotData(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -738,7 +765,7 @@ function App({
         });
       }
       setAccountEventDraft(null);
-      await refreshDashboard(selectedHouseholdId);
+      await refreshAccountEvents(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -754,7 +781,7 @@ function App({
     try {
       await deleteAccountEvent(accountEvent.account_id, accountEvent.id);
       if (accountEventDraft?.id === accountEvent.id) setAccountEventDraft(null);
-      await refreshDashboard(selectedHouseholdId);
+      await refreshAccountEvents(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -1296,7 +1323,7 @@ function App({
     <main className="app-shell">
       <AppHeader
         currentUser={authenticatedUser}
-        onLogout={onLogout}
+        onLogout={handleLogout}
         households={households}
         selectedHousehold={selectedHousehold}
         selectedHouseholdId={selectedHouseholdId}
@@ -1336,11 +1363,13 @@ function App({
         </section>
       )}
 
-      {selectedHousehold && dashboardLoading && loadedHouseholdId !== selectedHousehold.id && (
+      {selectedHousehold && (dashboardLoading || queryDataLoading) && (
+        loadedHouseholdId !== selectedHousehold.id || queryDataLoading
+      ) && (
         <div className="card" role="status">Loading {selectedHousehold.name}…</div>
       )}
 
-      {selectedHousehold && loadedHouseholdId === selectedHousehold.id && (
+      {selectedHousehold && loadedHouseholdId === selectedHousehold.id && !queryDataLoading && (
         <Routes>
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route

@@ -66,6 +66,7 @@ def test_non_member_cannot_discover_household_or_resources(unauthenticated_clien
     ]
     assert unauthenticated_client.get(f"/households?user_id={owner['id']}").status_code == 403
     assert unauthenticated_client.get(f"/households/{household_id}").status_code == 404
+    assert unauthenticated_client.get(f"/households/{household_id}/events").status_code == 404
     assert unauthenticated_client.get(f"/dashboard/{household_id}/net-worth").status_code == 404
     assert unauthenticated_client.get(f"/accounts/{account['id']}").status_code == 404
     visible_users = unauthenticated_client.get("/users")
@@ -94,6 +95,7 @@ def test_viewer_is_read_only_and_member_can_write(unauthenticated_client, db_ses
     assert unauthenticated_client.get(f"/households/{household_id}").status_code == 200
     assert unauthenticated_client.get(f"/accounts?household_id={household_id}").status_code == 200
     assert unauthenticated_client.get(f"/accounts/{account['id']}").status_code == 200
+    assert unauthenticated_client.get(f"/households/{household_id}/events").status_code == 200
     assert (
         unauthenticated_client.post(
             "/accounts", json=_account_payload(household_id, "Viewer Cash")

@@ -558,8 +558,8 @@ export function importFintrack(payload: {
   });
 }
 
-export function listAccounts(householdId: string): Promise<Account[]> {
-  return request<Account[]>(`/accounts?household_id=${householdId}`);
+export function listAccounts(householdId: string, signal?: AbortSignal): Promise<Account[]> {
+  return request<Account[]>(`/accounts?household_id=${householdId}`, { signal });
 }
 
 export function createAccount(payload: {
@@ -629,10 +629,11 @@ export function createSnapshotBatch(
 export function listHouseholdSnapshots(
   householdId: string,
   accountId?: string,
+  signal?: AbortSignal,
 ): Promise<HouseholdSnapshot[]> {
   const params = new URLSearchParams({ limit: '100' });
   if (accountId) params.set('account_id', accountId);
-  return request<HouseholdSnapshot[]>(`/households/${householdId}/snapshots?${params}`);
+  return request<HouseholdSnapshot[]>(`/households/${householdId}/snapshots?${params}`, { signal });
 }
 
 export function updateSnapshot(
@@ -652,8 +653,11 @@ export function deleteSnapshot(accountId: string, snapshotId: string): Promise<v
   });
 }
 
-export function listAccountEvents(accountId: string): Promise<AccountEvent[]> {
-  return request<AccountEvent[]>(`/accounts/${accountId}/events`);
+export function listHouseholdAccountEvents(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<AccountEvent[]> {
+  return request<AccountEvent[]>(`/households/${householdId}/events`, { signal });
 }
 
 export function createAccountEvent(
@@ -698,21 +702,26 @@ export function deleteAccountEvent(accountId: string, eventId: string): Promise<
   });
 }
 
-export function getNetWorth(householdId: string): Promise<NetWorth> {
-  return request<NetWorth>(`/dashboard/${householdId}/net-worth`);
+export function getNetWorth(householdId: string, signal?: AbortSignal): Promise<NetWorth> {
+  return request<NetWorth>(`/dashboard/${householdId}/net-worth`, { signal });
 }
 
 export function getHistoricalTrend(
   householdId: string,
   interpolate = false,
+  signal?: AbortSignal,
 ): Promise<NetWorthHistory> {
   return request<NetWorthHistory>(
     `/dashboard/${householdId}/historical-trend?interpolate=${interpolate ? 'true' : 'false'}`,
+    { signal },
   );
 }
 
-export function getNetWorthBreakdownHistory(householdId: string): Promise<NetWorthBreakdownHistory> {
-  return request<NetWorthBreakdownHistory>(`/dashboard/${householdId}/breakdown-history`);
+export function getNetWorthBreakdownHistory(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<NetWorthBreakdownHistory> {
+  return request<NetWorthBreakdownHistory>(`/dashboard/${householdId}/breakdown-history`, { signal });
 }
 
 export function getNetWorthHistory(householdId: string): Promise<NetWorthHistory> {

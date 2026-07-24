@@ -34,7 +34,7 @@ Playwright was not run because its configured workflow requires the live Docker 
 | Priority | Improvement | Status |
 | --- | --- | --- |
 | P0 | Add authentication and household-level authorization | completed |
-| P1 | Decompose frontend server state and remove full-dashboard reloads | not started |
+| P1 | Decompose frontend server state and remove full-dashboard reloads | in progress |
 | P1 | Refactor projections around pure, typed inputs and policies | not started |
 | P1 | Separate development deployment from supported production deployment | not started |
 | P2 | Bring documentation, licensing, and CI in line with the implementation | not started |
@@ -83,15 +83,16 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ## P1: Frontend data and state architecture
 
-**Status:** `not started`
+**Status:** `in progress`
 
 ### Directly verified findings
 
-- `frontend/src/App.tsx` is 1,486 lines, and `App()` owns most server data, form drafts, mutations, loading state, and error state.
-- `refreshDashboard()` begins 18 API requests and then requests account events separately for every account.
-- The same full refresh runs when only the snapshot filter or historical interpolation option changes.
-- Approximately 28 mutation paths call `refreshDashboard()`, causing small changes to reload unrelated domains.
-- Data for all pages is loaded centrally even though page modules are lazy-loaded.
+- `frontend/src/App.tsx` remains over 1,500 lines and still owns most form drafts, mutations, and the server state for domains not yet migrated.
+- The original baseline loaded 18 API collections centrally and requested account events separately for every account. The first implemented slice batches household events and moves accounts, events, snapshots, and financial-summary data into TanStack Query.
+- Snapshot filtering and historical interpolation originally triggered the same full refresh. They now issue one domain-specific request each.
+- Many remaining mutation paths still call `refreshDashboard()`, causing unrelated domains to reload.
+- Data for most pages is still loaded centrally even though page modules are lazy-loaded.
+- Reproducible before/after counts are recorded in [`frontend-request-performance.md`](frontend-request-performance.md).
 
 The expected performance and maintainability impact is an inference from this directly verified request pattern; it should be measured during implementation.
 
@@ -107,11 +108,21 @@ The expected performance and maintainability impact is an inference from this di
 
 Suggested initial slices:
 
-- Snapshots and snapshot filtering
-- Accounts and account events
+- Snapshots and snapshot filtering — first slice implemented
+- Accounts and account events — query reads and event batching implemented; account mutations remain in `App()`
 - Real estate
 - Planning data
 - Household membership/settings
+
+### Implementation progress
+
+- [x] Record automated request-count baselines and before/after measurements.
+- [x] Add TanStack Query with cancellation-aware domain query hooks.
+- [x] Add a household-level account-events endpoint to remove per-account event requests.
+- [x] Move accounts, events, snapshots, and financial summaries out of component-owned server state.
+- [x] Limit snapshot filters, interpolation toggles, and snapshot mutations to affected query keys.
+- [ ] Extract account and snapshot mutation handlers from `App()`.
+- [ ] Migrate remaining route domains and eliminate the central dashboard refresh.
 
 ### Completion criteria
 
@@ -253,6 +264,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Frontend server state | Added request-count baselines, household event batching, and the first TanStack Query slice for accounts, snapshots, events, and financial summaries. |
 | 2026-07-22 | P0 security | Confined imports to an explicit root, made admin tools opt-in, bound development ports to localhost, and marked the security milestone complete. |
 | 2026-07-22 | Household authorization | Added household/resource isolation, role enforcement, protected membership administration, and cross-household tests. |
 | 2026-07-22 | Authentication | Started local password authentication and revocable cookie-session implementation. |
