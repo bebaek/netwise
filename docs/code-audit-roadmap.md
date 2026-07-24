@@ -87,7 +87,8 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ### Directly verified findings
 
-- `frontend/src/App.tsx` remains over 1,000 lines and still owns most mutations and the server state for domains not yet migrated.
+- `frontend/src/App.tsx` is now under 1,000 lines but still owns mutations and server state for planning and household-settings domains not yet migrated.
+- `frontend/src/pages/PlanningPage.tsx` is over 1,400 lines after absorbing route-owned account-event and real-estate planning workflows, so its internal domain boundaries now need extraction.
 - The original baseline loaded 18 API collections centrally and requested account events separately for every account. The first implemented slice batches household events and moves accounts, events, snapshots, and financial-summary data into TanStack Query.
 - Snapshot filtering and historical interpolation originally triggered the same full refresh. They now issue one domain-specific request each.
 - Many remaining mutation paths still call `refreshDashboard()`, causing unrelated domains to reload.
@@ -110,7 +111,7 @@ Suggested initial slices:
 
 - Snapshots and snapshot filtering — route-owned query state and mutations implemented
 - Accounts and account events — query reads, event batching, local drafts, and route-owned mutations implemented
-- Real estate — properties, analytics, mortgages, and their mutations are route-owned by Assets; sales and liquidation strategies remain in `App()`
+- Real estate — properties, analytics, mortgages, sales, liquidation strategies, and related mutations are route-owned
 - Planning data
 - Household membership/settings
 
@@ -125,7 +126,7 @@ Suggested initial slices:
 - [x] Extract account create/edit state and mutation handlers from `App()` into the Assets route.
 - [x] Extract account-event query state, drafts, and mutation handlers from `App()` into the Planning route.
 - [x] Extract property, property-analytics, and mortgage queries and mutations into the Assets route.
-- [ ] Extract real-estate sales and liquidation strategies into the Planning route.
+- [x] Extract real-estate sales and liquidation strategies into the Planning route.
 - [ ] Migrate remaining route domains and eliminate the central dashboard refresh.
 
 ### Completion criteria
@@ -268,6 +269,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Planning real estate | Moved planned sales and liquidation strategies into Planning; initial Overview requests fell from 36 to 32. |
 | 2026-07-22 | Asset real estate | Moved properties, property analytics, mortgages, and related mutations into Assets; initial Overview requests fell from 42 to 36. |
 | 2026-07-22 | Account events | Moved account-event loading, drafts, and mutations into Planning; Overview no longer requests account events. |
 | 2026-07-22 | Account mutations | Moved account create/edit state and mutations into Assets with targeted account and financial-summary invalidation. |

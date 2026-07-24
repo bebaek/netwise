@@ -3,11 +3,19 @@ import {
   createAccount,
   createMortgageProfile,
   createRealEstateProperty,
+  createRealEstateSale,
   createSnapshot,
+  deleteRealEstateLiquidationStrategy,
+  deleteRealEstateSale,
   getRealEstateAnalytics,
   listMortgageProfiles,
+  listRealEstateLiquidationStrategies,
   listRealEstateProperties,
+  listRealEstateSales,
   updateRealEstateProperty,
+  upsertRealEstateLiquidationStrategy,
+  type RealEstateLiquidationStrategy,
+  type RealEstateSale,
 } from '../api';
 import { householdQueryKeys } from './household';
 
@@ -28,6 +36,18 @@ export const realEstateQueryKeys = {
     ...realEstateQueryKeys.all(householdId),
     'mortgages',
   ] as const,
+  planningAll: (householdId: string) => [
+    ...householdQueryKeys.all(householdId),
+    'planning-real-estate',
+  ] as const,
+  sales: (householdId: string) => [
+    ...realEstateQueryKeys.planningAll(householdId),
+    'sales',
+  ] as const,
+  liquidationStrategies: (householdId: string) => [
+    ...realEstateQueryKeys.planningAll(householdId),
+    'liquidation-strategies',
+  ] as const,
 };
 
 type CreatePropertyVariables = {
@@ -46,6 +66,68 @@ type CreateMortgageVariables = {
   mortgage: Omit<Parameters<typeof createMortgageProfile>[0], 'liability_account_id'>;
   snapshot?: Parameters<typeof createSnapshot>[1];
 };
+
+type UpsertLiquidationStrategyVariables = {
+  propertyAccountId: string;
+  payload: Parameters<typeof upsertRealEstateLiquidationStrategy>[1];
+};
+
+export function usePlanningRealEstateData(householdId: string) {
+  const sales = useQuery({
+    queryKey: realEstateQueryKeys.sales(householdId),
+    queryFn: ({ signal }) => listRealEstateSales(householdId, signal),
+    enabled: Boolean(householdId),
+  });
+  const liquidationStrategies = useQuery({
+    queryKey: realEstateQueryKeys.liquidationStrategies(householdId),
+    queryFn: ({ signal }) => listRealEstateLiquidationStrategies(householdId, signal),
+    enabled: Boolean(householdId),
+  });
+
+  return { sales, liquidationStrategies };
+}
+
+export function usePlanningRealEstateMutations(householdId: string) {
+  const queryClient = useQueryClient();
+  const refreshSales = () => queryClient.invalidateQueries({
+    queryKey: realEstateQueryKeys.sales(householdId),
+  });
+  const refreshStrategies = () => queryClient.invalidateQueries({
+    queryKey: realEstateQueryKeys.liquidationStrategies(householdId),
+  });
+
+  const createSale = useMutation({
+    mutationFn: createRealEstateSale,
+    onSuccess: refreshSales,
+  });
+  const deleteSale = useMutation({
+    mutationFn: (sale: RealEstateSale) => deleteRealEstateSale(sale.id),
+    onSuccess: refreshSales,
+  });
+  const upsertLiquidationStrategy = useMutation({
+    mutationFn: ({ propertyAccountId, payload }: UpsertLiquidationStrategyVariables) => (
+      upsertRealEstateLiquidationStrategy(propertyAccountId, payload)
+    ),
+    onSuccess: refreshStrategies,
+  });
+  const deleteLiquidationStrategy = useMutation({
+    mutationFn: (strategy: RealEstateLiquidationStrategy) => (
+      deleteRealEstateLiquidationStrategy(strategy.property_account_id)
+    ),
+    onSuccess: refreshStrategies,
+  });
+
+  return {
+    createSale,
+    deleteSale,
+    upsertLiquidationStrategy,
+    deleteLiquidationStrategy,
+    isPending: createSale.isPending
+      || deleteSale.isPending
+      || upsertLiquidationStrategy.isPending
+      || deleteLiquidationStrategy.isPending,
+  };
+}
 
 export function useRealEstateAssetData(householdId: string) {
   const properties = useQuery({

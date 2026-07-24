@@ -793,8 +793,11 @@ export function updateRealEstateProperty(
   });
 }
 
-export function listRealEstateSales(householdId: string): Promise<RealEstateSale[]> {
-  return request<RealEstateSale[]>(`/real-estate/sales?household_id=${householdId}`);
+export function listRealEstateSales(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<RealEstateSale[]> {
+  return request<RealEstateSale[]>(`/real-estate/sales?household_id=${householdId}`, { signal });
 }
 
 export function createRealEstateSale(payload: {
@@ -817,9 +820,11 @@ export function deleteRealEstateSale(saleId: string): Promise<void> {
 
 export function listRealEstateLiquidationStrategies(
   householdId: string,
+  signal?: AbortSignal,
 ): Promise<RealEstateLiquidationStrategy[]> {
   return request<RealEstateLiquidationStrategy[]>(
     `/real-estate/liquidation-strategies?household_id=${householdId}`,
+    { signal },
   );
 }
 

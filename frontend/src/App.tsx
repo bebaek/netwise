@@ -12,8 +12,6 @@ import {
   NetWorthProjection,
   ProjectionSettings,
   ProjectionTransfer,
-  RealEstateLiquidationStrategy,
-  RealEstateSale,
   SocialSecurityEstimate,
   SocialSecurityEstimateInput,
   SpendingItem,
@@ -24,14 +22,11 @@ import {
   createHouseholdPerson,
   createIncomeSource,
   createProjectionTransfer,
-  createRealEstateSale,
   createSocialSecurityEstimate,
   createSpendingItem,
   createUser,
   deleteProjectionTransfer,
   deleteSocialSecurityEstimate,
-  deleteRealEstateLiquidationStrategy,
-  deleteRealEstateSale,
   deleteSpendingItem,
   exportHousehold,
   getCapabilities,
@@ -44,8 +39,6 @@ import {
   listHouseholdPeople,
   listIncomeSources,
   listProjectionTransfers,
-  listRealEstateLiquidationStrategies,
-  listRealEstateSales,
   listSocialSecurityEstimates,
   listSpendingItems,
   listUsers,
@@ -53,7 +46,6 @@ import {
   updateSocialSecurityEstimate,
   updateSpendingItem,
   upsertProjectionSettings,
-  upsertRealEstateLiquidationStrategy,
 } from './api';
 import {
   AppHeader,
@@ -207,8 +199,6 @@ function App({
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
-  const [realEstateSales, setRealEstateSales] = useState<RealEstateSale[]>([]);
-  const [liquidationStrategies, setLiquidationStrategies] = useState<RealEstateLiquidationStrategy[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
   const [socialSecurityEstimates, setSocialSecurityEstimates] = useState<SocialSecurityEstimate[]>([]);
@@ -319,8 +309,6 @@ function App({
         ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
         : Promise.resolve();
       const [
-        realEstateSaleList,
-        liquidationStrategyList,
         incomeSourceList,
         householdPersonList,
         socialSecurityEstimateList,
@@ -330,8 +318,6 @@ function App({
         memberList,
         projectionSettingsResult,
       ] = await Promise.all([
-        listRealEstateSales(householdId),
-        listRealEstateLiquidationStrategies(householdId),
         listIncomeSources(householdId),
         listHouseholdPeople(householdId),
         listSocialSecurityEstimates(householdId),
@@ -345,8 +331,6 @@ function App({
       if (requestId !== dashboardRequestId.current) return;
 
       setHouseholdMembers(memberList);
-      setRealEstateSales(realEstateSaleList);
-      setLiquidationStrategies(liquidationStrategyList);
       setIncomeSources(incomeSourceList);
       setHouseholdPeople(householdPersonList);
       setSocialSecurityEstimates(socialSecurityEstimateList);
@@ -488,76 +472,6 @@ function App({
       if (userId === selectedUserId) {
         await refreshHouseholds(selectedUserId);
       }
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleCreateRealEstateSale(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    try {
-      await createRealEstateSale({
-        property_account_id: requiredString(form, 'property_account_id'),
-        sale_date: requiredString(form, 'sale_date'),
-        gross_sale_price: requiredString(form, 'gross_sale_price'),
-        proceeds_account_id: optionalString(form, 'proceeds_account_id'),
-        selling_expense_rate: optionalString(form, 'selling_expense_rate'),
-        estimated_tax_rate: requiredString(form, 'estimated_tax_rate'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleDeleteRealEstateSale(sale: RealEstateSale) {
-    if (!selectedHouseholdId) return;
-    if (!window.confirm(`Delete the planned sale on ${sale.sale_date}?`)) return;
-    setError('');
-    try {
-      await deleteRealEstateSale(sale.id);
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleUpsertLiquidationStrategy(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!selectedHouseholdId) return;
-    setError('');
-    const form = new FormData(target);
-    const propertyAccountId = requiredString(form, 'automatic_property_account_id');
-    try {
-      await upsertRealEstateLiquidationStrategy(propertyAccountId, {
-        enabled: form.get('automatic_enabled') === 'on',
-        optimization_mode: requiredString(form, 'automatic_optimization_mode') as 'liquidity_shortfall' | 'maximize_liquid_runway',
-        priority: Number(requiredString(form, 'automatic_priority')),
-        earliest_sale_date: optionalString(form, 'automatic_earliest_sale_date'),
-        proceeds_account_id: optionalString(form, 'automatic_proceeds_account_id'),
-        selling_expense_rate: optionalString(form, 'automatic_selling_expense_rate'),
-        estimated_tax_rate: requiredString(form, 'automatic_estimated_tax_rate'),
-      });
-      target.reset();
-      await refreshDashboard(selectedHouseholdId);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleDeleteLiquidationStrategy(strategy: RealEstateLiquidationStrategy) {
-    if (!selectedHouseholdId) return;
-    if (!window.confirm('Delete this automatic property sale strategy?')) return;
-    setError('');
-    try {
-      await deleteRealEstateLiquidationStrategy(strategy.property_account_id);
-      await refreshDashboard(selectedHouseholdId);
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -982,9 +896,6 @@ function App({
                   assetAccounts={assetAccounts}
                   propertyAccounts={propertyAccounts}
                   accountNameById={accountNameById}
-                  liquidationStrategies={liquidationStrategies}
-                  onDeleteLiquidationStrategy={handleDeleteLiquidationStrategy}
-                  onUpsertLiquidationStrategy={handleUpsertLiquidationStrategy}
                   projectionSettings={projectionSettings}
                   onSpendingModeChange={handleSpendingModeChange}
                   onSaveProjectionSettings={handleSaveProjectionSettings}
@@ -1008,9 +919,6 @@ function App({
                   onUpdateSpendingItem={handleUpdateSpendingItem}
                   onDeleteSpendingItem={handleDeleteSpendingItem}
                   onCreateTaxRecord={handleCreateTaxRecord}
-                  realEstateSales={realEstateSales}
-                  onDeleteRealEstateSale={handleDeleteRealEstateSale}
-                  onCreateRealEstateSale={handleCreateRealEstateSale}
                 />
               </WorkspaceView>
             }

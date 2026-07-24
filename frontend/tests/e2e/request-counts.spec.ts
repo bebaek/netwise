@@ -111,7 +111,19 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.getByRole('link', { name: 'Plan', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Projection events', exact: true })).toBeVisible();
   await page.waitForLoadState('networkidle');
-  measurements.load_planning_account_events = recorder.summarize();
+  measurements.load_planning_route_data = recorder.summarize();
+
+  const saleForm = page.getByRole('heading', { name: 'Plan property sale', exact: true })
+    .locator('..')
+    .locator('form');
+  await saleForm.getByLabel('Property to sell').selectOption({ index: 1 });
+  await saleForm.locator('input[name="sale_date"]').fill('2035-01-01');
+  await saleForm.getByPlaceholder('Gross sale price').fill('500000');
+  recorder.reset();
+  await saleForm.getByRole('button', { name: 'Plan sale', exact: true }).click();
+  await expect(page.getByRole('cell', { name: '2035-01-01', exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.create_real_estate_sale = recorder.summarize();
 
   await page.getByRole('button', { name: 'Add event', exact: true }).click();
   const eventForm = page.locator('form').filter({
@@ -143,6 +155,10 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(initialPaths.some((path) => /^GET \/api\/real-estate\/properties$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/real-estate\/analytics$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/mortgages$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/real-estate\/sales$/.test(path))).toBe(false);
+  expect(
+    initialPaths.some((path) => /^GET \/api\/real-estate\/liquidation-strategies$/.test(path)),
+  ).toBe(false);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -185,9 +201,17 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ));
   expect(unrelatedPropertyCreatePath).toBeUndefined();
 
-  expect(measurements.load_planning_account_events.total).toBeLessThanOrEqual(2);
-  expect(Object.keys(measurements.load_planning_account_events.by_method_and_path)).toEqual([
+  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(6);
+  expect(Object.keys(measurements.load_planning_route_data.by_method_and_path).sort()).toEqual([
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
+    'GET /api/real-estate/liquidation-strategies',
+    'GET /api/real-estate/sales',
+  ]);
+
+  expect(measurements.create_real_estate_sale.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.create_real_estate_sale.by_method_and_path).sort()).toEqual([
+    'GET /api/real-estate/sales',
+    'POST /api/real-estate/sales',
   ]);
 
   expect(measurements.create_account_event.total).toBeLessThanOrEqual(2);

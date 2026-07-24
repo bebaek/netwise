@@ -14,6 +14,7 @@ import type {
   SpendingItem,
 } from '../api';
 import { useAccountEventMutations, useHouseholdAccountEvents } from '../queries/household';
+import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
 
 type AccountEventDraft = {
@@ -62,6 +63,15 @@ const SPENDING_CATEGORY_OPTIONS = [
   ['other', 'Other'],
 ] as const;
 
+function optionalFormString(form: FormData, key: string): string | undefined {
+  const value = String(form.get(key) ?? '').trim();
+  return value || undefined;
+}
+
+function requiredFormString(form: FormData, key: string): string {
+  return String(form.get(key) ?? '').trim();
+}
+
 function eventTypeLabel(value: string): string {
   return ACCOUNT_EVENT_TYPE_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
 }
@@ -85,9 +95,6 @@ export function PlanningPage({
   assetAccounts,
   propertyAccounts,
   accountNameById,
-  liquidationStrategies,
-  onDeleteLiquidationStrategy,
-  onUpsertLiquidationStrategy,
   projectionSettings,
   onSpendingModeChange,
   onSaveProjectionSettings,
@@ -111,9 +118,6 @@ export function PlanningPage({
   onUpdateSpendingItem,
   onDeleteSpendingItem,
   onCreateTaxRecord,
-  realEstateSales,
-  onDeleteRealEstateSale,
-  onCreateRealEstateSale,
 }: {
   householdId: string;
   defaultDate: string;
@@ -121,9 +125,6 @@ export function PlanningPage({
   assetAccounts: Account[];
   propertyAccounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
-  liquidationStrategies: RealEstateLiquidationStrategy[];
-  onDeleteLiquidationStrategy: (strategy: RealEstateLiquidationStrategy) => void | Promise<void>;
-  onUpsertLiquidationStrategy: FormEventHandler<HTMLFormElement>;
   projectionSettings: ProjectionSettings | null;
   onSpendingModeChange: (mode: 'manual' | 'itemized') => void | Promise<void>;
   onSaveProjectionSettings: FormEventHandler<HTMLFormElement>;
@@ -150,10 +151,12 @@ export function PlanningPage({
   onUpdateSpendingItem: (event: FormEvent<HTMLFormElement>, item: SpendingItem) => Promise<void>;
   onDeleteSpendingItem: (item: SpendingItem) => void | Promise<void>;
   onCreateTaxRecord: FormEventHandler<HTMLFormElement>;
-  realEstateSales: RealEstateSale[];
-  onDeleteRealEstateSale: (sale: RealEstateSale) => void | Promise<void>;
-  onCreateRealEstateSale: FormEventHandler<HTMLFormElement>;
 }) {
+  const [realEstateError, setRealEstateError] = useState('');
+  const planningRealEstateData = usePlanningRealEstateData(householdId);
+  const planningRealEstateMutations = usePlanningRealEstateMutations(householdId);
+  const realEstateSales = planningRealEstateData.sales.data ?? [];
+  const liquidationStrategies = planningRealEstateData.liquidationStrategies.data ?? [];
   const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
   const [accountEventError, setAccountEventError] = useState('');
   const accountEventsQuery = useHouseholdAccountEvents(householdId);
@@ -191,6 +194,74 @@ export function PlanningPage({
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
+
+  async function onUpsertLiquidationStrategy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const propertyAccountId = requiredFormString(form, 'automatic_property_account_id');
+    setRealEstateError('');
+    try {
+      await planningRealEstateMutations.upsertLiquidationStrategy.mutateAsync({
+        propertyAccountId,
+        payload: {
+          enabled: form.get('automatic_enabled') === 'on',
+          optimization_mode: requiredFormString(
+            form,
+            'automatic_optimization_mode',
+          ) as 'liquidity_shortfall' | 'maximize_liquid_runway',
+          priority: Number(requiredFormString(form, 'automatic_priority')),
+          earliest_sale_date: optionalFormString(form, 'automatic_earliest_sale_date'),
+          proceeds_account_id: optionalFormString(form, 'automatic_proceeds_account_id'),
+          selling_expense_rate: optionalFormString(form, 'automatic_selling_expense_rate'),
+          estimated_tax_rate: requiredFormString(form, 'automatic_estimated_tax_rate'),
+        },
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  async function onDeleteLiquidationStrategy(strategy: RealEstateLiquidationStrategy) {
+    if (!window.confirm('Delete this automatic property sale strategy?')) return;
+    setRealEstateError('');
+    try {
+      await planningRealEstateMutations.deleteLiquidationStrategy.mutateAsync(strategy);
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  async function onCreateRealEstateSale(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setRealEstateError('');
+    try {
+      await planningRealEstateMutations.createSale.mutateAsync({
+        property_account_id: requiredFormString(form, 'property_account_id'),
+        sale_date: requiredFormString(form, 'sale_date'),
+        gross_sale_price: requiredFormString(form, 'gross_sale_price'),
+        proceeds_account_id: optionalFormString(form, 'proceeds_account_id'),
+        selling_expense_rate: optionalFormString(form, 'selling_expense_rate'),
+        estimated_tax_rate: requiredFormString(form, 'estimated_tax_rate'),
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
+
+  async function onDeleteRealEstateSale(sale: RealEstateSale) {
+    if (!window.confirm(`Delete the planned sale on ${sale.sale_date}?`)) return;
+    setRealEstateError('');
+    try {
+      await planningRealEstateMutations.deleteSale.mutateAsync(sale);
+    } catch (mutationError: unknown) {
+      setRealEstateError(String(mutationError));
+    }
+  }
 
   function startNewAccountEventDraft() {
     setAccountEventDraft({
@@ -281,6 +352,19 @@ export function PlanningPage({
 
   return (
     <>
+      {realEstateError && <div className="error" role="alert">{realEstateError}</div>}
+      {planningRealEstateData.sales.error && (
+        <div className="error" role="alert">{String(planningRealEstateData.sales.error)}</div>
+      )}
+      {planningRealEstateData.liquidationStrategies.error && (
+        <div className="error" role="alert">
+          {String(planningRealEstateData.liquidationStrategies.error)}
+        </div>
+      )}
+      {(planningRealEstateData.sales.isPending
+        || planningRealEstateData.liquidationStrategies.isPending) && (
+        <div className="card" role="status">Loading real estate plans…</div>
+      )}
 <details className="advanced-planning">
   <summary>Advanced property sale automation</summary>
   <p className="muted">Configure automatic sales for liquidity shortfalls or runway optimization.</p>
@@ -302,7 +386,7 @@ export function PlanningPage({
               <td>{strategy.earliest_sale_date ?? 'Any date'}</td>
               <td>{formatRate(strategy.estimated_tax_rate)}</td>
               <td>{strategy.enabled ? 'Enabled' : 'Disabled'}</td>
-              <td><button type="button" className="danger-button" onClick={() => onDeleteLiquidationStrategy(strategy)}>Delete</button></td>
+              <td><button type="button" className="danger-button" disabled={planningRealEstateMutations.isPending} onClick={() => onDeleteLiquidationStrategy(strategy)}>Delete</button></td>
             </tr>
           ))}
         </tbody>
@@ -345,7 +429,7 @@ export function PlanningPage({
       <label>Estimated sale-tax reserve rate<input name="automatic_estimated_tax_rate" inputMode="decimal" defaultValue="0.15" required /></label>
       <label><input name="automatic_enabled" type="checkbox" defaultChecked /> Enabled</label>
       <p className="muted">Primary residences are never enrolled automatically. Runway optimization jointly evaluates enabled optimized properties in priority order and reports its selected schedule with the projection.</p>
-      <button type="submit" disabled={!propertyAccounts.length}>Save strategy</button>
+      <button type="submit" disabled={!propertyAccounts.length || planningRealEstateMutations.isPending}>Save strategy</button>
     </form>
   </div>
   </section>
@@ -1128,7 +1212,7 @@ export function PlanningPage({
               <td>{formatMoney(sale.gross_sale_price)}</td>
               <td>{formatRate(sale.estimated_tax_rate)}</td>
               <td>{accountNameById.get(sale.proceeds_account_id) ?? sale.proceeds_account_id}</td>
-              <td><button type="button" className="danger-button" onClick={() => onDeleteRealEstateSale(sale)}>Delete</button></td>
+              <td><button type="button" className="danger-button" disabled={planningRealEstateMutations.isPending} onClick={() => onDeleteRealEstateSale(sale)}>Delete</button></td>
             </tr>
           ))}
         </tbody>
@@ -1160,7 +1244,7 @@ export function PlanningPage({
         <input name="estimated_tax_rate" inputMode="decimal" defaultValue="0.15" required />
       </label>
       <p className="muted">Defaults to 15% of gross sale price when tax basis and depreciation details are unavailable.</p>
-      <button type="submit" disabled={!propertyAccounts.length}>Plan sale</button>
+      <button type="submit" disabled={!propertyAccounts.length || planningRealEstateMutations.isPending}>Plan sale</button>
     </form>
   </div>
 </section>
