@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.projection_contracts import ProjectionAccount
 from app.db.models import (
     Account,
     AccountEvent,
@@ -36,7 +37,7 @@ class ProjectionInput:
     """
 
     household_id: UUID
-    accounts: list[Account]
+    accounts: tuple[ProjectionAccount, ...]
     initial_balances: dict[UUID, Decimal]
     mortgage_profiles: dict[UUID, MortgageProfile]
     property_profiles: dict[UUID, RealEstateProperty]
@@ -60,7 +61,7 @@ def load_projection_input(
     end_date: date,
 ) -> ProjectionInput:
     """Resolve all persisted records needed for a deterministic projection."""
-    accounts = list(
+    account_records = list(
         db.scalars(
             select(Account)
             .where(Account.household_id == household_id, Account.is_active.is_(True))
@@ -69,7 +70,7 @@ def load_projection_input(
     )
     initial_balances = {
         account.id: _latest_balance_on_or_before(db, account.id, start_date) or Decimal("0.00")
-        for account in accounts
+        for account in account_records
     }
     mortgage_profiles = {
         profile.liability_account_id: profile
@@ -133,7 +134,8 @@ def load_projection_input(
         select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
     ).first()
     tax_rate = _latest_effective_tax_rate(db, household_id)
-    cost_bases, cost_basis_estimates = _resolve_cost_bases(db, accounts, start_date)
+    cost_bases, cost_basis_estimates = _resolve_cost_bases(db, account_records, start_date)
+    accounts = tuple(_to_projection_account(account) for account in account_records)
     return ProjectionInput(
         household_id=household_id,
         accounts=accounts,
@@ -150,6 +152,19 @@ def load_projection_input(
         tax_rate=tax_rate,
         cost_bases=cost_bases,
         cost_basis_estimates=cost_basis_estimates,
+    )
+
+
+def _to_projection_account(account: Account) -> ProjectionAccount:
+    return ProjectionAccount(
+        id=account.id,
+        name=account.name,
+        account_kind=account.account_kind,
+        category=account.category,
+        liquidity_class=account.liquidity_class,
+        retirement_tax_treatment=account.retirement_tax_treatment,
+        expected_annual_yield=account.expected_annual_yield,
+        liquidation_expense_rate=account.liquidation_expense_rate,
     )
 
 

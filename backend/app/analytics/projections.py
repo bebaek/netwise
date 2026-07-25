@@ -1,4 +1,5 @@
 from calendar import monthrange
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_UP, Decimal
@@ -7,9 +8,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.analytics.mortgage import estimate_mortgage_balance
+from app.analytics.projection_contracts import ProjectionAccount
 from app.analytics.projection_input import ProjectionInput, load_projection_input
 from app.db.models import (
-    Account,
     AccountEvent,
     AccountEventType,
     AccountKind,
@@ -97,7 +98,7 @@ class AutomaticPropertySaleContext:
 
     def next_strategy(
         self,
-        accounts_by_id: dict[UUID, Account],
+        accounts_by_id: dict[UUID, ProjectionAccount],
         balances: dict[UUID, Decimal],
     ) -> RealEstateLiquidationStrategy | None:
         eligible = [
@@ -961,7 +962,7 @@ def _ordered_march_sale_schedules(
 
 def _liquid_runway_score(
     result: dict,
-    accounts: list[Account],
+    accounts: Sequence[ProjectionAccount],
 ) -> tuple[int, int, Decimal, Decimal]:
     points = result["points"]
     retirement_ids = {account.id for account in accounts if account.category == "retirement"}
@@ -1006,7 +1007,7 @@ def _liquid_runway_score(
 
 def _first_retirement_withdrawal_date(
     result: dict,
-    accounts: list[Account],
+    accounts: Sequence[ProjectionAccount],
 ) -> date | None:
     retirement_ids = {account.id for account in accounts if account.category == "retirement"}
     for point in result["points"]:
@@ -1075,7 +1076,7 @@ def _projected_spending_items_for_period(
 
 def _projected_owner_property_spending_for_period(
     property_profiles: list[RealEstateProperty],
-    accounts_by_id: dict[UUID, Account],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     start_year: int,
     period_start: date,
@@ -1274,7 +1275,7 @@ def _annualize_income(amount: Decimal, frequency: str) -> Decimal:
 
 
 def _validate_cash_flow_account(
-    accounts_by_id: dict[UUID, Account], account_id: UUID | None, label: str
+    accounts_by_id: dict[UUID, ProjectionAccount], account_id: UUID | None, label: str
 ) -> None:
     if account_id is None:
         return
@@ -1284,8 +1285,10 @@ def _validate_cash_flow_account(
 
 
 def _cash_flow_target_account(
-    accounts: list[Account], accounts_by_id: dict[UUID, Account], account_id: UUID | None
-) -> Account | None:
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
+    account_id: UUID | None,
+) -> ProjectionAccount | None:
     if account_id is not None:
         return accounts_by_id[account_id]
     asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
@@ -1314,8 +1317,8 @@ def _active_months_in_period(
 
 def _apply_rental_cash_flow(
     property_profile: RealEstateProperty,
-    accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     period_start: date,
@@ -1397,8 +1400,8 @@ def _apply_rental_cash_flow(
 def _apply_rental_mortgage_debt_service(
     property_profile: RealEstateProperty,
     mortgage_profile: MortgageProfile | None,
-    accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     period_start: date,
@@ -1469,7 +1472,7 @@ def _amortized_monthly_payment(profile: MortgageProfile) -> Decimal:
 def _apply_account_cash_flow(
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
-    account: Account,
+    account: ProjectionAccount,
     cash_flow_type: str,
     amount: Decimal,
 ) -> None:
@@ -1489,7 +1492,7 @@ def _apply_account_cash_flow(
 
 
 def _property_sale_tax_basis_warnings(
-    accounts_by_id: dict[UUID, Account],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     property_profiles: dict[UUID, RealEstateProperty],
     real_estate_sales: list[RealEstateSale],
     automatic_sale_strategies: list[RealEstateLiquidationStrategy],
@@ -1528,8 +1531,8 @@ def _property_sale_tax_basis_warnings(
 
 
 def _apply_real_estate_sale(
-    accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     sale: RealEstateSale | ProjectedPropertySale,
@@ -1652,7 +1655,7 @@ def _apply_real_estate_sale(
 
 
 def _apply_projection_event(
-    accounts_by_id: dict[UUID, Account],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     event: AccountEvent,
@@ -1699,8 +1702,8 @@ def _projection_event_amount(event: AccountEvent) -> Decimal:
 
 
 def _withdraw_from_assets(
-    accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     amount: Decimal,
@@ -1816,8 +1819,8 @@ def _withdraw_from_assets(
 
 
 def _withdraw_from_account_pool(
-    accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
     amount: Decimal,
@@ -1922,7 +1925,7 @@ def _withdraw_from_account_pool(
     return result
 
 
-def _withdrawal_has_tax_consequences(account: Account) -> bool:
+def _withdrawal_has_tax_consequences(account: ProjectionAccount) -> bool:
     if account.category in {"cash", "checking", "savings"}:
         return False
     if (
@@ -1933,13 +1936,13 @@ def _withdrawal_has_tax_consequences(account: Account) -> bool:
     return True
 
 
-def _liquidation_expense_rate(account: Account) -> Decimal:
+def _liquidation_expense_rate(account: ProjectionAccount) -> Decimal:
     if account.liquidation_expense_rate is not None:
         return account.liquidation_expense_rate
     return DEFAULT_LIQUIDATION_EXPENSE_RATES.get(account.category, Decimal("0.000000"))
 
 
-def _funding_priority(account: Account) -> tuple[int, str] | None:
+def _funding_priority(account: ProjectionAccount) -> tuple[int, str] | None:
     account_name = account.name.casefold()
     if account_name in DEFAULT_FUNDING_ACCOUNT_NAMES:
         return (0, account_name)
@@ -1963,10 +1966,10 @@ def _funding_priority(account: Account) -> tuple[int, str] | None:
 
 
 def _withdrawal_order(
-    asset_accounts: list[Account],
-    accounts_by_id: dict[UUID, Account],
+    asset_accounts: Sequence[ProjectionAccount],
+    accounts_by_id: dict[UUID, ProjectionAccount],
     preferred_account_id: UUID | None,
-) -> list[Account]:
+) -> list[ProjectionAccount]:
     ordered_accounts = sorted(
         (account for account in asset_accounts if _funding_priority(account) is not None),
         key=_funding_priority,
@@ -1986,12 +1989,12 @@ def _withdrawal_order(
     return ordered_accounts[preferred_index:]
 
 
-def _cash_flow_priority(account: Account) -> tuple[int, str]:
+def _cash_flow_priority(account: ProjectionAccount) -> tuple[int, str]:
     return (CASH_FLOW_CATEGORY_PRIORITY.get(account.category, 99), account.name)
 
 
 def _yield_for_account(
-    account: Account,
+    account: ProjectionAccount,
     property_profile: RealEstateProperty | None,
 ) -> Decimal:
     if account.category == "real_estate":

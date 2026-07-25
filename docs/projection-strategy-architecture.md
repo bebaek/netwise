@@ -61,10 +61,11 @@ frozen `ProjectionInput` container. The route-facing
 `calculate_projection_from_input()` runs the deterministic engine and all
 optimization candidates without a database session.
 
-This is intentionally an intermediate boundary: the container prevents the
-engine from issuing additional projection queries, but its collections still
-contain ORM models. The next contract step is to map those records to immutable
-plain-data records before they reach the engine.
+This is intentionally an intermediate boundary: active accounts are mapped to
+immutable `ProjectionAccount` records and stored as a tuple, but the remaining
+input collections still contain ORM models. The next contract steps are to map
+profiles, transactions, events, income, transfers, spending, and settings to
+immutable plain-data records before they reach the engine.
 
 ## Target structure
 
@@ -238,7 +239,8 @@ to a strategy.
 
 ## Current implementation references
 
-- Input loader and transitional contract: `backend/app/analytics/projection_input.py`
+- Plain input records: `backend/app/analytics/projection_contracts.py`
+- Input loader and transitional aggregate: `backend/app/analytics/projection_input.py`
 - Deterministic in-memory entry point: `calculate_projection_from_input()` in `backend/app/analytics/projections.py`
 - Route-facing persistence adapter: `calculate_net_worth_projection()` in `backend/app/analytics/projections.py`
 - Projection endpoint: `backend/app/api/routes/dashboard.py`

@@ -209,7 +209,8 @@ Refactor incrementally while retaining the current deterministic output:
 
 - [x] Extract projection-specific SQLAlchemy queries into `load_projection_input()`.
 - [x] Add an immutable transitional `ProjectionInput` container and parity coverage.
-- [ ] Convert ORM-backed input members to immutable plain-data records.
+- [x] Map active accounts to immutable `ProjectionAccount` records.
+- [ ] Convert the remaining ORM-backed input members to immutable plain-data records.
 - [x] Make deterministic projection calculation operate without a database session.
 - [ ] Extract focused projection policies and response formatting.
 
@@ -314,6 +315,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Plain account projection contract | Added immutable `ProjectionAccount` records, converted the account collection to a tuple, and removed the deterministic engine's dependency on the SQLAlchemy `Account` model. |
 | 2026-07-25 | Database-free projection core | Split the route-facing persistence adapter from `calculate_projection_from_input()`, moved optimization candidate runs onto the in-memory core, and verified output parity with a detached input. |
 | 2026-07-25 | Projection input-loading boundary | Extracted projection persistence queries and cost-basis resolution into `projection_input.py`, added an immutable transitional input contract, and verified injected-input output parity. |
 | 2026-07-25 | Planning boundary completion | Extracted projection settings, spending coordination, recurring transfers, and projection results into focused components; `PlanningPage` fell from 686 to 123 lines and the frontend component-boundary audit item was completed. |

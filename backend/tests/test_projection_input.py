@@ -1,9 +1,12 @@
+from dataclasses import FrozenInstanceError
 from datetime import date
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy.orm import Session
 
+from app.analytics.projection_contracts import ProjectionAccount
 from app.analytics.projection_input import load_projection_input
 from app.analytics.projections import (
     calculate_net_worth_projection,
@@ -64,7 +67,10 @@ def test_projection_input_loader_preserves_deterministic_result(
         end_date=date(2026, 12, 31),
     )
 
+    assert isinstance(projection_input.accounts[0], ProjectionAccount)
     assert [item.id for item in projection_input.accounts] == [account_id]
+    with pytest.raises(FrozenInstanceError):
+        projection_input.accounts[0].name = "Changed"  # type: ignore[misc]
     assert projection_input.initial_balances == {account_id: 1000}
     assert [event.event_date for event in projection_input.projection_events] == [date(2026, 7, 1)]
 
