@@ -195,6 +195,13 @@ orchestration.
 non-retirement and retirement funding attempts. That transaction orchestration
 remains in the deterministic engine until the property-sale policy is extracted.
 
+The baseline spending policy now lives in
+`backend/app/analytics/projection_spending.py`. It owns inflation growth,
+working-to-retirement transitions, itemized spending, owner property tax and
+insurance, and scheduled owner mortgage payments. Shared active-month and
+amortized-payment calculations also live there so rental orchestration can reuse
+the same timing rules without duplicating them.
+
 ## Scenario semantics
 
 `AccountEvent` already has a nullable `scenario_id`, but the current projection

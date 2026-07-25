@@ -181,7 +181,7 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `backend/app/analytics/projections.py` is 2,008 lines after persistence loading and the database-free entry point were separated.
+- `backend/app/analytics/projections.py` is 1,613 lines after input loading, the database-free entry point, withdrawal policy, and spending policy were separated.
 - The route-facing `calculate_net_worth_projection()` adapter spans 30 lines; the in-memory `calculate_projection_from_input()` core spans 611 lines.
 - The compatibility adapter accepts a SQLAlchemy `Session`, while the deterministic core consumes a detached `ProjectionInput`, resolves settings, executes projection behavior, performs optimization, and formats the response.
 - `docs/projection-strategy-architecture.md` already proposes separating input loading, strategies, policies, and presentation.
@@ -213,7 +213,8 @@ Refactor incrementally while retaining the current deterministic output:
 - [x] Convert profile and real-estate transaction inputs to immutable plain-data records.
 - [x] Make deterministic projection calculation operate without a database session.
 - [x] Extract default account-pool withdrawal ordering, tax drag, basis handling, and liquidation costs.
-- [ ] Extract the remaining spending, income, tax, return, and property-sale policies.
+- [x] Extract spending growth, retirement transitions, itemization, and owner housing costs.
+- [ ] Extract the remaining income, tax, return, and property-sale policies.
 - [ ] Separate projection response formatting from simulation logic.
 
 ### Completion criteria
@@ -317,6 +318,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Spending policy extraction | Moved manual and itemized spending growth, retirement-period blending, owner property costs, and mortgage-payment scheduling into `projection_spending.py` with focused unit coverage. |
 | 2026-07-25 | Default withdrawal policy extraction | Moved account funding order, preferred-account behavior, taxable withdrawal and basis calculations, liquidation costs, and withdrawal cash-flow recording into `projection_withdrawals.py` with focused unit coverage. |
 | 2026-07-25 | Complete plain-data projection boundary | Mapped mortgage profiles, property profiles, fixed property sales, and automatic liquidation strategies to immutable records; the deterministic engine no longer consumes SQLAlchemy entities. |
 | 2026-07-25 | Plain planning projection contracts | Mapped projection events, income sources, recurring transfers, spending items, and settings to immutable records and tuple collections. |
