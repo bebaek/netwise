@@ -148,9 +148,9 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 1,268 lines after projection-event and spending-plan boundaries were extracted.
-- `PlanningEventsSection` owns event state, queries, mutations, and responsive rendering; `SpendingPlanSection` owns spending-item edit state and mutations while consuming the shared spending query used by projection calculations.
-- Projection configuration, tax records, people, Social Security, and real-estate planning remain combined in the parent page.
+- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 1,030 lines after projection-event, spending-plan, and Social Security boundaries were extracted.
+- Extracted sections own their local edit state and mutations while consuming shared cached data needed by projection orchestration.
+- Projection configuration, tax records, income sources, and real-estate planning remain combined in the parent page.
 
 ### Intended work
 
@@ -163,6 +163,7 @@ Suggested initial slices:
 
 - [x] Extract projection-event state, queries, mutations, and responsive rendering.
 - [x] Extract spending-plan state, mutations, errors, and rendering.
+- [x] Extract household-person and Social Security state, mutations, errors, and rendering.
 - [ ] Extract the next cohesive Planning domain section.
 - [ ] Reduce `PlanningPage` to route-level orchestration and genuinely shared projection state.
 
@@ -303,6 +304,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Planning Social Security boundary | Extracted household-person and Social Security estimate state, mutations, errors, and rendering into `SocialSecuritySection`; `PlanningPage` fell from 1,268 to 1,030 lines. |
 | 2026-07-25 | Planning spending boundary | Extracted spending-item state, mutations, errors, and rendering into `SpendingPlanSection`; `PlanningPage` fell from 1,441 to 1,268 lines. |
 | 2026-07-25 | Planning component boundaries | Extracted projection-event state, queries, mutations, and responsive UI into `PlanningEventsSection`; `PlanningPage` fell from 1,765 to 1,441 lines. |
 | 2026-07-22 | Household settings data | Moved users, capabilities, membership mutations, imports, and exports into Settings; removed `refreshDashboard()` and reduced initial requests from 18 to 14. |

@@ -5,10 +5,9 @@ import type {
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
   RealEstateSale,
-  SocialSecurityEstimate,
-  SocialSecurityEstimateInput,
 } from '../api';
 import { PlanningEventsSection } from '../components/planning/PlanningEventsSection';
+import { SocialSecuritySection } from '../components/planning/SocialSecuritySection';
 import { SpendingPlanSection } from '../components/planning/SpendingPlanSection';
 import {
   usePlanningBudgetData,
@@ -28,30 +27,6 @@ function optionalFormString(form: FormData, key: string): string | undefined {
 
 function requiredFormString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
-}
-
-function socialSecurityEstimateInput(
-  form: FormData,
-  householdId: string,
-): SocialSecurityEstimateInput {
-  const workYears = optionalFormString(form, 'completed_work_years');
-  return {
-    household_id: householdId,
-    person_id: requiredFormString(form, 'social_security_person_id'),
-    calculation_mode: requiredFormString(form, 'social_security_mode') as 'manual' | 'ballpark',
-    claiming_date: requiredFormString(form, 'claiming_date'),
-    current_covered_earnings: optionalFormString(form, 'current_covered_earnings'),
-    completed_work_years: workYears ? Number(workYears) : undefined,
-    expected_work_end_date: optionalFormString(form, 'expected_work_end_date'),
-    earnings_pattern: optionalFormString(form, 'earnings_pattern') as
-      | 'lower'
-      | 'steady'
-      | 'rising'
-      | undefined,
-    manual_monthly_benefit: optionalFormString(form, 'manual_monthly_benefit'),
-    cola_rate: optionalFormString(form, 'cola_rate') ?? '0.025',
-    deposit_account_id: optionalFormString(form, 'social_security_deposit_account_id'),
-  };
 }
 
 function readableLabel(value: string): string {
@@ -90,7 +65,7 @@ export function PlanningPage({
   const planningProjectionMutations = usePlanningProjectionMutations(householdId);
   const projectionSettings = planningProjectionData.projectionSettings.data ?? null;
   const projectionTransfers = planningProjectionData.projectionTransfers.data ?? [];
-  const [peopleError, setPeopleError] = useState('');
+  const [incomeError, setIncomeError] = useState('');
   const planningPeopleData = usePlanningPeopleData(householdId);
   const planningPeopleMutations = usePlanningPeopleMutations(householdId);
   const incomeSources = planningPeopleData.incomeSources.data ?? [];
@@ -106,8 +81,6 @@ export function PlanningPage({
   const planningRealEstateMutations = usePlanningRealEstateMutations(householdId);
   const realEstateSales = planningRealEstateData.sales.data ?? [];
   const liquidationStrategies = planningRealEstateData.liquidationStrategies.data ?? [];
-  const [socialSecurityMode, setSocialSecurityMode] = useState<'manual' | 'ballpark'>('ballpark');
-  const [socialSecurityEditId, setSocialSecurityEditId] = useState('');
   const workingSpendingTotal = spendingItems.reduce(
     (total, item) => total + Number(item.annual_amount),
     0,
@@ -122,18 +95,6 @@ export function PlanningPage({
   const manualRetirementSpending = Number(
     projectionSettings?.retirement_annual_spending ?? projectionSettings?.annual_spending ?? 0,
   );
-  const editingSocialSecurityEstimate = socialSecurityEstimates.find(
-    (estimate) => estimate.id === socialSecurityEditId,
-  );
-  const editingSocialSecurityIncome = incomeSources.find(
-    (source) => source.id === editingSocialSecurityEstimate?.income_source_id,
-  );
-  const availableSocialSecurityPeople = householdPeople.filter(
-    (person) => !socialSecurityEstimates.some((estimate) => estimate.person_id === person.id),
-  );
-  const estimateFormPeople = editingSocialSecurityEstimate
-    ? householdPeople.filter((person) => person.id === editingSocialSecurityEstimate.person_id)
-    : availableSocialSecurityPeople;
   const defaultProjectionEndYear = householdPeople.length
     ? Math.max(...householdPeople.map((person) => Number(person.date_of_birth.slice(0, 4)) + 100))
     : new Date().getFullYear() + 20;
@@ -217,7 +178,7 @@ export function PlanningPage({
     event.preventDefault();
     const target = event.currentTarget;
     const form = new FormData(target);
-    setPeopleError('');
+    setIncomeError('');
     try {
       await planningPeopleMutations.createIncome.mutateAsync({
         household_id: householdId,
@@ -233,66 +194,7 @@ export function PlanningPage({
       });
       target.reset();
     } catch (mutationError: unknown) {
-      setPeopleError(String(mutationError));
-    }
-  }
-
-  async function onCreateHouseholdPerson(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    const form = new FormData(target);
-    setPeopleError('');
-    try {
-      await planningPeopleMutations.createPerson.mutateAsync({
-        household_id: householdId,
-        name: requiredFormString(form, 'person_name'),
-        date_of_birth: requiredFormString(form, 'person_date_of_birth'),
-      });
-      target.reset();
-    } catch (mutationError: unknown) {
-      setPeopleError(String(mutationError));
-    }
-  }
-
-  async function onCreateSocialSecurityEstimate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    const form = new FormData(target);
-    setPeopleError('');
-    try {
-      await planningPeopleMutations.createSocialSecurity.mutateAsync(
-        socialSecurityEstimateInput(form, householdId),
-      );
-      target.reset();
-    } catch (mutationError: unknown) {
-      setPeopleError(String(mutationError));
-    }
-  }
-
-  async function onUpdateSocialSecurityEstimate(
-    event: FormEvent<HTMLFormElement>,
-    estimate: SocialSecurityEstimate,
-  ) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setPeopleError('');
-    try {
-      await planningPeopleMutations.updateSocialSecurity.mutateAsync({
-        estimateId: estimate.id,
-        payload: socialSecurityEstimateInput(form, householdId),
-      });
-    } catch (mutationError: unknown) {
-      setPeopleError(String(mutationError));
-      throw mutationError;
-    }
-  }
-
-  async function onDeleteSocialSecurityEstimate(estimate: SocialSecurityEstimate) {
-    setPeopleError('');
-    try {
-      await planningPeopleMutations.deleteSocialSecurity.mutateAsync(estimate);
-    } catch (mutationError: unknown) {
-      setPeopleError(String(mutationError));
+      setIncomeError(String(mutationError));
     }
   }
 
@@ -384,15 +286,6 @@ export function PlanningPage({
     }
   }
 
-  async function handleSocialSecurityEstimateSubmit(event: FormEvent<HTMLFormElement>) {
-    if (editingSocialSecurityEstimate) {
-      await onUpdateSocialSecurityEstimate(event, editingSocialSecurityEstimate);
-      setSocialSecurityEditId('');
-      return;
-    }
-    await onCreateSocialSecurityEstimate(event);
-  }
-
   return (
     <>
       {projectionConfigError && (
@@ -412,22 +305,12 @@ export function PlanningPage({
         || planningProjectionData.projectionSettings.isPending) && (
         <div className="card" role="status">Loading projection configuration…</div>
       )}
-      {peopleError && <div className="error" role="alert">{peopleError}</div>}
+      {incomeError && <div className="error" role="alert">{incomeError}</div>}
       {planningPeopleData.incomeSources.error && (
         <div className="error" role="alert">{String(planningPeopleData.incomeSources.error)}</div>
       )}
-      {planningPeopleData.householdPeople.error && (
-        <div className="error" role="alert">{String(planningPeopleData.householdPeople.error)}</div>
-      )}
-      {planningPeopleData.socialSecurityEstimates.error && (
-        <div className="error" role="alert">
-          {String(planningPeopleData.socialSecurityEstimates.error)}
-        </div>
-      )}
-      {(planningPeopleData.incomeSources.isPending
-        || planningPeopleData.householdPeople.isPending
-        || planningPeopleData.socialSecurityEstimates.isPending) && (
-        <div className="card" role="status">Loading household planning data…</div>
+      {planningPeopleData.incomeSources.isPending && (
+        <div className="card" role="status">Loading income sources…</div>
       )}
       {taxRecordError && <div className="error" role="alert">{taxRecordError}</div>}
       {planningBudgetData.taxRecords.error && (
@@ -961,138 +844,17 @@ export function PlanningPage({
   </div>
 </section>
 
-<section className="grid two-column">
-  <div className="card">
-    <h2>Social Security estimates</h2>
-    <p className="muted">Planning estimates only. Ballpark calculations use a versioned 2025-law baseline and become projection income at the claiming date.</p>
-    {socialSecurityEstimates.length ? (
-      <table tabIndex={0}>
-        <thead>
-          <tr><th>Person</th><th>Claiming date</th><th>Monthly estimate</th><th>Planning range</th><th>COLA</th><th /></tr>
-        </thead>
-        <tbody>
-          {socialSecurityEstimates.map((estimate) => (
-            <tr key={estimate.id}>
-              <td>{householdPeople.find((person) => person.id === estimate.person_id)?.name ?? 'Unknown'}</td>
-              <td>{estimate.claiming_date}</td>
-              <td>{formatMoney(estimate.estimated_monthly_benefit)}</td>
-              <td>{estimate.calculation_mode === 'manual'
-                ? 'Manual entry'
-                : `${formatMoney(estimate.lower_monthly_benefit)}–${formatMoney(estimate.upper_monthly_benefit)}`}</td>
-              <td>{formatRate(estimate.cola_rate)}</td>
-              <td>
-                <button
-                  type="button"
-                  disabled={planningPeopleMutations.isPending}
-                  onClick={() => {
-                    setSocialSecurityEditId(estimate.id);
-                    setSocialSecurityMode(estimate.calculation_mode);
-                  }}
-                >
-                  Edit
-                </button>{' '}
-                <button
-                  type="button"
-                  className="danger-button"
-                  disabled={planningPeopleMutations.isPending}
-                  onClick={() => {
-                    if (socialSecurityEditId === estimate.id) setSocialSecurityEditId('');
-                    onDeleteSocialSecurityEstimate(estimate);
-                  }}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    ) : <p className="muted">No Social Security estimates yet.</p>}
-  </div>
-
-  <div className="card">
-    <h2>{editingSocialSecurityEstimate ? 'Edit Social Security estimate' : 'Add Social Security estimate'}</h2>
-    {!estimateFormPeople.length && <p className="muted">Add a household person, or delete their existing estimate before creating another.</p>}
-    <form
-      key={editingSocialSecurityEstimate?.id ?? 'new'}
-      onSubmit={handleSocialSecurityEstimateSubmit}
-      className="stacked-form"
-    >
-      <label>
-        Person
-        <select
-          name="social_security_person_id"
-          defaultValue={editingSocialSecurityEstimate?.person_id ?? ''}
-          required
-          disabled={!estimateFormPeople.length}
-        >
-          <option value="" disabled>Select person</option>
-          {estimateFormPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-        </select>
-      </label>
-      <label>
-        Calculation mode
-        <select
-          name="social_security_mode"
-          value={socialSecurityMode}
-          onChange={(event) => setSocialSecurityMode(event.target.value as 'manual' | 'ballpark')}
-        >
-          <option value="ballpark">Ballpark from earnings</option>
-          <option value="manual">Manual SSA estimate</option>
-        </select>
-      </label>
-      <label>Claiming date<input name="claiming_date" type="date" defaultValue={editingSocialSecurityEstimate?.claiming_date ?? ''} required /></label>
-      {socialSecurityMode === 'manual' ? (
-        <label>Monthly benefit at claiming date<input name="manual_monthly_benefit" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.manual_monthly_benefit ?? ''} required /></label>
-      ) : (
-        <>
-          <label>Current covered annual earnings<input name="current_covered_earnings" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.current_covered_earnings ?? ''} required /></label>
-          <label>Completed work years through 2025<input name="completed_work_years" type="number" min="0" max="50" defaultValue={editingSocialSecurityEstimate?.completed_work_years ?? ''} required /></label>
-          <label>Expected work end date<input name="expected_work_end_date" type="date" defaultValue={editingSocialSecurityEstimate?.expected_work_end_date ?? ''} /></label>
-          <label>
-            Historical earnings
-            <select name="earnings_pattern" defaultValue={editingSocialSecurityEstimate?.earnings_pattern ?? 'steady'} required>
-              <option value="lower">Usually lower than current</option>
-              <option value="steady">Roughly current in real terms</option>
-              <option value="rising">Steadily increasing</option>
-            </select>
-          </label>
-        </>
-      )}
-      <label>Annual COLA assumption<input name="cola_rate" inputMode="decimal" defaultValue={editingSocialSecurityEstimate?.cola_rate ?? '0.025'} required /></label>
-      <label>
-        Deposit account
-        <select name="social_security_deposit_account_id" defaultValue={editingSocialSecurityIncome?.deposit_account_id ?? ''}>
-          <option value="">Default deposit account</option>
-          {assetAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-        </select>
-      </label>
-      <div className="form-actions">
-        <button type="submit" disabled={!estimateFormPeople.length || planningPeopleMutations.isPending}>
-          {editingSocialSecurityEstimate ? 'Save estimate' : 'Create estimate'}
-        </button>
-        {editingSocialSecurityEstimate && (
-          <button
-            type="button"
-            onClick={() => {
-              setSocialSecurityEditId('');
-              setSocialSecurityMode('ballpark');
-            }}
-          >
-            Cancel
-          </button>
-        )}
-      </div>
-    </form>
-    <hr />
-    <h3>Add household person</h3>
-    <form onSubmit={onCreateHouseholdPerson} className="stacked-form">
-      <input name="person_name" placeholder="Name" required />
-      <label>Date of birth<input name="person_date_of_birth" type="date" required /></label>
-      <button type="submit" disabled={planningPeopleMutations.isPending}>Add person</button>
-    </form>
-  </div>
-</section>
+<SocialSecuritySection
+  householdId={householdId}
+  householdPeople={householdPeople}
+  incomeSources={incomeSources}
+  estimates={socialSecurityEstimates}
+  assetAccounts={assetAccounts}
+  peopleError={planningPeopleData.householdPeople.error}
+  estimatesError={planningPeopleData.socialSecurityEstimates.error}
+  peoplePending={planningPeopleData.householdPeople.isPending}
+  estimatesPending={planningPeopleData.socialSecurityEstimates.isPending}
+/>
 
 <section className="grid two-column">
   <div className="card">
