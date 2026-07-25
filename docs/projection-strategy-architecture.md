@@ -225,6 +225,15 @@ missing-property-basis warning is colocated with that fallback decision.
 Account-level taxable withdrawal and cost-basis mechanics remain in the
 withdrawal policy, which supplies the tax components consumed here.
 
+Property-sale transactions now live in
+`backend/app/analytics/projection_property_sales.py`. The policy applies property
+removal, linked mortgage payoff, selling expenses, sale tax, proceeds transfer,
+taxable-account basis updates, and shortfall delegation as explicit transaction
+legs. It also owns automatic-sale eligibility and ordered March candidate
+schedules. The deterministic strategy retains whole-projection schedule scoring
+and repeated candidate execution because those coordinate complete engine runs,
+not an individual sale transaction.
+
 ## Scenario semantics
 
 `AccountEvent` already has a nullable `scenario_id`, but the current projection

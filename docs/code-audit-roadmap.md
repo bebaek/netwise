@@ -181,7 +181,7 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `backend/app/analytics/projections.py` is 1,476 lines after input loading, the database-free entry point, and withdrawal, spending, income, return, and tax policies were separated.
+- `backend/app/analytics/projections.py` is 1,300 lines after input loading, the database-free entry point, and the focused projection policies were separated.
 - The route-facing `calculate_net_worth_projection()` adapter spans 30 lines; the in-memory `calculate_projection_from_input()` core spans 600 lines.
 - The compatibility adapter accepts a SQLAlchemy `Session`, while the deterministic core consumes a detached `ProjectionInput`, resolves settings, executes projection behavior, performs optimization, and formats the response.
 - `docs/projection-strategy-architecture.md` already proposes separating input loading, strategies, policies, and presentation.
@@ -217,7 +217,7 @@ Refactor incrementally while retaining the current deterministic output:
 - [x] Extract income annualization, active-period allocation, and source growth.
 - [x] Extract account return assumptions and effective period compounding.
 - [x] Extract effective income, withdrawal aggregation, and property-sale tax calculations.
-- [ ] Extract the remaining property-sale policy.
+- [x] Extract property-sale transactions, automatic eligibility, and candidate schedule generation.
 - [ ] Separate projection response formatting from simulation logic.
 
 ### Completion criteria
@@ -321,6 +321,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Property-sale policy extraction | Moved fixed and automatic sale transaction legs, mortgage payoff, proceeds and basis handling, shortfall delegation, automatic strategy eligibility, and candidate schedule generation into `projection_property_sales.py` with focused unit coverage. |
 | 2026-07-25 | Tax policy extraction | Moved taxable-income netting, effective-rate income tax, withdrawal tax aggregation, property-sale gain tax, and missing-basis warnings into `projection_tax.py` with focused unit coverage. |
 | 2026-07-25 | Return policy extraction | Moved account overrides, category defaults, property appreciation, liability handling, effective-period conversion, and balance growth into `projection_returns.py` with focused unit coverage. |
 | 2026-07-25 | Income timing policy extraction | Moved frequency annualization, active-period allocation, source date boundaries, and default or source-specific growth into `projection_income.py` with focused unit coverage. |
