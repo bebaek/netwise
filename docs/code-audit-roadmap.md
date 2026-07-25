@@ -181,8 +181,8 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `backend/app/analytics/projections.py` is 1,547 lines after input loading, the database-free entry point, withdrawal, spending, and income policies were separated.
-- The route-facing `calculate_net_worth_projection()` adapter spans 30 lines; the in-memory `calculate_projection_from_input()` core spans 611 lines.
+- `backend/app/analytics/projections.py` is 1,513 lines after input loading, the database-free entry point, and withdrawal, spending, income, and return policies were separated.
+- The route-facing `calculate_net_worth_projection()` adapter spans 30 lines; the in-memory `calculate_projection_from_input()` core spans 605 lines.
 - The compatibility adapter accepts a SQLAlchemy `Session`, while the deterministic core consumes a detached `ProjectionInput`, resolves settings, executes projection behavior, performs optimization, and formats the response.
 - `docs/projection-strategy-architecture.md` already proposes separating input loading, strategies, policies, and presentation.
 
@@ -215,7 +215,8 @@ Refactor incrementally while retaining the current deterministic output:
 - [x] Extract default account-pool withdrawal ordering, tax drag, basis handling, and liquidation costs.
 - [x] Extract spending growth, retirement transitions, itemization, and owner housing costs.
 - [x] Extract income annualization, active-period allocation, and source growth.
-- [ ] Extract the remaining tax, return, and property-sale policies.
+- [x] Extract account return assumptions and effective period compounding.
+- [ ] Extract the remaining tax and property-sale policies.
 - [ ] Separate projection response formatting from simulation logic.
 
 ### Completion criteria
@@ -319,6 +320,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Return policy extraction | Moved account overrides, category defaults, property appreciation, liability handling, effective-period conversion, and balance growth into `projection_returns.py` with focused unit coverage. |
 | 2026-07-25 | Income timing policy extraction | Moved frequency annualization, active-period allocation, source date boundaries, and default or source-specific growth into `projection_income.py` with focused unit coverage. |
 | 2026-07-25 | Spending policy extraction | Moved manual and itemized spending growth, retirement-period blending, owner property costs, and mortgage-payment scheduling into `projection_spending.py` with focused unit coverage. |
 | 2026-07-25 | Default withdrawal policy extraction | Moved account funding order, preferred-account behavior, taxable withdrawal and basis calculations, liquidation costs, and withdrawal cash-flow recording into `projection_withdrawals.py` with focused unit coverage. |

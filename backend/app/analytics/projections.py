@@ -18,6 +18,10 @@ from app.analytics.projection_contracts import (
     ProjectionTransferInput,
 )
 from app.analytics.projection_input import ProjectionInput, load_projection_input
+from app.analytics.projection_returns import (
+    annual_return_for_account,
+    project_balance_with_return,
+)
 from app.analytics.projection_income import project_income_source_for_period
 from app.analytics.projection_spending import (
     active_months_in_period,
@@ -35,17 +39,6 @@ from app.analytics.projection_withdrawals import (
 )
 from app.db.models import AccountEventType, AccountKind
 
-DEFAULT_CATEGORY_YIELDS = {
-    "cash": Decimal("0.010000"),
-    "checking": Decimal("0.010000"),
-    "savings": Decimal("0.020000"),
-    "taxable_investment": Decimal("0.050000"),
-    "brokerage": Decimal("0.050000"),
-    "retirement": Decimal("0.050000"),
-    "real_estate": Decimal("0.030000"),
-    "mortgage": Decimal("0.000000"),
-    "credit_card": Decimal("0.000000"),
-}
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
 TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 
@@ -331,15 +324,9 @@ def calculate_projection_from_input(
                 )
                 continue
 
-            annual_yield = _yield_for_account(account, property_profiles.get(account.id))
-            period_yield = (
-                annual_yield
-                if months_per_period == 12
-                else (Decimal("1") + annual_yield) ** (Decimal(months_per_period) / Decimal("12"))
-                - Decimal("1")
-            )
-            balances[account.id] = (balances[account.id] * (Decimal("1") + period_yield)).quantize(
-                Decimal("0.01")
+            annual_return = annual_return_for_account(account, property_profiles.get(account.id))
+            balances[account.id] = project_balance_with_return(
+                balances[account.id], annual_return, months_per_period
             )
 
         cash_flows = []
@@ -1524,21 +1511,3 @@ def _withdraw_from_assets(
 
 def _cash_flow_priority(account: ProjectionAccount) -> tuple[int, str]:
     return (CASH_FLOW_CATEGORY_PRIORITY.get(account.category, 99), account.name)
-
-
-def _yield_for_account(
-    account: ProjectionAccount,
-    property_profile: ProjectionProperty | None,
-) -> Decimal:
-    if account.category == "real_estate":
-        return (
-            property_profile.expected_appreciation_rate
-            if property_profile is not None
-            and property_profile.expected_appreciation_rate is not None
-            else Decimal("0.000000")
-        )
-    if account.expected_annual_yield is not None:
-        return account.expected_annual_yield
-    if account.account_kind == AccountKind.liability:
-        return Decimal("0.000000")
-    return DEFAULT_CATEGORY_YIELDS.get(account.category, Decimal("0.030000"))

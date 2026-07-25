@@ -209,6 +209,13 @@ evenly across active months. The explicit period-width argument is retained so
 a future payroll scheduler can replace monthly spreading without changing the
 engine boundary.
 
+The deterministic return model now lives in
+`backend/app/analytics/projection_returns.py`. It resolves property appreciation,
+explicit account assumptions, category defaults, zero-return liabilities, and
+the fallback return in the existing precedence order. It also converts effective
+annual returns to monthly or quarterly returns and applies the result to account
+balances with the engine's existing cent rounding.
+
 ## Scenario semantics
 
 `AccountEvent` already has a nullable `scenario_id`, but the current projection
