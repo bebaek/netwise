@@ -1,13 +1,25 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Household, ProjectionScenario
+from app.db.models import (
+    Account,
+    Household,
+    ProjectionScenario,
+    ProjectionScenarioAccountAssumption,
+    ProjectionScenarioPropertyAssumption,
+    RealEstateProperty,
+)
 from app.db.session import get_db
 from app.schemas.projection_scenario import (
+    ProjectionScenarioAccountAssumptionRead,
+    ProjectionScenarioAccountAssumptionUpdate,
     ProjectionScenarioCreate,
+    ProjectionScenarioPropertyAssumptionRead,
+    ProjectionScenarioPropertyAssumptionUpdate,
     ProjectionScenarioRead,
     ProjectionScenarioUpdate,
 )
@@ -17,6 +29,8 @@ from app.services.projection_scenarios import (
     ProjectionScenarioNameConflictError,
     create_scenario,
     delete_scenario,
+    ensure_account_assumptions_for_all_scenarios,
+    ensure_property_assumptions_for_all_scenarios,
     list_scenarios,
     update_scenario,
 )
@@ -77,12 +91,12 @@ def create_projection_scenario(
             name=payload.name,
             description=payload.description,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ProjectionScenarioNameConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ProjectionScenarioLimitError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _commit_or_conflict(db)
     db.refresh(scenario)
     return scenario
@@ -122,13 +136,116 @@ def patch_projection_scenario(
             description=payload.description,
             update_description="description" in payload.model_fields_set,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ProjectionScenarioNameConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _commit_or_conflict(db)
     db.refresh(scenario)
     return scenario
+
+
+@router.get(
+    "/projection-scenarios/{scenario_id}/account-assumptions",
+    response_model=list[ProjectionScenarioAccountAssumptionRead],
+)
+def list_account_assumptions(
+    scenario_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[ProjectionScenarioAccountAssumption]:
+    scenario = _get_scenario_or_404(db, scenario_id)
+    return list(
+        db.scalars(
+            select(ProjectionScenarioAccountAssumption)
+            .where(ProjectionScenarioAccountAssumption.scenario_id == scenario.id)
+            .order_by(ProjectionScenarioAccountAssumption.account_id)
+        ).all()
+    )
+
+
+@router.put(
+    "/projection-scenarios/{scenario_id}/account-assumptions/{account_id}",
+    response_model=ProjectionScenarioAccountAssumptionRead,
+)
+def update_account_assumption(
+    scenario_id: UUID,
+    account_id: UUID,
+    payload: ProjectionScenarioAccountAssumptionUpdate,
+    db: Session = Depends(get_db),
+) -> ProjectionScenarioAccountAssumption:
+    scenario = _get_scenario_or_404(db, scenario_id)
+    account = db.get(Account, account_id)
+    if account is None or account.household_id != scenario.household_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    ensure_account_assumptions_for_all_scenarios(db, account)
+    db.flush()
+    assumption = db.scalar(
+        select(ProjectionScenarioAccountAssumption).where(
+            ProjectionScenarioAccountAssumption.scenario_id == scenario.id,
+            ProjectionScenarioAccountAssumption.account_id == account.id,
+        )
+    )
+    if assumption is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assumption not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(assumption, field, value)
+    db.commit()
+    db.refresh(assumption)
+    return assumption
+
+
+@router.get(
+    "/projection-scenarios/{scenario_id}/property-assumptions",
+    response_model=list[ProjectionScenarioPropertyAssumptionRead],
+)
+def list_property_assumptions(
+    scenario_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[ProjectionScenarioPropertyAssumption]:
+    scenario = _get_scenario_or_404(db, scenario_id)
+    return list(
+        db.scalars(
+            select(ProjectionScenarioPropertyAssumption)
+            .where(ProjectionScenarioPropertyAssumption.scenario_id == scenario.id)
+            .order_by(ProjectionScenarioPropertyAssumption.property_account_id)
+        ).all()
+    )
+
+
+@router.put(
+    "/projection-scenarios/{scenario_id}/property-assumptions/{property_account_id}",
+    response_model=ProjectionScenarioPropertyAssumptionRead,
+)
+def update_property_assumption(
+    scenario_id: UUID,
+    property_account_id: UUID,
+    payload: ProjectionScenarioPropertyAssumptionUpdate,
+    db: Session = Depends(get_db),
+) -> ProjectionScenarioPropertyAssumption:
+    scenario = _get_scenario_or_404(db, scenario_id)
+    property_record = db.scalar(
+        select(RealEstateProperty).where(
+            RealEstateProperty.account_id == property_account_id,
+            RealEstateProperty.household_id == scenario.household_id,
+        )
+    )
+    if property_record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    ensure_property_assumptions_for_all_scenarios(db, property_record)
+    db.flush()
+    assumption = db.scalar(
+        select(ProjectionScenarioPropertyAssumption).where(
+            ProjectionScenarioPropertyAssumption.scenario_id == scenario.id,
+            ProjectionScenarioPropertyAssumption.property_account_id == property_account_id,
+        )
+    )
+    if assumption is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assumption not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(assumption, field, value)
+    db.commit()
+    db.refresh(assumption)
+    return assumption
 
 
 @router.delete(

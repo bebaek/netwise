@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,8 @@ from app.db.models import (
     AccountEvent,
     BalanceSnapshot,
     Household,
+    ProjectionBehavior,
+    ProjectionScenarioAccountAssumption,
     RetirementTaxTreatment,
 )
 from app.db.session import get_db
@@ -24,8 +26,28 @@ from app.schemas.account import (
     BalanceSnapshotRead,
     BalanceSnapshotUpdate,
 )
+from app.services.projection_scenarios import (
+    ProjectionScenarioNotFoundError,
+    ensure_account_assumptions_for_all_scenarios,
+    get_baseline_scenario,
+    resolve_scenario,
+)
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+
+def _resolve_scenario_or_404(
+    db: Session,
+    household_id: UUID,
+    scenario_id: UUID | None,
+):
+    try:
+        return resolve_scenario(db, household_id, scenario_id)
+    except ProjectionScenarioNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projection scenario not found",
+        ) from exc
 
 
 @router.patch(
@@ -87,6 +109,8 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)) -> Acc
         values["retirement_tax_treatment"] = RetirementTaxTreatment.traditional
     account = Account(**values)
     db.add(account)
+    db.flush()
+    ensure_account_assumptions_for_all_scenarios(db, account)
     db.commit()
     db.refresh(account)
     return account
@@ -119,7 +143,8 @@ def update_account(
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
         setattr(account, key, value)
     if account.category == "real_estate":
         account.expected_annual_yield = None
@@ -127,6 +152,27 @@ def update_account(
         account.retirement_tax_treatment = None
     elif account.retirement_tax_treatment is None:
         account.retirement_tax_treatment = RetirementTaxTreatment.traditional
+    planning_fields = {"expected_annual_yield", "liquidation_expense_rate"}
+    if planning_fields & updates.keys():
+        baseline = get_baseline_scenario(db, account.household_id)
+        assumption = db.scalar(
+            select(ProjectionScenarioAccountAssumption).where(
+                ProjectionScenarioAccountAssumption.scenario_id == baseline.id,
+                ProjectionScenarioAccountAssumption.account_id == account.id,
+            )
+        )
+        if assumption is None:
+            ensure_account_assumptions_for_all_scenarios(db, account)
+            db.flush()
+            assumption = db.scalar(
+                select(ProjectionScenarioAccountAssumption).where(
+                    ProjectionScenarioAccountAssumption.scenario_id == baseline.id,
+                    ProjectionScenarioAccountAssumption.account_id == account.id,
+                )
+            )
+        if assumption is not None:
+            assumption.expected_annual_yield = account.expected_annual_yield
+            assumption.liquidation_expense_rate = account.liquidation_expense_rate
     db.commit()
     db.refresh(account)
     return account
@@ -184,10 +230,22 @@ def create_event(
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
+    values = payload.model_dump(exclude={"scenario_id"})
+    if payload.projection_behavior == ProjectionBehavior.projection_only:
+        scenario = _resolve_scenario_or_404(db, account.household_id, payload.scenario_id)
+        resolved_scenario_id = scenario.id
+    else:
+        if payload.scenario_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only projection-only events can belong to a scenario",
+            )
+        resolved_scenario_id = None
     event = AccountEvent(
         household_id=account.household_id,
         account_id=account.id,
-        **payload.model_dump(),
+        scenario_id=resolved_scenario_id,
+        **values,
     )
     db.add(event)
     db.commit()
@@ -210,12 +268,29 @@ def update_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
     updates = payload.model_dump(exclude_unset=True)
+    requested_scenario_id = updates.pop("scenario_id", account_event.scenario_id)
     new_account_id = updates.pop("account_id", None)
     if new_account_id is not None:
         new_account = db.get(Account, new_account_id)
         if new_account is None or new_account.household_id != account_event.household_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid account")
         account_event.account_id = new_account.id
+
+    final_behavior = updates.get("projection_behavior", account_event.projection_behavior)
+    if final_behavior == ProjectionBehavior.projection_only:
+        scenario = _resolve_scenario_or_404(
+            db,
+            account_event.household_id,
+            requested_scenario_id,
+        )
+        account_event.scenario_id = scenario.id
+    else:
+        if requested_scenario_id is not None and "scenario_id" in payload.model_fields_set:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only projection-only events can belong to a scenario",
+            )
+        account_event.scenario_id = None
 
     for key, value in updates.items():
         setattr(account_event, key, value)
@@ -236,13 +311,22 @@ def delete_event(account_id: UUID, event_id: UUID, db: Session = Depends(get_db)
 
 
 @router.get("/{account_id}/events", response_model=list[AccountEventRead])
-def list_events(account_id: UUID, db: Session = Depends(get_db)) -> list[AccountEvent]:
-    if db.get(Account, account_id) is None:
+def list_events(
+    account_id: UUID,
+    scenario_id: UUID | None = None,
+    db: Session = Depends(get_db),
+) -> list[AccountEvent]:
+    account = db.get(Account, account_id)
+    if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    scenario = _resolve_scenario_or_404(db, account.household_id, scenario_id)
     return list(
         db.scalars(
             select(AccountEvent)
-            .where(AccountEvent.account_id == account_id)
+            .where(
+                AccountEvent.account_id == account_id,
+                or_(AccountEvent.scenario_id.is_(None), AccountEvent.scenario_id == scenario.id),
+            )
             .order_by(AccountEvent.event_date.desc(), AccountEvent.created_at.desc())
         ).all()
     )

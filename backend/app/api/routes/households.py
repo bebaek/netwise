@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.authorization import get_household_membership
@@ -34,7 +34,11 @@ from app.schemas.account import (
 )
 from app.schemas.household import HouseholdCreate, HouseholdRead
 from app.schemas.user import HouseholdMembershipCreate, HouseholdMembershipRead
-from app.services.projection_scenarios import ensure_baseline_scenario
+from app.services.projection_scenarios import (
+    ProjectionScenarioNotFoundError,
+    ensure_baseline_scenario,
+    resolve_scenario,
+)
 
 router = APIRouter(prefix="/households", tags=["households"])
 
@@ -300,15 +304,26 @@ def list_household_snapshots(
 @router.get("/{household_id}/events", response_model=list[AccountEventRead])
 def list_household_account_events(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[AccountEvent]:
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    try:
+        scenario = resolve_scenario(db, household_id, scenario_id)
+    except ProjectionScenarioNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projection scenario not found",
+        ) from exc
 
     return list(
         db.scalars(
             select(AccountEvent)
-            .where(AccountEvent.household_id == household_id)
+            .where(
+                AccountEvent.household_id == household_id,
+                or_(AccountEvent.scenario_id.is_(None), AccountEvent.scenario_id == scenario.id),
+            )
             .order_by(AccountEvent.event_date.desc(), AccountEvent.created_at.desc())
         ).all()
     )

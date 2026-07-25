@@ -27,7 +27,11 @@ from app.db.models import (
     User,
 )
 from app.db.session import SessionLocal
-from app.services.projection_scenarios import ensure_baseline_scenario
+from app.services.projection_scenarios import (
+    ensure_account_assumptions_for_all_scenarios,
+    ensure_baseline_scenario,
+    ensure_property_assumptions_for_all_scenarios,
+)
 
 DEMO_HOUSEHOLD_NAME = "Demo Household"
 DEMO_USER_NAME = "Demo User"
@@ -54,6 +58,7 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
         db.flush()
 
     household = _get_or_create_household(db, DEMO_HOUSEHOLD_NAME)
+    baseline = ensure_baseline_scenario(db, household)
     _ensure_demo_user_membership(db, household)
     summary = DemoSeedSummary(household_id=str(household.id), reset=reset)
     if household.created_at == household.updated_at:
@@ -132,9 +137,9 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
     _seed_snapshots(db, summary, household.id, accounts)
     _seed_real_estate(db, summary, household.id, accounts["home"])
     _seed_mortgage(db, summary, household.id, accounts["mortgage"], accounts["home"])
-    _seed_income_sources(db, summary, household.id)
+    _seed_income_sources(db, summary, household.id, baseline.id)
     _seed_tax_records(db, summary, household.id)
-    _seed_events(db, summary, household.id, accounts)
+    _seed_events(db, summary, household.id, baseline.id, accounts)
 
     db.commit()
     return summary
@@ -209,21 +214,21 @@ def _get_or_create_account(
             Account.account_kind == account_kind,
         )
     ).first()
-    if account is not None:
-        return account
-    account = Account(
-        household_id=household_id,
-        name=name,
-        institution_name=institution_name,
-        account_kind=account_kind,
-        category=category,
-        liquidity_class=liquidity_class,
-        expected_annual_yield=expected_annual_yield,
-        currency="USD",
-    )
-    db.add(account)
-    db.flush()
-    summary.accounts_created += 1
+    if account is None:
+        account = Account(
+            household_id=household_id,
+            name=name,
+            institution_name=institution_name,
+            account_kind=account_kind,
+            category=category,
+            liquidity_class=liquidity_class,
+            expected_annual_yield=expected_annual_yield,
+            currency="USD",
+        )
+        db.add(account)
+        db.flush()
+        summary.accounts_created += 1
+    ensure_account_assumptions_for_all_scenarios(db, account)
     return account
 
 
@@ -313,13 +318,11 @@ def _seed_real_estate(
     household_id: UUID,
     home_account: Account,
 ) -> None:
-    exists = db.scalars(
-        select(RealEstateProperty.id).where(RealEstateProperty.account_id == home_account.id)
-    ).first()
-    if exists is not None:
-        return
-    db.add(
-        RealEstateProperty(
+    property_record = db.scalar(
+        select(RealEstateProperty).where(RealEstateProperty.account_id == home_account.id)
+    )
+    if property_record is None:
+        property_record = RealEstateProperty(
             household_id=household_id,
             account_id=home_account.id,
             property_type="residence",
@@ -332,8 +335,10 @@ def _seed_real_estate(
             maintenance_rate=Decimal("0.010000"),
             hoa_monthly=Decimal("0.00"),
         )
-    )
-    summary.properties_created += 1
+        db.add(property_record)
+        db.flush()
+        summary.properties_created += 1
+    ensure_property_assumptions_for_all_scenarios(db, property_record)
 
 
 def _seed_mortgage(
@@ -364,7 +369,12 @@ def _seed_mortgage(
     summary.mortgages_created += 1
 
 
-def _seed_income_sources(db: Session, summary: DemoSeedSummary, household_id: UUID) -> None:
+def _seed_income_sources(
+    db: Session,
+    summary: DemoSeedSummary,
+    household_id: UUID,
+    scenario_id: UUID,
+) -> None:
     rows = [
         {
             "name": "Salary",
@@ -387,12 +397,20 @@ def _seed_income_sources(db: Session, summary: DemoSeedSummary, household_id: UU
         exists = db.scalars(
             select(IncomeSource.id).where(
                 IncomeSource.household_id == household_id,
+                IncomeSource.scenario_id == scenario_id,
                 IncomeSource.name == row["name"],
             )
         ).first()
         if exists is not None:
             continue
-        db.add(IncomeSource(household_id=household_id, currency="USD", **row))
+        db.add(
+            IncomeSource(
+                household_id=household_id,
+                scenario_id=scenario_id,
+                currency="USD",
+                **row,
+            )
+        )
         summary.income_sources_created += 1
 
 
@@ -427,6 +445,7 @@ def _seed_events(
     db: Session,
     summary: DemoSeedSummary,
     household_id: UUID,
+    scenario_id: UUID,
     accounts: dict[str, Account],
 ) -> None:
     rows = [
@@ -485,6 +504,7 @@ def _seed_events(
                 event_type=event_type,
                 description=description,
                 projection_behavior=projection_behavior,
+                scenario_id=scenario_id,
             )
         )
         summary.events_created += 1

@@ -66,6 +66,8 @@ class PropertySaleOptimizationRead(BaseModel):
 
 class NetWorthProjectionRead(BaseModel):
     household_id: UUID
+    scenario_id: UUID
+    scenario_name: str
     start_year: int
     end_year: int
     interval: str

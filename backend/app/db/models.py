@@ -3,7 +3,17 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -145,7 +155,7 @@ class Household(Base):
     projection_scenarios: Mapped[list["ProjectionScenario"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
-    projection_settings: Mapped["ProjectionSettings | None"] = relationship(
+    projection_settings: Mapped[list["ProjectionSettings"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
     projection_transfers: Mapped[list["ProjectionTransfer"]] = relationship(
@@ -273,17 +283,28 @@ class AccountEvent(Base):
     projection_behavior: Mapped[str] = mapped_column(
         String(64), nullable=False, default=ProjectionBehavior.historical_only
     )
-    scenario_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    scenario_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
 
     account: Mapped[Account] = relationship(back_populates="events")
+    scenario: Mapped["ProjectionScenario | None"] = relationship(
+        back_populates="projection_events"
+    )
 
     __table_args__ = (
         Index("ix_account_events_household_date", "household_id", "event_date"),
         Index("ix_account_events_account_date", "account_id", "event_date"),
+        Index("ix_account_events_scenario_id", "scenario_id"),
+        CheckConstraint(
+            "(projection_behavior = 'projection_only' AND scenario_id IS NOT NULL) OR "
+            "(projection_behavior != 'projection_only' AND scenario_id IS NULL)",
+            name="ck_account_events_projection_scenario",
+        ),
     )
 
 
@@ -337,6 +358,9 @@ class RealEstateSale(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     property_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     sale_date: Mapped[date] = mapped_column(Date, nullable=False)
     gross_sale_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -350,9 +374,16 @@ class RealEstateSale(Base):
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
 
+    scenario: Mapped["ProjectionScenario"] = relationship(back_populates="real_estate_sales")
+
     __table_args__ = (
-        UniqueConstraint("property_account_id", name="uq_real_estate_sales_property_account"),
+        UniqueConstraint(
+            "scenario_id",
+            "property_account_id",
+            name="uq_real_estate_sales_scenario_property",
+        ),
         Index("ix_real_estate_sales_household_date", "household_id", "sale_date"),
+        Index("ix_real_estate_sales_scenario_id", "scenario_id"),
         Index("ix_real_estate_sales_proceeds_account_id", "proceeds_account_id"),
     )
 
@@ -362,6 +393,9 @@ class RealEstateLiquidationStrategy(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     property_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
     optimization_mode: Mapped[str] = mapped_column(nullable=False, default="liquidity_shortfall")
@@ -377,15 +411,22 @@ class RealEstateLiquidationStrategy(Base):
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
 
+    scenario: Mapped["ProjectionScenario"] = relationship(
+        back_populates="liquidation_strategies"
+    )
+
     __table_args__ = (
         UniqueConstraint(
-            "property_account_id", name="uq_real_estate_liquidation_strategies_property"
+            "scenario_id",
+            "property_account_id",
+            name="uq_real_estate_liquidation_strategies_scenario_property",
         ),
         Index(
             "ix_real_estate_liquidation_strategies_household_priority",
             "household_id",
             "priority",
         ),
+        Index("ix_real_estate_liquidation_strategies_scenario_id", "scenario_id"),
         Index(
             "ix_real_estate_liquidation_strategies_proceeds_account_id",
             "proceeds_account_id",
@@ -428,6 +469,9 @@ class IncomeSource(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     income_type: Mapped[str] = mapped_column(String(80), nullable=False, default="other")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -443,10 +487,12 @@ class IncomeSource(Base):
     )
 
     household: Mapped[Household] = relationship(back_populates="income_sources")
+    scenario: Mapped["ProjectionScenario"] = relationship(back_populates="income_sources")
     deposit_account: Mapped[Account | None] = relationship(foreign_keys=[deposit_account_id])
 
     __table_args__ = (
         Index("ix_income_sources_household_id", "household_id"),
+        Index("ix_income_sources_scenario_id", "scenario_id"),
         Index("ix_income_sources_deposit_account_id", "deposit_account_id"),
     )
 
@@ -456,6 +502,9 @@ class SocialSecurityEstimate(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     person_id: Mapped[UUID] = mapped_column(ForeignKey("household_people.id"), nullable=False)
     income_source_id: Mapped[UUID] = mapped_column(
         ForeignKey("income_sources.id"), nullable=False, unique=True
@@ -483,12 +532,18 @@ class SocialSecurityEstimate(Base):
     )
 
     household: Mapped[Household] = relationship(back_populates="social_security_estimates")
+    scenario: Mapped["ProjectionScenario"] = relationship(
+        back_populates="social_security_estimates"
+    )
     person: Mapped[HouseholdPerson] = relationship(back_populates="social_security_estimates")
     income_source: Mapped[IncomeSource] = relationship()
 
     __table_args__ = (
-        UniqueConstraint("person_id", name="uq_social_security_estimates_person_id"),
+        UniqueConstraint(
+            "scenario_id", "person_id", name="uq_social_security_estimates_scenario_person"
+        ),
         Index("ix_social_security_estimates_household_id", "household_id"),
+        Index("ix_social_security_estimates_scenario_id", "scenario_id"),
         Index("ix_social_security_estimates_person_id", "person_id"),
     )
 
@@ -544,6 +599,36 @@ class ProjectionScenario(Base):
     created_from_scenario: Mapped["ProjectionScenario | None"] = relationship(
         remote_side=[id], foreign_keys=[created_from_scenario_id]
     )
+    projection_events: Mapped[list[AccountEvent]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    income_sources: Mapped[list[IncomeSource]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    social_security_estimates: Mapped[list[SocialSecurityEstimate]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    projection_transfers: Mapped[list["ProjectionTransfer"]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    spending_items: Mapped[list["SpendingItem"]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    projection_settings: Mapped["ProjectionSettings | None"] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    real_estate_sales: Mapped[list[RealEstateSale]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    liquidation_strategies: Mapped[list[RealEstateLiquidationStrategy]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    account_assumptions: Mapped[list["ProjectionScenarioAccountAssumption"]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
+    property_assumptions: Mapped[list["ProjectionScenarioPropertyAssumption"]] = relationship(
+        back_populates="scenario", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("household_id", "name", name="uq_projection_scenarios_household_name"),
@@ -559,11 +644,84 @@ class ProjectionScenario(Base):
     )
 
 
+class ProjectionScenarioAccountAssumption(Base):
+    __tablename__ = "projection_scenario_account_assumptions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    expected_annual_yield: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    liquidation_expense_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    scenario: Mapped[ProjectionScenario] = relationship(back_populates="account_assumptions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "scenario_id",
+            "account_id",
+            name="uq_projection_scenario_account_assumptions_scenario_account",
+        ),
+        Index("ix_projection_scenario_account_assumptions_household", "household_id"),
+        Index("ix_projection_scenario_account_assumptions_account", "account_id"),
+    )
+
+
+class ProjectionScenarioPropertyAssumption(Base):
+    __tablename__ = "projection_scenario_property_assumptions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    property_account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    expected_appreciation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    rent_growth_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    vacancy_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    scenario: Mapped[ProjectionScenario] = relationship(back_populates="property_assumptions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "scenario_id",
+            "property_account_id",
+            name="uq_projection_scenario_property_assumptions_scenario_property",
+        ),
+        Index("ix_projection_scenario_property_assumptions_household", "household_id"),
+        Index(
+            "ix_projection_scenario_property_assumptions_property",
+            "property_account_id",
+        ),
+    )
+
+
 class ProjectionTransfer(Base):
     __tablename__ = "projection_transfers"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     from_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     to_account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
@@ -577,11 +735,13 @@ class ProjectionTransfer(Base):
     )
 
     household: Mapped[Household] = relationship(back_populates="projection_transfers")
+    scenario: Mapped[ProjectionScenario] = relationship(back_populates="projection_transfers")
     from_account: Mapped[Account] = relationship(foreign_keys=[from_account_id])
     to_account: Mapped[Account] = relationship(foreign_keys=[to_account_id])
 
     __table_args__ = (
         Index("ix_projection_transfers_household_id", "household_id"),
+        Index("ix_projection_transfers_scenario_id", "scenario_id"),
         Index("ix_projection_transfers_from_account_id", "from_account_id"),
         Index("ix_projection_transfers_to_account_id", "to_account_id"),
     )
@@ -592,6 +752,9 @@ class SpendingItem(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="other")
     annual_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -603,9 +766,11 @@ class SpendingItem(Base):
     )
 
     household: Mapped[Household] = relationship(back_populates="spending_items")
+    scenario: Mapped[ProjectionScenario] = relationship(back_populates="spending_items")
 
     __table_args__ = (
         Index("ix_spending_items_household_id", "household_id"),
+        Index("ix_spending_items_scenario_id", "scenario_id"),
         Index("ix_spending_items_household_category", "household_id", "category"),
     )
 
@@ -615,6 +780,9 @@ class ProjectionSettings(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("households.id"), nullable=False)
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
     annual_spending: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     spending_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     spending_inflation_rate: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
@@ -628,12 +796,14 @@ class ProjectionSettings(Base):
     )
 
     household: Mapped[Household] = relationship(back_populates="projection_settings")
+    scenario: Mapped[ProjectionScenario] = relationship(back_populates="projection_settings")
     spending_account: Mapped[Account | None] = relationship(foreign_keys=[spending_account_id])
     tax_account: Mapped[Account | None] = relationship(foreign_keys=[tax_account_id])
 
     __table_args__ = (
-        UniqueConstraint("household_id", name="uq_projection_settings_household"),
+        UniqueConstraint("scenario_id", name="uq_projection_settings_scenario"),
         Index("ix_projection_settings_household_id", "household_id"),
+        Index("ix_projection_settings_scenario_id", "scenario_id"),
         Index("ix_projection_settings_spending_account_id", "spending_account_id"),
         Index("ix_projection_settings_tax_account_id", "tax_account_id"),
     )

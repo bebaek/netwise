@@ -70,6 +70,7 @@ def get_net_worth_projection(
     household_id: UUID,
     start_year: int,
     end_year: int,
+    scenario_id: UUID | None = None,
     annual_spending: Decimal | None = None,
     spending_inflation_rate: Decimal | None = None,
     spending_account_id: UUID | None = None,
@@ -83,6 +84,7 @@ def get_net_worth_projection(
         return calculate_net_worth_projection(
             db,
             household_id,
+            scenario_id=scenario_id,
             start_year=start_year,
             end_year=end_year,
             annual_spending=annual_spending,

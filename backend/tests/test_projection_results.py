@@ -16,6 +16,7 @@ from app.db.models import AccountKind
 from app.schemas.projection import NetWorthProjectionRead
 
 HOUSEHOLD_ID = UUID("00000000-0000-0000-0000-000000000001")
+SCENARIO_ID = UUID("00000000-0000-0000-0000-000000000004")
 ACCOUNT_ID = UUID("00000000-0000-0000-0000-000000000002")
 PROPERTY_ID = UUID("00000000-0000-0000-0000-000000000003")
 
@@ -66,6 +67,8 @@ def test_format_projection_result_translates_nested_simulation_records() -> None
     )
     result = ProjectionResult(
         household_id=HOUSEHOLD_ID,
+        scenario_id=SCENARIO_ID,
+        scenario_name="Baseline",
         start_year=2030,
         end_year=2030,
         interval="annual",
@@ -122,6 +125,8 @@ def test_format_projection_result_translates_nested_simulation_records() -> None
 def test_format_projection_result_omits_absent_optimization() -> None:
     result = ProjectionResult(
         household_id=HOUSEHOLD_ID,
+        scenario_id=SCENARIO_ID,
+        scenario_name="Baseline",
         start_year=2030,
         end_year=2030,
         interval="annual",
