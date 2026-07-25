@@ -210,7 +210,7 @@ Refactor incrementally while retaining the current deterministic output:
 - [x] Extract projection-specific SQLAlchemy queries into `load_projection_input()`.
 - [x] Add an immutable transitional `ProjectionInput` container and parity coverage.
 - [x] Map accounts, events, income, transfers, spending, and settings to immutable records.
-- [ ] Convert profile and real-estate transaction inputs to immutable plain-data records.
+- [x] Convert profile and real-estate transaction inputs to immutable plain-data records.
 - [x] Make deterministic projection calculation operate without a database session.
 - [ ] Extract focused projection policies and response formatting.
 
@@ -315,6 +315,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Complete plain-data projection boundary | Mapped mortgage profiles, property profiles, fixed property sales, and automatic liquidation strategies to immutable records; the deterministic engine no longer consumes SQLAlchemy entities. |
 | 2026-07-25 | Plain planning projection contracts | Mapped projection events, income sources, recurring transfers, spending items, and settings to immutable records and tuple collections. |
 | 2026-07-25 | Plain account projection contract | Added immutable `ProjectionAccount` records, converted the account collection to a tuple, and removed the deterministic engine's dependency on the SQLAlchemy `Account` model. |
 | 2026-07-25 | Database-free projection core | Split the route-facing persistence adapter from `calculate_projection_from_input()`, moved optimization candidate runs onto the in-memory core, and verified output parity with a detached input. |

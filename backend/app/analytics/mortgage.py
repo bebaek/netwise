@@ -1,13 +1,20 @@
 from datetime import date
 from decimal import Decimal
 
-from app.db.models import MortgageProfile
+from typing import Protocol
+
+
+class MortgageTerms(Protocol):
+    original_principal: Decimal
+    interest_rate: Decimal
+    term_months: int
+    start_date: date
 
 
 MONTHS_PER_YEAR = Decimal("12")
 
 
-def estimate_mortgage_balance(profile: MortgageProfile, as_of_date: date) -> Decimal:
+def estimate_mortgage_balance(profile: MortgageTerms, as_of_date: date) -> Decimal:
     """Estimate remaining mortgage balance from amortization profile.
 
     This is a deterministic planning estimate. It assumes a standard amortizing loan
@@ -26,8 +33,8 @@ def estimate_mortgage_balance(profile: MortgageProfile, as_of_date: date) -> Dec
 
     monthly_rate = profile.interest_rate / MONTHS_PER_YEAR
     if monthly_rate == 0:
-        balance = principal * Decimal(profile.term_months - elapsed_months) / Decimal(
-            profile.term_months
+        balance = (
+            principal * Decimal(profile.term_months - elapsed_months) / Decimal(profile.term_months)
         )
     else:
         one_plus_rate = Decimal("1") + monthly_rate

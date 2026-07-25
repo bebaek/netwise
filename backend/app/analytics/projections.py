@@ -12,6 +12,10 @@ from app.analytics.projection_contracts import (
     ProjectionAccount,
     ProjectionEvent,
     ProjectionIncomeSource,
+    ProjectionLiquidationStrategy,
+    ProjectionMortgage,
+    ProjectionProperty,
+    ProjectionPropertySale,
     ProjectionSpendingItem,
     ProjectionTransferInput,
 )
@@ -20,10 +24,6 @@ from app.db.models import (
     AccountEventType,
     AccountKind,
     IncomeFrequency,
-    MortgageProfile,
-    RealEstateLiquidationStrategy,
-    RealEstateProperty,
-    RealEstateSale,
     RetirementTaxTreatment,
 )
 
@@ -90,10 +90,10 @@ class ProjectedPropertySale:
 
 @dataclass
 class AutomaticPropertySaleContext:
-    strategies: list[RealEstateLiquidationStrategy]
+    strategies: Sequence[ProjectionLiquidationStrategy]
     fixed_sale_property_ids: set[UUID]
-    mortgage_profiles_by_property: dict[UUID, MortgageProfile]
-    property_profiles: dict[UUID, RealEstateProperty]
+    mortgage_profiles_by_property: dict[UUID, ProjectionMortgage]
+    property_profiles: dict[UUID, ProjectionProperty]
     sold_mortgage_account_ids: set[UUID]
     used_property_ids: set[UUID]
     as_of_date: date
@@ -102,7 +102,7 @@ class AutomaticPropertySaleContext:
         self,
         accounts_by_id: dict[UUID, ProjectionAccount],
         balances: dict[UUID, Decimal],
-    ) -> RealEstateLiquidationStrategy | None:
+    ) -> ProjectionLiquidationStrategy | None:
         eligible = [
             strategy
             for strategy in self.strategies
@@ -823,7 +823,7 @@ def _optimize_liquid_runway_sales(
     tax_account_id: UUID | None,
     interval: str,
     projection_input: ProjectionInput,
-    strategies: list[RealEstateLiquidationStrategy],
+    strategies: Sequence[ProjectionLiquidationStrategy],
 ) -> dict:
     """Choose ordered March 1 property sales that delay retirement withdrawals longest."""
     ordered_strategies = sorted(
@@ -921,7 +921,7 @@ def _optimize_liquid_runway_sales(
 
 
 def _ordered_march_sale_schedules(
-    strategies: list[RealEstateLiquidationStrategy],
+    strategies: Sequence[ProjectionLiquidationStrategy],
     *,
     start_year: int,
     end_year: int,
@@ -1077,7 +1077,7 @@ def _projected_spending_items_for_period(
 
 
 def _projected_owner_property_spending_for_period(
-    property_profiles: list[RealEstateProperty],
+    property_profiles: Sequence[ProjectionProperty],
     accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     start_year: int,
@@ -1128,7 +1128,7 @@ def _projected_owner_property_spending_for_period(
 
 
 def _projected_owner_mortgage_spending_for_period(
-    mortgage_profiles: list[MortgageProfile],
+    mortgage_profiles: Sequence[ProjectionMortgage],
     period_start: date,
     period_end: date,
     sold_mortgage_account_ids: set[UUID],
@@ -1151,7 +1151,7 @@ def _projected_owner_mortgage_spending_for_period(
 
 
 def _scheduled_mortgage_payment_months(
-    profile: MortgageProfile,
+    profile: ProjectionMortgage,
     period_start: date,
     period_end: date,
 ) -> int:
@@ -1320,7 +1320,7 @@ def _active_months_in_period(
 
 
 def _apply_rental_cash_flow(
-    property_profile: RealEstateProperty,
+    property_profile: ProjectionProperty,
     accounts: Sequence[ProjectionAccount],
     accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
@@ -1402,8 +1402,8 @@ def _apply_rental_cash_flow(
 
 
 def _apply_rental_mortgage_debt_service(
-    property_profile: RealEstateProperty,
-    mortgage_profile: MortgageProfile | None,
+    property_profile: ProjectionProperty,
+    mortgage_profile: ProjectionMortgage | None,
     accounts: Sequence[ProjectionAccount],
     accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
@@ -1463,7 +1463,7 @@ def _apply_rental_mortgage_debt_service(
     return debt_service, funding_result
 
 
-def _amortized_monthly_payment(profile: MortgageProfile) -> Decimal:
+def _amortized_monthly_payment(profile: ProjectionMortgage) -> Decimal:
     monthly_rate = profile.interest_rate / Decimal("12")
     if monthly_rate == Decimal("0.00"):
         return (profile.original_principal / Decimal(profile.term_months)).quantize(Decimal("0.01"))
@@ -1497,9 +1497,9 @@ def _apply_account_cash_flow(
 
 def _property_sale_tax_basis_warnings(
     accounts_by_id: dict[UUID, ProjectionAccount],
-    property_profiles: dict[UUID, RealEstateProperty],
-    real_estate_sales: list[RealEstateSale],
-    automatic_sale_strategies: list[RealEstateLiquidationStrategy],
+    property_profiles: dict[UUID, ProjectionProperty],
+    real_estate_sales: Sequence[ProjectionPropertySale],
+    automatic_sale_strategies: Sequence[ProjectionLiquidationStrategy],
 ) -> list[str]:
     property_ids = {
         sale.property_account_id
@@ -1539,9 +1539,9 @@ def _apply_real_estate_sale(
     accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
-    sale: RealEstateSale | ProjectedPropertySale,
-    property_profile: RealEstateProperty | None,
-    mortgage_profile: MortgageProfile | None,
+    sale: ProjectionPropertySale | ProjectedPropertySale,
+    property_profile: ProjectionProperty | None,
+    mortgage_profile: ProjectionMortgage | None,
     sold_mortgage_account_ids: set[UUID],
     tax_rate: Decimal,
     basis_balances: dict[UUID, Decimal] | None = None,
@@ -1999,7 +1999,7 @@ def _cash_flow_priority(account: ProjectionAccount) -> tuple[int, str]:
 
 def _yield_for_account(
     account: ProjectionAccount,
-    property_profile: RealEstateProperty | None,
+    property_profile: ProjectionProperty | None,
 ) -> Decimal:
     if account.category == "real_estate":
         return (

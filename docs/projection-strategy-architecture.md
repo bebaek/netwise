@@ -2,10 +2,11 @@
 
 ## Status
 
-**Implementation in progress.** The persistence queries now live in
-`backend/app/analytics/projection_input.py`, which returns an immutable
-`ProjectionInput` container. Its members are still SQLAlchemy records, so the
-plain-data strategy boundary described below remains proposed.
+**Implementation in progress.** The persistence queries and SQLAlchemy-to-domain
+mapping now live in `backend/app/analytics/projection_input.py`, which returns a
+plain-data `ProjectionInput` snapshot. The deterministic engine no longer
+consumes SQLAlchemy entities. Focused policy extraction and response-formatting
+separation remain in progress.
 
 ## Context
 
@@ -15,9 +16,9 @@ outside API routes and supports configurable assumptions such as account yields,
 spending, income, tax records, mortgages, real-estate appreciation, and dated
 account events.
 
-However, the projection engine still consumes SQLAlchemy records, resolves
-settings, applies all calculation policies, and formats the API result.
-Important behavioral decisions are embedded as private helpers and constants:
+The projection engine now consumes plain domain records and resolves settings,
+applies all calculation policies, and formats the API result. Important
+behavioral decisions remain embedded as private helpers and constants:
 
 - category-level return defaults;
 - spending inflation and income-growth defaults;
@@ -61,11 +62,11 @@ frozen `ProjectionInput` container. The route-facing
 `calculate_projection_from_input()` runs the deterministic engine and all
 optimization candidates without a database session.
 
-This is intentionally an intermediate boundary: accounts, projection events,
-income sources, recurring transfers, spending items, and settings are immutable
-plain-data records stored in tuple collections. Mortgage/property profiles,
-property sales, and automatic liquidation strategies still use ORM models and
-are the next contract boundary.
+Accounts, projection events, income sources, recurring transfers, spending
+items, settings, mortgage/property profiles, property sales, and automatic
+liquidation strategies are immutable plain-data records. Collection inputs are
+tuples where ordering is significant. SQLAlchemy entities are mapped at the
+`load_projection_input()` boundary and do not enter the deterministic engine.
 
 ## Target structure
 

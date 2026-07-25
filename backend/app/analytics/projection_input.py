@@ -10,6 +10,10 @@ from app.analytics.projection_contracts import (
     ProjectionAccount,
     ProjectionEvent,
     ProjectionIncomeSource,
+    ProjectionLiquidationStrategy,
+    ProjectionMortgage,
+    ProjectionProperty,
+    ProjectionPropertySale,
     ProjectionSettingsInput,
     ProjectionSpendingItem,
     ProjectionTransferInput,
@@ -37,19 +41,18 @@ TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 class ProjectionInput:
     """Database-backed input snapshot consumed by the deterministic projection.
 
-    The container is immutable so candidate optimization runs can safely reuse
-    the same resolved input. Its values remain ORM records during this first
-    boundary extraction; converting them to plain domain records is a separate
-    follow-up step.
+    The container and its domain records are immutable so candidate
+    optimization runs can safely reuse the same resolved input without retaining
+    SQLAlchemy entities in the deterministic engine.
     """
 
     household_id: UUID
     accounts: tuple[ProjectionAccount, ...]
     initial_balances: dict[UUID, Decimal]
-    mortgage_profiles: dict[UUID, MortgageProfile]
-    property_profiles: dict[UUID, RealEstateProperty]
-    real_estate_sales: list[RealEstateSale]
-    automatic_sale_strategies: list[RealEstateLiquidationStrategy]
+    mortgage_profiles: dict[UUID, ProjectionMortgage]
+    property_profiles: dict[UUID, ProjectionProperty]
+    real_estate_sales: tuple[ProjectionPropertySale, ...]
+    automatic_sale_strategies: tuple[ProjectionLiquidationStrategy, ...]
     projection_events: tuple[ProjectionEvent, ...]
     income_sources: tuple[ProjectionIncomeSource, ...]
     projection_transfers: tuple[ProjectionTransferInput, ...]
@@ -79,26 +82,24 @@ def load_projection_input(
         account.id: _latest_balance_on_or_before(db, account.id, start_date) or Decimal("0.00")
         for account in account_records
     }
-    mortgage_profiles = {
-        profile.liability_account_id: profile
-        for profile in db.scalars(
+    mortgage_profile_records = list(
+        db.scalars(
             select(MortgageProfile).where(MortgageProfile.household_id == household_id)
         ).all()
-    }
-    property_profiles = {
-        profile.account_id: profile
-        for profile in db.scalars(
+    )
+    property_profile_records = list(
+        db.scalars(
             select(RealEstateProperty).where(RealEstateProperty.household_id == household_id)
         ).all()
-    }
-    real_estate_sales = list(
+    )
+    real_estate_sale_records = list(
         db.scalars(
             select(RealEstateSale)
             .where(RealEstateSale.household_id == household_id)
             .order_by(RealEstateSale.sale_date)
         ).all()
     )
-    automatic_sale_strategies = list(
+    automatic_sale_strategy_records = list(
         db.scalars(
             select(RealEstateLiquidationStrategy)
             .where(RealEstateLiquidationStrategy.household_id == household_id)
@@ -143,6 +144,20 @@ def load_projection_input(
     tax_rate = _latest_effective_tax_rate(db, household_id)
     cost_bases, cost_basis_estimates = _resolve_cost_bases(db, account_records, start_date)
     accounts = tuple(_to_projection_account(account) for account in account_records)
+    mortgage_profiles = {
+        record.liability_account_id: _to_projection_mortgage(record)
+        for record in mortgage_profile_records
+    }
+    property_profiles = {
+        record.account_id: _to_projection_property(record) for record in property_profile_records
+    }
+    real_estate_sales = tuple(
+        _to_projection_property_sale(sale) for sale in real_estate_sale_records
+    )
+    automatic_sale_strategies = tuple(
+        _to_projection_liquidation_strategy(strategy)
+        for strategy in automatic_sale_strategy_records
+    )
     projection_events = tuple(_to_projection_event(event) for event in projection_event_records)
     income_sources = tuple(_to_projection_income(source) for source in income_source_records)
     projection_transfers = tuple(
@@ -183,6 +198,70 @@ def _to_projection_account(account: Account) -> ProjectionAccount:
         retirement_tax_treatment=account.retirement_tax_treatment,
         expected_annual_yield=account.expected_annual_yield,
         liquidation_expense_rate=account.liquidation_expense_rate,
+    )
+
+
+def _to_projection_mortgage(profile: MortgageProfile) -> ProjectionMortgage:
+    return ProjectionMortgage(
+        liability_account_id=profile.liability_account_id,
+        property_account_id=profile.property_account_id,
+        original_principal=profile.original_principal,
+        interest_rate=profile.interest_rate,
+        term_months=profile.term_months,
+        start_date=profile.start_date,
+        monthly_payment=profile.monthly_payment,
+    )
+
+
+def _to_projection_property(profile: RealEstateProperty) -> ProjectionProperty:
+    return ProjectionProperty(
+        account_id=profile.account_id,
+        purchase_date=profile.purchase_date,
+        purchase_price=profile.purchase_price,
+        adjusted_tax_basis=profile.adjusted_tax_basis,
+        expected_appreciation_rate=profile.expected_appreciation_rate,
+        property_tax_annual=profile.property_tax_annual,
+        insurance_annual=profile.insurance_annual,
+        tax_and_insurance_annual=profile.tax_and_insurance_annual,
+        maintenance_rate=profile.maintenance_rate,
+        hoa_monthly=profile.hoa_monthly,
+        is_rental=profile.is_rental,
+        rental_start_date=profile.rental_start_date,
+        monthly_market_rent=profile.monthly_market_rent,
+        other_monthly_income=profile.other_monthly_income,
+        rent_growth_rate=profile.rent_growth_rate,
+        vacancy_rate=profile.vacancy_rate,
+        management_fee_rate=profile.management_fee_rate,
+        utilities_annual=profile.utilities_annual,
+        other_operating_expense_annual=profile.other_operating_expense_annual,
+        capital_reserve_rate=profile.capital_reserve_rate,
+        rental_deposit_account_id=profile.rental_deposit_account_id,
+    )
+
+
+def _to_projection_property_sale(sale: RealEstateSale) -> ProjectionPropertySale:
+    return ProjectionPropertySale(
+        property_account_id=sale.property_account_id,
+        sale_date=sale.sale_date,
+        gross_sale_price=sale.gross_sale_price,
+        proceeds_account_id=sale.proceeds_account_id,
+        selling_expense_rate=sale.selling_expense_rate,
+        estimated_tax_rate=sale.estimated_tax_rate,
+    )
+
+
+def _to_projection_liquidation_strategy(
+    strategy: RealEstateLiquidationStrategy,
+) -> ProjectionLiquidationStrategy:
+    return ProjectionLiquidationStrategy(
+        property_account_id=strategy.property_account_id,
+        enabled=strategy.enabled,
+        optimization_mode=strategy.optimization_mode,
+        priority=strategy.priority,
+        earliest_sale_date=strategy.earliest_sale_date,
+        proceeds_account_id=strategy.proceeds_account_id,
+        selling_expense_rate=strategy.selling_expense_rate,
+        estimated_tax_rate=strategy.estimated_tax_rate,
     )
 
 
