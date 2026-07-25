@@ -289,22 +289,23 @@ Production mode should provide:
 
 ## P2: Documentation, licensing, and CI
 
-**Status:** `not started`
+**Status:** `complete`
 
-### Intended work
+### Completed work
 
-1. Add an implementation status table to the README with `implemented`, `experimental`, and `planned` capabilities.
-2. Replace machine-specific paths such as `/Users/burm/code/netwise` with repository-relative commands.
-3. Update planned-stack wording now that the backend and frontend stacks are implemented.
-4. Make operations documentation match actual setting names and supported behavior.
-5. Choose a license before describing the repository as open source.
-6. Add continuous integration for:
-   - Ruff
-   - backend tests
-   - frontend type checking and build
-   - migration from an empty database
-   - at least a desktop Playwright smoke test
-7. Resolve the FastAPI/Starlette test-client deprecation warning when the supported dependency path is clear.
+- [x] Add an implementation status table to the README with `implemented`, `experimental`, and `planned` capabilities.
+- [x] Replace machine-specific paths such as `/Users/burm/code/netwise` with repository-relative commands.
+- [x] Update planned-stack wording now that the backend and frontend stacks are implemented.
+- [x] Verify that operations documentation matches actual setting names and supported behavior.
+- [x] License the repository under Apache License 2.0 before describing it as open source.
+- [x] Add continuous integration for:
+  - Ruff
+  - backend tests
+  - frontend type checking and build
+  - migration from an empty database
+  - the desktop Chromium Playwright suite
+  - production Compose validation and image builds
+- [x] Resolve the FastAPI/Starlette test-client deprecation by moving the test dependency to the supported `httpx2` package.
 
 ### Completion criteria
 
@@ -330,6 +331,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Documentation, licensing, and CI | Adopted Apache License 2.0, documented implemented and planned capabilities with portable commands, added lockfile-driven backend/frontend/migration/container/desktop-browser CI jobs, and moved Starlette tests to `httpx2` without deprecation warnings. |
 | 2026-07-25 | Production recovery and upgrades | Added checksum-producing custom-format PostgreSQL backups and confirmation-gated destructive restores; verified database replacement, post-restore migrations, service health, owner-only artifact permissions, and the documented backup-build-stop-migrate-start upgrade sequence. |
 | 2026-07-25 | Reproducible container dependencies | Replaced unconstrained backend `pip install` with a pinned uv dependency stage using `uv.lock`, copied only the resulting production virtual environment into the runtime image, and moved the development frontend image to `npm ci`. |
 | 2026-07-25 | Production Compose boundary | Added an external-password-gated production stack that publishes only Nginx, isolates PostgreSQL on an internal network, enables secure cookies, keeps signup and admin tools disabled, health-checks every runtime service, and runs Alembic through an explicit one-shot profile. |

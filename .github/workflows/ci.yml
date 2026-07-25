@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.11.29"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked --extra dev
+      - name: Check lockfile
+        working-directory: backend
+        run: uv lock --check
+      - name: Run Ruff
+        working-directory: backend
+        run: uv run --no-sync ruff check app tests
+      - name: Run backend tests
+        working-directory: backend
+        run: uv run --no-sync pytest -q
+
+  frontend:
+    name: Frontend type check and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run frontend type check
+        working-directory: frontend
+        run: npm run lint
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  migration:
+    name: Empty database migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: netwise
+          POSTGRES_PASSWORD: netwise-ci-password
+          POSTGRES_DB: netwise
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U netwise -d netwise"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise-ci-password@127.0.0.1:5432/netwise
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.11.29"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install production dependencies
+        working-directory: backend
+        run: uv sync --locked --no-dev
+      - name: Apply all migrations
+        working-directory: backend
+        run: uv run --no-sync alembic upgrade head
+
+  production-images:
+    name: Production Compose build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETWISE_POSTGRES_PASSWORD: netwise-ci-placeholder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate production Compose configuration
+        run: docker compose --file compose.production.yml --profile tools config --quiet
+      - name: Build production images
+        run: docker compose --file compose.production.yml build backend frontend
+
+  e2e:
+    name: Desktop Chromium smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated desktop suite
+        run: npm --prefix frontend run test:e2e -- --project=desktop-chromium
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-diagnostics
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7
