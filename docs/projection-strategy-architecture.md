@@ -184,9 +184,16 @@ deterministic strategy should compose focused policies:
 | `TaxModel` | effective-rate approximation, tax-bracket model |
 | `WithdrawalPolicy` | liquidity-first, taxable-first, retirement-first, user-defined order |
 
-The current withdrawal ordering, taxable-withdrawal treatment, and liquidation
-expense logic are strong candidates for the first `WithdrawalPolicy`
-extraction. They are currently coupled in `_withdraw_from_assets()`.
+The default account-pool withdrawal policy now lives in
+`backend/app/analytics/projection_withdrawals.py`. It owns deterministic funding
+priority, preferred-account cutoff behavior, taxable and capital-gains drag,
+cost-basis reduction, liquidation expenses, and the resulting account cash-flow
+legs. These decisions have focused unit coverage independent of timeline
+orchestration.
+
+`_withdraw_from_assets()` still coordinates automatic property sales between
+non-retirement and retirement funding attempts. That transaction orchestration
+remains in the deterministic engine until the property-sale policy is extracted.
 
 ## Scenario semantics
 

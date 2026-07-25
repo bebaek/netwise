@@ -1,56 +1,7 @@
 from datetime import date
-from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
-
-from app.analytics.projections import _withdrawal_order
-from app.db.models import Account
-
-
-def test_default_projection_funding_order():
-    accounts = [
-        Account(
-            id=uuid4(),
-            name=name,
-            account_kind="asset",
-            category=category,
-            liquidity_class=liquidity_class,
-            retirement_tax_treatment="roth" if name == "Vanguard Roth" else None,
-            currency="USD",
-        )
-        for name, category, liquidity_class in [
-            ("Ally", "cash", "marketable"),
-            ("401k", "retirement", "retirement_liquid"),
-            ("Fidelity", "retirement", "retirement_liquid"),
-            ("Vanguard Roth", "retirement", "retirement_liquid"),
-            ("Brokerage", "taxable_investment", "marketable"),
-            ("Vanguard Stock", "taxable_investment", "marketable"),
-            ("Checking", "cash", "liquid"),
-        ]
-    ]
-
-    assert [account.name for account in _withdrawal_order(accounts, {}, None)] == [
-        "Checking",
-        "Ally",
-        "Brokerage",
-        "Vanguard Stock",
-        "Vanguard Roth",
-        "401k",
-        "Fidelity",
-    ]
-
-    accounts_by_id = {account.id: account for account in accounts}
-    brokerage = next(account for account in accounts if account.name == "Brokerage")
-    assert [
-        account.name for account in _withdrawal_order(accounts, accounts_by_id, brokerage.id)
-    ] == [
-        "Brokerage",
-        "Vanguard Stock",
-        "Vanguard Roth",
-        "401k",
-        "Fidelity",
-    ]
 
 
 def test_monthly_projection_returns_only_future_month_ends_and_applies_past_events(

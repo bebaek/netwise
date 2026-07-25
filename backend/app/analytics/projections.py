@@ -2,7 +2,7 @@ from calendar import monthrange
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_UP, Decimal
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -20,11 +20,16 @@ from app.analytics.projection_contracts import (
     ProjectionTransferInput,
 )
 from app.analytics.projection_input import ProjectionInput, load_projection_input
+from app.analytics.projection_withdrawals import (
+    LIQUIDITY_CLASSES,
+    WithdrawalResult,
+    liquidation_expense_rate,
+    withdraw_from_account_pool,
+)
 from app.db.models import (
     AccountEventType,
     AccountKind,
     IncomeFrequency,
-    RetirementTaxTreatment,
 )
 
 DEFAULT_CATEGORY_YIELDS = {
@@ -40,43 +45,11 @@ DEFAULT_CATEGORY_YIELDS = {
 }
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
 DEFAULT_INCOME_GROWTH_RATE = Decimal("0.020000")
-DEFAULT_CAPITAL_GAINS_TAX_RATE = Decimal("0.150000")
 TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 
 
 def _current_date() -> date:
     return date.today()
-
-
-DEFAULT_LIQUIDATION_EXPENSE_RATES = {
-    "taxable_investment": Decimal("0.010000"),
-    "brokerage": Decimal("0.010000"),
-    "real_estate": Decimal("0.060000"),
-}
-
-
-@dataclass
-class WithdrawalResult:
-    net_amount: Decimal = Decimal("0.00")
-    taxable_amount: Decimal = Decimal("0.00")
-    capital_gains_tax: Decimal = Decimal("0.00")
-    liquidation_expenses: Decimal = Decimal("0.00")
-    explicit_taxes: Decimal = Decimal("0.00")
-    unfunded_amount: Decimal = Decimal("0.00")
-
-    def add(self, other: "WithdrawalResult") -> None:
-        self.net_amount = (self.net_amount + other.net_amount).quantize(Decimal("0.01"))
-        self.taxable_amount = (self.taxable_amount + other.taxable_amount).quantize(Decimal("0.01"))
-        self.capital_gains_tax = (self.capital_gains_tax + other.capital_gains_tax).quantize(
-            Decimal("0.01")
-        )
-        self.liquidation_expenses = (
-            self.liquidation_expenses + other.liquidation_expenses
-        ).quantize(Decimal("0.01"))
-        self.explicit_taxes = (self.explicit_taxes + other.explicit_taxes).quantize(Decimal("0.01"))
-        self.unfunded_amount = (self.unfunded_amount + other.unfunded_amount).quantize(
-            Decimal("0.01")
-        )
 
 
 @dataclass
@@ -136,14 +109,6 @@ CASH_FLOW_CATEGORY_PRIORITY = {
     "brokerage": 2,
     "retirement": 3,
 }
-
-BANK_CATEGORIES = {"cash", "checking", "savings"}
-LIQUIDITY_CLASSES = {"cash", "liquid", "marketable", "retirement_liquid"}
-
-# Default withdrawal sequence: checking, other cash, taxable investments, Roth
-# retirement, then other retirement accounts. Remaining eligible liquid accounts
-# are fallbacks.
-DEFAULT_FUNDING_ACCOUNT_NAMES = {"checking"}
 
 
 AccountEventOutflowTypes = {
@@ -1577,7 +1542,7 @@ def _apply_real_estate_sale(
     selling_expense_rate = (
         sale.selling_expense_rate
         if sale.selling_expense_rate is not None
-        else _liquidation_expense_rate(property_account)
+        else liquidation_expense_rate(property_account)
     )
     selling_expense = (sale.gross_sale_price * selling_expense_rate).quantize(Decimal("0.01"))
     if selling_expense != Decimal("0.00"):
@@ -1719,7 +1684,7 @@ def _withdraw_from_assets(
 ) -> WithdrawalResult:
     amount = amount.quantize(Decimal("0.01"))
     if automatic_sale_context is None:
-        return _withdraw_from_account_pool(
+        return withdraw_from_account_pool(
             accounts,
             accounts_by_id,
             balances,
@@ -1738,7 +1703,7 @@ def _withdraw_from_assets(
         if any(account.id == preferred_account_id for account in non_retirement_accounts)
         else None
     )
-    funding_attempt = _withdraw_from_account_pool(
+    funding_attempt = withdraw_from_account_pool(
         non_retirement_accounts,
         accounts_by_id,
         balances,
@@ -1781,7 +1746,7 @@ def _withdraw_from_assets(
         sale_result.unfunded_amount = Decimal("0.00")
         result.add(sale_result)
 
-        funding_attempt = _withdraw_from_account_pool(
+        funding_attempt = withdraw_from_account_pool(
             non_retirement_accounts,
             accounts_by_id,
             balances,
@@ -1803,7 +1768,7 @@ def _withdraw_from_assets(
             if any(account.id == preferred_account_id for account in retirement_accounts)
             else None
         )
-        funding_attempt = _withdraw_from_account_pool(
+        funding_attempt = withdraw_from_account_pool(
             retirement_accounts,
             accounts_by_id,
             balances,
@@ -1820,177 +1785,6 @@ def _withdraw_from_assets(
 
     result.unfunded_amount = (additional_unfunded + remaining).quantize(Decimal("0.01"))
     return result
-
-
-def _withdraw_from_account_pool(
-    accounts: Sequence[ProjectionAccount],
-    accounts_by_id: dict[UUID, ProjectionAccount],
-    balances: dict[UUID, Decimal],
-    cash_flows: list[dict],
-    amount: Decimal,
-    cash_flow_type: str,
-    preferred_account_id: UUID | None,
-    tax_rate: Decimal,
-    basis_balances: dict[UUID, Decimal] | None = None,
-) -> WithdrawalResult:
-    remaining_net = amount.quantize(Decimal("0.01"))
-    result = WithdrawalResult()
-    if remaining_net == Decimal("0.00"):
-        return result
-
-    asset_accounts = [account for account in accounts if account.account_kind == AccountKind.asset]
-    if not asset_accounts:
-        result.unfunded_amount = remaining_net
-        return result
-
-    effective_preference = (
-        preferred_account_id
-        if any(account.id == preferred_account_id for account in asset_accounts)
-        else None
-    )
-    ordered_accounts = _withdrawal_order(asset_accounts, accounts_by_id, effective_preference)
-    for account in ordered_accounts:
-        available = max(balances[account.id], Decimal("0.00"))
-        if available == Decimal("0.00"):
-            continue
-
-        taxes_apply = _withdrawal_has_tax_consequences(account)
-        has_basis_tracking = (
-            basis_balances is not None
-            and account.id in basis_balances
-            and available > Decimal("0.00")
-        )
-        capital_gain_fraction = Decimal("0.00")
-        if has_basis_tracking:
-            effective_tax_rate = DEFAULT_CAPITAL_GAINS_TAX_RATE
-            basis = max(basis_balances[account.id], Decimal("0.00"))
-            capital_gain_fraction = max(available - basis, Decimal("0.00")) / available
-        else:
-            effective_tax_rate = tax_rate if taxes_apply else Decimal("0.00")
-        liquidation_expense_rate = _liquidation_expense_rate(account)
-        if has_basis_tracking:
-            drag_rate = (effective_tax_rate * capital_gain_fraction) + liquidation_expense_rate
-        else:
-            drag_rate = effective_tax_rate + liquidation_expense_rate
-        if drag_rate >= Decimal("1.00"):
-            continue
-
-        gross_needed = (remaining_net / (Decimal("1.00") - drag_rate)).quantize(
-            Decimal("0.01"), rounding=ROUND_UP
-        )
-        gross_deduction = min(available, gross_needed)
-        if gross_deduction == Decimal("0.00"):
-            continue
-
-        if has_basis_tracking:
-            taxable_portion = (gross_deduction * capital_gain_fraction).quantize(Decimal("0.01"))
-        else:
-            taxable_portion = gross_deduction if taxes_apply else Decimal("0.00")
-        tax_amount = (taxable_portion * effective_tax_rate).quantize(Decimal("0.01"))
-        liquidation_expense = (gross_deduction * liquidation_expense_rate).quantize(Decimal("0.01"))
-        net_amount = (gross_deduction - tax_amount - liquidation_expense).quantize(Decimal("0.01"))
-        if net_amount == Decimal("0.00"):
-            continue
-
-        _apply_account_cash_flow(balances, cash_flows, account, cash_flow_type, -net_amount)
-        if tax_amount != Decimal("0.00"):
-            _apply_account_cash_flow(balances, cash_flows, account, "tax_payment", -tax_amount)
-        if liquidation_expense != Decimal("0.00"):
-            _apply_account_cash_flow(
-                balances, cash_flows, account, "liquidation_expense", -liquidation_expense
-            )
-        if has_basis_tracking:
-            basis_balances[account.id] = max(
-                basis_balances[account.id]
-                - (gross_deduction * (Decimal("1.00") - capital_gain_fraction)),
-                Decimal("0.00"),
-            ).quantize(Decimal("0.01"))
-
-        result.net_amount = (result.net_amount + net_amount).quantize(Decimal("0.01"))
-        if has_basis_tracking:
-            result.capital_gains_tax = (result.capital_gains_tax + tax_amount).quantize(
-                Decimal("0.01")
-            )
-        elif taxes_apply:
-            result.taxable_amount = (result.taxable_amount + taxable_portion).quantize(
-                Decimal("0.01")
-            )
-        result.liquidation_expenses = (result.liquidation_expenses + liquidation_expense).quantize(
-            Decimal("0.01")
-        )
-        remaining_net = (remaining_net - net_amount).quantize(Decimal("0.01"))
-        # Rounding gross withdrawals up can satisfy the requested net amount by
-        # a cent. Treat that as fully funded instead of running a second,
-        # negative withdrawal that creates compensating micro cash flows.
-        if remaining_net <= Decimal("0.00"):
-            return result
-
-    result.unfunded_amount = remaining_net
-    return result
-
-
-def _withdrawal_has_tax_consequences(account: ProjectionAccount) -> bool:
-    if account.category in {"cash", "checking", "savings"}:
-        return False
-    if (
-        account.category == "retirement"
-        and account.retirement_tax_treatment == RetirementTaxTreatment.roth
-    ):
-        return False
-    return True
-
-
-def _liquidation_expense_rate(account: ProjectionAccount) -> Decimal:
-    if account.liquidation_expense_rate is not None:
-        return account.liquidation_expense_rate
-    return DEFAULT_LIQUIDATION_EXPENSE_RATES.get(account.category, Decimal("0.000000"))
-
-
-def _funding_priority(account: ProjectionAccount) -> tuple[int, str] | None:
-    account_name = account.name.casefold()
-    if account_name in DEFAULT_FUNDING_ACCOUNT_NAMES:
-        return (0, account_name)
-    if account.category in BANK_CATEGORIES:
-        return (1, account_name)
-    if (
-        account.category in {"taxable_investment", "brokerage"}
-        and account.liquidity_class in LIQUIDITY_CLASSES
-    ):
-        return (2, account_name)
-    if (
-        account.category == "retirement"
-        and account.retirement_tax_treatment == RetirementTaxTreatment.roth
-    ):
-        return (3, account_name)
-    if account.category == "retirement" and account.liquidity_class in LIQUIDITY_CLASSES:
-        return (4, account_name)
-    if account.category != "real_estate" and account.liquidity_class in LIQUIDITY_CLASSES:
-        return (5, account_name)
-    return None
-
-
-def _withdrawal_order(
-    asset_accounts: Sequence[ProjectionAccount],
-    accounts_by_id: dict[UUID, ProjectionAccount],
-    preferred_account_id: UUID | None,
-) -> list[ProjectionAccount]:
-    ordered_accounts = sorted(
-        (account for account in asset_accounts if _funding_priority(account) is not None),
-        key=_funding_priority,
-    )
-    if preferred_account_id is None:
-        return ordered_accounts
-    preferred_account = accounts_by_id[preferred_account_id]
-    if _funding_priority(preferred_account) is None:
-        return [preferred_account] + [
-            account for account in ordered_accounts if account.id != preferred_account_id
-        ]
-    preferred_index = next(
-        index
-        for index, account in enumerate(ordered_accounts)
-        if account.id == preferred_account_id
-    )
-    return ordered_accounts[preferred_index:]
 
 
 def _cash_flow_priority(account: ProjectionAccount) -> tuple[int, str]:
