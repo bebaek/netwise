@@ -144,13 +144,13 @@ Suggested initial slices:
 
 ## P2: Frontend component boundaries
 
-**Status:** `in progress`
+**Status:** `completed`
 
 ### Directly verified findings
 
-- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 686 lines after projection-event, spending-plan, Social Security, real-estate, and income/tax boundaries were extracted.
+- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 123 lines after all major Planning domains were extracted.
 - Extracted sections own their local edit state and mutations while consuming shared cached data needed by projection orchestration.
-- Projection configuration and results remain combined in the parent page.
+- `PlanningPage` now composes domain sections and retains only shared query data and route-level projection callbacks.
 
 ### Intended work
 
@@ -166,8 +166,8 @@ Suggested initial slices:
 - [x] Extract household-person and Social Security state, mutations, errors, and rendering.
 - [x] Extract automatic and planned real-estate sale mutations, errors, and rendering.
 - [x] Extract income-source and annual-tax-record mutations, errors, and rendering.
-- [ ] Extract the next cohesive Planning domain section.
-- [ ] Reduce `PlanningPage` to route-level orchestration and genuinely shared projection state.
+- [x] Extract projection settings, spending coordination, transfers, and result rendering.
+- [x] Reduce `PlanningPage` to route-level orchestration and genuinely shared projection state.
 
 ### Completion criteria
 
@@ -306,6 +306,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Planning boundary completion | Extracted projection settings, spending coordination, recurring transfers, and projection results into focused components; `PlanningPage` fell from 686 to 123 lines and the frontend component-boundary audit item was completed. |
 | 2026-07-25 | Planning income and tax boundary | Extracted income-source and annual-tax-record mutations, errors, and rendering into `IncomeAndTaxSection`; `PlanningPage` fell from 845 to 686 lines. |
 | 2026-07-25 | Planning real-estate boundary | Extracted automatic and planned property-sale mutations, errors, and rendering into real-estate planning sections; `PlanningPage` fell from 1,030 to 845 lines. |
 | 2026-07-25 | Planning Social Security boundary | Extracted household-person and Social Security estimate state, mutations, errors, and rendering into `SocialSecuritySection`; `PlanningPage` fell from 1,268 to 1,030 lines. |
