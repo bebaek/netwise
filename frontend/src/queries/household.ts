@@ -11,6 +11,7 @@ import {
   getNetWorthBreakdownHistory,
   listAccounts,
   listHouseholdAccountEvents,
+  listHouseholdMembers,
   listHouseholdSnapshots,
   updateAccount,
   updateAccountEvent,
@@ -22,6 +23,7 @@ import {
 export const householdQueryKeys = {
   all: (householdId: string) => ['households', householdId] as const,
   accounts: (householdId: string) => [...householdQueryKeys.all(householdId), 'accounts'] as const,
+  members: (householdId: string) => [...householdQueryKeys.all(householdId), 'members'] as const,
   events: (householdId: string) => [...householdQueryKeys.all(householdId), 'account-events'] as const,
   snapshotsAll: (householdId: string) => [
     ...householdQueryKeys.all(householdId),
@@ -121,6 +123,14 @@ export function useAccounts(householdId: string) {
   return useQuery({
     queryKey: householdQueryKeys.accounts(householdId),
     queryFn: ({ signal }) => listAccounts(householdId, signal),
+    enabled: Boolean(householdId),
+  });
+}
+
+export function useHouseholdMembers(householdId: string) {
+  return useQuery({
+    queryKey: householdQueryKeys.members(householdId),
+    queryFn: ({ signal }) => listHouseholdMembers(householdId, signal),
     enabled: Boolean(householdId),
   });
 }

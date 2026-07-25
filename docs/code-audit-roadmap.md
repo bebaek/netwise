@@ -83,19 +83,19 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ## P1: Frontend data and state architecture
 
-**Status:** `in progress`
+**Status:** `complete`
 
 ### Directly verified findings
 
-- `frontend/src/App.tsx` is now under 650 lines but still owns household membership/settings workflows and the final central refresh.
-- `frontend/src/pages/PlanningPage.tsx` is over 1,700 lines after absorbing all route-owned planning workflows, so its internal domain boundaries now need extraction.
+- `frontend/src/App.tsx` is now 411 lines and primarily owns routing, workspace selection, theme handling, shared financial queries, and projection execution.
+- `frontend/src/pages/PlanningPage.tsx` is over 1,700 lines after absorbing all route-owned planning workflows, so its internal domain boundaries now need extraction in the separate frontend component-boundaries item.
 - The original baseline loaded 18 API collections centrally and requested account events separately for every account. The first implemented slice batches household events and moves accounts, events, snapshots, and financial-summary data into TanStack Query.
 - Snapshot filtering and historical interpolation originally triggered the same full refresh. They now issue one domain-specific request each.
-- The remaining `refreshDashboard()` usage loads household membership on household selection and after a committed FinTrack import.
-- All route-only planning, balance, and asset collections now load when their page mounts; household membership is the remaining centrally loaded route domain.
+- Household membership is shared query state because authorization applies throughout the workspace; membership mutations, user administration, capabilities, imports, and exports are owned by `HouseholdSettingsPage`.
+- The central `refreshDashboard()` path has been eliminated.
 - Reproducible before/after counts are recorded in [`frontend-request-performance.md`](frontend-request-performance.md).
 
-The expected performance and maintainability impact is an inference from this directly verified request pattern; it should be measured during implementation.
+The measured performance impact and regression budgets are recorded in the linked request-performance document.
 
 ### Intended work
 
@@ -113,7 +113,7 @@ Suggested initial slices:
 - Accounts and account events — query reads, event batching, local drafts, and route-owned mutations implemented
 - Real estate — properties, analytics, mortgages, sales, liquidation strategies, and related mutations are route-owned
 - Planning data — account events, real estate, budget data, income sources, people, Social Security, transfers, and settings are route-owned
-- Household membership/settings
+- Household membership/settings — shared membership query and route-owned settings mutations implemented
 
 ### Implementation progress
 
@@ -130,7 +130,7 @@ Suggested initial slices:
 - [x] Extract spending-item and annual-tax-record queries and mutations into the Planning route.
 - [x] Extract income-source, household-person, and Social Security queries and mutations into the Planning route.
 - [x] Extract projection-transfer and projection-settings queries and mutations into the Planning route.
-- [ ] Migrate remaining route domains and eliminate the central dashboard refresh.
+- [x] Migrate remaining route domains and eliminate the central dashboard refresh.
 
 ### Completion criteria
 
@@ -272,6 +272,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-22 | Household settings data | Moved users, capabilities, membership mutations, imports, and exports into Settings; removed `refreshDashboard()` and reduced initial requests from 18 to 14. |
 | 2026-07-22 | Planning projection configuration | Moved projection transfers and settings into Planning; initial Overview requests fell from 22 to 18. |
 | 2026-07-22 | Planning people data | Moved income sources, household people, and Social Security estimates into Planning; initial Overview requests fell from 28 to 22. |
 | 2026-07-22 | Planning budget data | Moved spending items and annual tax records into Planning; initial Overview requests fell from 32 to 28. |

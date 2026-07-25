@@ -1,41 +1,151 @@
-import type { FormEventHandler } from 'react';
-import type { FintrackImportResult, Household, HouseholdMembership, User } from '../api';
+import { useState, type FormEvent, type FormEventHandler } from 'react';
+import type { FintrackImportResult, Household } from '../api';
+import { useHouseholdMembers } from '../queries/household';
+import {
+  useHouseholdSettingsData,
+  useHouseholdSettingsMutations,
+} from '../queries/householdSettings';
+
+function exportFilename(name: string): string {
+  const safeName = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'household';
+  return `netwise-${safeName}-export-${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function downloadJson(filename: string, value: unknown): void {
+  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function HouseholdSettingsPage({
   household,
-  members,
-  availableUsers,
-  adminToolsEnabled,
-  fintrackImportEnabled,
-  currentRole,
-  onDownloadExport,
+  authenticatedUserId,
   onCreateHousehold,
-  onCreateUser,
-  onRemoveMember,
-  onAddMember,
-  fintrackDryRun,
-  onFintrackDryRun,
-  onImportFintrack,
-  fintrackImportResult,
+  onCurrentUserRemoved,
 }: {
   household: Household;
-  members: HouseholdMembership[];
-  availableUsers: User[];
-  adminToolsEnabled: boolean;
-  fintrackImportEnabled: boolean;
-  currentRole: string;
-  onDownloadExport: () => void | Promise<void>;
+  authenticatedUserId: string;
   onCreateHousehold: FormEventHandler<HTMLFormElement>;
-  onCreateUser: FormEventHandler<HTMLFormElement>;
-  onRemoveMember: (userId: string) => void | Promise<void>;
-  onAddMember: FormEventHandler<HTMLFormElement>;
-  fintrackDryRun: boolean;
-  onFintrackDryRun: (dryRun: boolean) => void;
-  onImportFintrack: FormEventHandler<HTMLFormElement>;
-  fintrackImportResult: FintrackImportResult | null;
+  onCurrentUserRemoved: () => void | Promise<void>;
 }) {
+  const [error, setError] = useState('');
+  const [fintrackDryRun, setFintrackDryRun] = useState(true);
+  const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
+  const membersQuery = useHouseholdMembers(household.id);
+  const settingsData = useHouseholdSettingsData();
+  const mutations = useHouseholdSettingsMutations(household.id);
+  const members = membersQuery.data ?? [];
+  const users = settingsData.users.data ?? [];
+  const capabilities = settingsData.capabilities.data;
+  const currentRole = members.find(
+    (membership) => membership.user_id === authenticatedUserId,
+  )?.role ?? 'viewer';
+  const availableUsers = users.filter(
+    (user) => !members.some((membership) => membership.user_id === user.id),
+  );
+  const adminToolsEnabled = capabilities?.admin_tools_enabled ?? false;
+  const fintrackImportEnabled = capabilities?.fintrack_import_enabled ?? false;
+
+  async function onCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    const displayName = String(form.get('display_name') ?? '').trim();
+    const email = String(form.get('email') ?? '').trim();
+    if (!displayName) return;
+    setError('');
+    try {
+      await mutations.createHouseholdUser.mutateAsync({
+        display_name: displayName,
+        email: email || undefined,
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function onAddMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
+    setError('');
+    try {
+      await mutations.addMember.mutateAsync({
+        user_id: String(form.get('user_id') ?? '').trim(),
+        role: String(form.get('role') ?? '').trim(),
+      });
+      target.reset();
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function onRemoveMember(userId: string) {
+    setError('');
+    try {
+      await mutations.removeMember.mutateAsync(userId);
+      if (userId === authenticatedUserId) await onCurrentUserRemoved();
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function onDownloadExport() {
+    setError('');
+    try {
+      const result = await mutations.downloadExport.mutateAsync();
+      downloadJson(exportFilename(household.name), result);
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
+  async function onImportFintrack(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    if (!fintrackDryRun) {
+      const confirmed = window.confirm(
+        `Import FinTrack data into ${household.name}? This will write accounts, snapshots, and events to the database.`,
+      );
+      if (!confirmed) return;
+    }
+    setError('');
+    setFintrackImportResult(null);
+    try {
+      const result = await mutations.importData.mutateAsync({
+        household_id: household.id,
+        data_dir: String(form.get('data_dir') ?? '').trim(),
+        currency: String(form.get('currency') ?? '').trim() || undefined,
+        dry_run: fintrackDryRun,
+      });
+      setFintrackImportResult(result);
+    } catch (mutationError: unknown) {
+      setError(String(mutationError));
+    }
+  }
+
   return (
     <>
+      {error && <div className="error" role="alert">{error}</div>}
+      {membersQuery.error && <div className="error" role="alert">{String(membersQuery.error)}</div>}
+      {settingsData.users.error && (
+        <div className="error" role="alert">{String(settingsData.users.error)}</div>
+      )}
+      {settingsData.capabilities.error && (
+        <div className="error" role="alert">{String(settingsData.capabilities.error)}</div>
+      )}
+      {(membersQuery.isPending || settingsData.users.isPending || settingsData.capabilities.isPending) && (
+        <div className="card" role="status">Loading household settings…</div>
+      )}
       <section className="card">
         <div className="section-header">
           <div>
@@ -44,7 +154,12 @@ export function HouseholdSettingsPage({
           </div>
           <div className="management-actions">
             {adminToolsEnabled && ['owner', 'admin'].includes(currentRole) && (
-              <button type="button" className="secondary-button" onClick={onDownloadExport}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={mutations.isPending}
+                onClick={onDownloadExport}
+              >
                 Download household JSON
               </button>
             )}
@@ -56,7 +171,7 @@ export function HouseholdSettingsPage({
               <form onSubmit={onCreateUser} className="form-row">
                 <input name="display_name" placeholder="New user name" required />
                 <input name="email" type="email" placeholder="Email (optional)" />
-                <button type="submit">Add user</button>
+                <button type="submit" disabled={mutations.isPending}>Add user</button>
               </form>
             )}
           </div>
@@ -71,7 +186,12 @@ export function HouseholdSettingsPage({
               <span className="pill">{membership.role}</span>
               {['owner', 'admin'].includes(currentRole)
                 && (currentRole === 'owner' || membership.role !== 'owner') && (
-                <button type="button" className="secondary-button" onClick={() => onRemoveMember(membership.user_id)}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={mutations.isPending}
+                  onClick={() => onRemoveMember(membership.user_id)}
+                >
                   Remove
                 </button>
               )}
@@ -92,7 +212,7 @@ export function HouseholdSettingsPage({
               <option value="member">Member</option>
               <option value="viewer">Viewer</option>
             </select>
-            <button type="submit">Add member</button>
+            <button type="submit" disabled={mutations.isPending}>Add member</button>
           </form>
         )}
       </section>
@@ -115,11 +235,13 @@ export function HouseholdSettingsPage({
                 name="dry_run"
                 type="checkbox"
                 checked={fintrackDryRun}
-                onChange={(event) => onFintrackDryRun(event.target.checked)}
+                onChange={(event) => setFintrackDryRun(event.target.checked)}
               />
               Dry run
             </label>
-            <button type="submit">{fintrackDryRun ? 'Preview import' : 'Import for real'}</button>
+            <button type="submit" disabled={mutations.isPending}>
+              {fintrackDryRun ? 'Preview import' : 'Import for real'}
+            </button>
           </form>
           {fintrackImportResult && (
             <div className="import-result">

@@ -497,12 +497,12 @@ export function logout(): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' });
 }
 
-export function listUsers(): Promise<User[]> {
-  return request<User[]>('/users');
+export function listUsers(signal?: AbortSignal): Promise<User[]> {
+  return request<User[]>('/users', { signal });
 }
 
-export function getCapabilities(): Promise<Capabilities> {
-  return request<Capabilities>('/capabilities');
+export function getCapabilities(signal?: AbortSignal): Promise<Capabilities> {
+  return request<Capabilities>('/capabilities', { signal });
 }
 
 export function createUser(payload: { display_name: string; email?: string }): Promise<User> {
@@ -524,8 +524,11 @@ export function createHousehold(name: string, ownerUserId?: string): Promise<Hou
   });
 }
 
-export function listHouseholdMembers(householdId: string): Promise<HouseholdMembership[]> {
-  return request<HouseholdMembership[]>(`/households/${householdId}/members`);
+export function listHouseholdMembers(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<HouseholdMembership[]> {
+  return request<HouseholdMembership[]>(`/households/${householdId}/members`, { signal });
 }
 
 export function addHouseholdMember(

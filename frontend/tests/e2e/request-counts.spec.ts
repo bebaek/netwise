@@ -193,6 +193,36 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await page.waitForLoadState('networkidle');
   measurements.create_account_event = recorder.summarize();
 
+  recorder.reset();
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'People & household access', exact: true }))
+    .toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.load_household_settings_route_data = recorder.summarize();
+
+  const createUserForm = page.locator('form').filter({
+    has: page.getByPlaceholder('New user name'),
+  });
+  await createUserForm.getByPlaceholder('New user name').fill('Request Count User');
+  recorder.reset();
+  await createUserForm.getByRole('button', { name: 'Add user', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Request Count User', exact: true })).toBeAttached();
+  await page.waitForLoadState('networkidle');
+  measurements.create_household_user = recorder.summarize();
+
+  const addMemberForm = page.locator('form').filter({
+    has: page.getByRole('combobox', { name: 'Household member', exact: true }),
+  });
+  await addMemberForm.getByRole('combobox', { name: 'Household member', exact: true })
+    .selectOption({ label: 'Request Count User' });
+  await addMemberForm.getByRole('combobox', { name: 'Household role', exact: true })
+    .selectOption('viewer');
+  recorder.reset();
+  await addMemberForm.getByRole('button', { name: 'Add member', exact: true }).click();
+  await expect(page.getByText('Request Count User', { exact: true })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  measurements.add_household_member = recorder.summarize();
+
   recorder.dispose();
   await attachMeasurements(testInfo, measurements);
 
@@ -222,6 +252,9 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(initialPaths.some((path) => /^GET \/api\/social-security-estimates$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/projection-transfers$/.test(path))).toBe(false);
   expect(initialPaths.some((path) => /^GET \/api\/projection-settings\/[^/]+$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/capabilities$/.test(path))).toBe(false);
+  expect(initialPaths.some((path) => /^GET \/api\/users$/.test(path))).toBe(false);
+  expect(measurements.initial_authenticated_workspace_load.total).toBeLessThanOrEqual(14);
 
   expect(measurements.change_snapshot_account_filter.total).toBe(1);
   expect(Object.keys(measurements.change_snapshot_account_filter.by_method_and_path)).toEqual([
@@ -311,5 +344,22 @@ test('records representative frontend API request counts', async ({ page, isMobi
   expect(Object.keys(measurements.create_account_event.by_method_and_path).sort()).toEqual([
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
     expect.stringMatching(/^POST \/api\/accounts\/[^/]+\/events$/),
+  ]);
+
+  expect(measurements.load_household_settings_route_data.total).toBeLessThanOrEqual(4);
+  expect(Object.keys(measurements.load_household_settings_route_data.by_method_and_path).sort()).toEqual([
+    'GET /api/capabilities',
+    'GET /api/users',
+  ]);
+
+  expect(measurements.create_household_user.total).toBe(1);
+  expect(Object.keys(measurements.create_household_user.by_method_and_path)).toEqual([
+    'POST /api/users',
+  ]);
+
+  expect(measurements.add_household_member.total).toBeLessThanOrEqual(2);
+  expect(Object.keys(measurements.add_household_member.by_method_and_path).sort()).toEqual([
+    expect.stringMatching(/^GET \/api\/households\/[^/]+\/members$/),
+    expect.stringMatching(/^POST \/api\/households\/[^/]+\/members$/),
   ]);
 });

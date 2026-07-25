@@ -3,22 +3,12 @@ import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, 
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
-  FintrackImportResult,
   Household,
-  HouseholdMembership,
   NetWorthProjection,
   User,
-  addHouseholdMember,
   createHousehold,
-  createUser,
-  exportHousehold,
-  getCapabilities,
   getNetWorthProjection,
-  importFintrack,
   listHouseholds,
-  listHouseholdMembers,
-  listUsers,
-  removeHouseholdMember,
 } from './api';
 import {
   AppHeader,
@@ -28,9 +18,9 @@ import {
   type ThemePreference,
 } from './components/AppShell';
 import {
-  householdQueryKeys,
   useAccounts,
   useHouseholdFinancialSummary,
+  useHouseholdMembers,
 } from './queries/household';
 import { formatMoney } from './utils/format';
 import './styles.css';
@@ -92,25 +82,6 @@ function requiredString(form: FormData, key: string): string {
   return String(form.get(key) ?? '').trim();
 }
 
-function exportFilename(name: string): string {
-  const safeName = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '') || 'household';
-  return `netwise-${safeName}-export-${today()}.json`;
-}
-
-function downloadJson(filename: string, value: unknown): void {
-  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 function WorkspaceView({
   view,
   householdName,
@@ -138,41 +109,34 @@ function App({
   onLogout: () => Promise<void>;
 }) {
   const householdRequestId = useRef(0);
-  const dashboardRequestId = useRef(0);
   const [themePreference, setThemePreference] = useState<ThemePreference>(storedThemePreference);
   const [systemDarkTheme, setSystemDarkTheme] = useState<boolean>(systemPrefersDarkTheme);
-  const [users, setUsers] = useState<User[]>([authenticatedUser]);
-  const [selectedUserId] = useState<string>(authenticatedUser.id);
+  const selectedUserId = authenticatedUser.id;
   const [households, setHouseholds] = useState<Household[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>(() =>
     storedSelection(SELECTED_HOUSEHOLD_STORAGE_KEY),
   );
-  const [householdMembers, setHouseholdMembers] = useState<HouseholdMembership[]>([]);
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
-  const [fintrackImportResult, setFintrackImportResult] = useState<FintrackImportResult | null>(null);
-  const [fintrackDryRun, setFintrackDryRun] = useState<boolean>(true);
-  const [adminToolsEnabled, setAdminToolsEnabled] = useState<boolean>(false);
-  const [fintrackImportEnabled, setFintrackImportEnabled] = useState<boolean>(false);
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
-  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
-  const [loadedHouseholdId, setLoadedHouseholdId] = useState<string>('');
-  const [householdsLoading, setHouseholdsLoading] = useState<boolean>(false);
+  const [householdsLoading, setHouseholdsLoading] = useState<boolean>(true);
   const queryClient = useQueryClient();
   const accountsQuery = useAccounts(selectedHouseholdId);
+  const membersQuery = useHouseholdMembers(selectedHouseholdId);
   const financialSummary = useHouseholdFinancialSummary(
     selectedHouseholdId,
     showInterpolatedHistory,
   );
   const accounts = accountsQuery.data ?? [];
+  const householdMembers = membersQuery.data ?? [];
   const netWorth = financialSummary.netWorth.data ?? null;
   const history = financialSummary.history.data ?? null;
   const breakdownHistory = financialSummary.breakdownHistory.data ?? null;
   const queryDataLoading = Boolean(selectedHouseholdId) && [
     accountsQuery,
+    membersQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
@@ -180,15 +144,11 @@ function App({
 
   const queryDataError = [
     accountsQuery,
+    membersQuery,
     financialSummary.netWorth,
     financialSummary.history,
     financialSummary.breakdownHistory,
   ].find((query) => query.error)?.error;
-
-  const selectedUser = useMemo(
-    () => users.find((user) => user.id === selectedUserId) ?? authenticatedUser,
-    [authenticatedUser, users, selectedUserId],
-  );
 
   const selectedHousehold = useMemo(
     () => households.find((household) => household.id === selectedHouseholdId),
@@ -216,15 +176,6 @@ function App({
     (account) => account.account_kind === 'asset' && account.category === 'real_estate',
   );
 
-  const availableUsersForMembership = users.filter(
-    (user) => !householdMembers.some((membership) => membership.user_id === user.id),
-  );
-
-  async function refreshUsers() {
-    const userList = await listUsers();
-    setUsers(userList);
-  }
-
   async function refreshHouseholds(userId: string) {
     const requestId = ++householdRequestId.current;
     setHouseholdsLoading(true);
@@ -240,24 +191,6 @@ function App({
       });
     } finally {
       if (requestId === householdRequestId.current) setHouseholdsLoading(false);
-    }
-  }
-
-  async function refreshDashboard(householdId: string, refreshQueryData = true) {
-    const requestId = ++dashboardRequestId.current;
-    setDashboardLoading(true);
-    try {
-      const queryRefresh = refreshQueryData
-        ? queryClient.invalidateQueries({ queryKey: householdQueryKeys.all(householdId) })
-        : Promise.resolve();
-      const memberList = await listHouseholdMembers(householdId);
-      await queryRefresh;
-      if (requestId !== dashboardRequestId.current) return;
-
-      setHouseholdMembers(memberList);
-      setLoadedHouseholdId(householdId);
-    } finally {
-      if (requestId === dashboardRequestId.current) setDashboardLoading(false);
     }
   }
 
@@ -291,16 +224,6 @@ function App({
   }, [selectedHouseholdId]);
 
   useEffect(() => {
-    Promise.all([refreshUsers(), getCapabilities()])
-      .then(([, capabilities]) => {
-        setAdminToolsEnabled(capabilities.admin_tools_enabled);
-        setFintrackImportEnabled(capabilities.fintrack_import_enabled);
-      })
-      .catch((err: unknown) => setError(String(err)))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
     if (!selectedUserId) {
       householdRequestId.current += 1;
       setHouseholds([]);
@@ -315,35 +238,7 @@ function App({
   useEffect(() => {
     if (!selectedHouseholdId) return;
     setProjection(null);
-    setFintrackImportResult(null);
   }, [selectedHouseholdId]);
-
-  useEffect(() => {
-    if (!selectedHouseholdId) {
-      dashboardRequestId.current += 1;
-      setLoadedHouseholdId('');
-      setDashboardLoading(false);
-      return;
-    }
-    refreshDashboard(selectedHouseholdId, false).catch((err: unknown) => setError(String(err)));
-  }, [selectedHouseholdId]);
-
-  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    setError('');
-    const form = new FormData(target);
-    const displayName = String(form.get('display_name') ?? '').trim();
-    const email = String(form.get('email') ?? '').trim();
-    if (!displayName) return;
-    try {
-      const user = await createUser({ display_name: displayName, email: email || undefined });
-      target.reset();
-      setUsers((current) => [...current.filter((item) => item.id !== user.id), user]);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
 
   async function handleCreateHousehold(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -357,37 +252,6 @@ function App({
       target.reset();
       await refreshHouseholds(selectedUserId);
       setSelectedHouseholdId(household.id);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleAddHouseholdMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId) return;
-    const target = event.currentTarget;
-    const form = new FormData(target);
-    const userId = requiredString(form, 'user_id');
-    const role = requiredString(form, 'role');
-    setError('');
-    try {
-      await addHouseholdMember(selectedHouseholdId, { user_id: userId, role });
-      target.reset();
-      setHouseholdMembers(await listHouseholdMembers(selectedHouseholdId));
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleRemoveHouseholdMember(userId: string) {
-    if (!selectedHouseholdId) return;
-    setError('');
-    try {
-      await removeHouseholdMember(selectedHouseholdId, userId);
-      setHouseholdMembers(await listHouseholdMembers(selectedHouseholdId));
-      if (userId === selectedUserId) {
-        await refreshHouseholds(selectedUserId);
-      }
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -421,47 +285,6 @@ function App({
     }
   }
 
-  async function handleDownloadHouseholdExport() {
-    if (!selectedHouseholdId || !selectedHousehold) return;
-    setError('');
-    try {
-      const result = await exportHousehold(selectedHouseholdId);
-      downloadJson(exportFilename(selectedHousehold.name), result);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
-  async function handleImportFintrack(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedHouseholdId) return;
-    const target = event.currentTarget;
-    const form = new FormData(target);
-    const dryRun = form.get('dry_run') === 'on';
-    if (!dryRun) {
-      const confirmed = window.confirm(
-        `Import FinTrack data into ${selectedHousehold?.name ?? 'the selected household'}? This will write accounts, snapshots, and events to the database.`,
-      );
-      if (!confirmed) return;
-    }
-    setError('');
-    setFintrackImportResult(null);
-    try {
-      const result = await importFintrack({
-        household_id: selectedHouseholdId,
-        data_dir: requiredString(form, 'data_dir'),
-        currency: optionalString(form, 'currency') || 'USD',
-        dry_run: dryRun,
-      });
-      setFintrackImportResult(result);
-      if (!result.dry_run) {
-        await refreshDashboard(selectedHouseholdId);
-      }
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  }
-
   return (
     <main className="app-shell">
       <AppHeader
@@ -478,27 +301,14 @@ function App({
       {selectedHousehold && <AppNavigation />}
 
       {error && <div className="error" role="alert">{error}</div>}
-      {selectedHousehold && currentHouseholdRole === 'viewer' && loadedHouseholdId === selectedHousehold.id && (
+      {selectedHousehold && currentHouseholdRole === 'viewer' && !membersQuery.isPending && (
         <div className="card" role="status">You have read-only access to this household.</div>
       )}
-      {loading && <div className="card">Loading…</div>}
 
-      {!loading && users.length === 0 && (
-        <section className="card narrow">
-          <h2>Create your user</h2>
-          <p className="muted">Users own or join households. Authentication can be added later.</p>
-          <form onSubmit={handleCreateUser} className="form-grid compact-form">
-            <input name="display_name" placeholder="Your name" required />
-            <input name="email" type="email" placeholder="Email (optional)" />
-            <button type="submit">Create user</button>
-          </form>
-        </section>
-      )}
-
-      {!loading && !householdsLoading && users.length > 0 && households.length === 0 && (
+      {!householdsLoading && households.length === 0 && (
         <section className="card narrow">
           <h2>Create your household</h2>
-          <p className="muted">This household will be owned by {selectedUser?.display_name ?? 'the selected user'}.</p>
+          <p className="muted">This household will be owned by {authenticatedUser.display_name}.</p>
           <form onSubmit={handleCreateHousehold} className="form-row">
             <input name="name" placeholder="Home" required />
             <button type="submit">Create</button>
@@ -506,13 +316,11 @@ function App({
         </section>
       )}
 
-      {selectedHousehold && (dashboardLoading || queryDataLoading) && (
-        loadedHouseholdId !== selectedHousehold.id || queryDataLoading
-      ) && (
+      {selectedHousehold && queryDataLoading && (
         <div className="card" role="status">Loading {selectedHousehold.name}…</div>
       )}
 
-      {selectedHousehold && loadedHouseholdId === selectedHousehold.id && !queryDataLoading && (
+      {selectedHousehold && !queryDataLoading && (
         <Routes>
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route
@@ -586,20 +394,9 @@ function App({
               <WorkspaceView view="settings" householdName={selectedHousehold.name}>
                 <HouseholdSettingsPage
                   household={selectedHousehold}
-                  members={householdMembers}
-                  availableUsers={availableUsersForMembership}
-                  adminToolsEnabled={adminToolsEnabled}
-                  fintrackImportEnabled={fintrackImportEnabled}
-                  currentRole={currentHouseholdRole}
-                  onDownloadExport={handleDownloadHouseholdExport}
+                  authenticatedUserId={authenticatedUser.id}
                   onCreateHousehold={handleCreateHousehold}
-                  onCreateUser={handleCreateUser}
-                  onRemoveMember={handleRemoveHouseholdMember}
-                  onAddMember={handleAddHouseholdMember}
-                  fintrackDryRun={fintrackDryRun}
-                  onFintrackDryRun={setFintrackDryRun}
-                  onImportFintrack={handleImportFintrack}
-                  fintrackImportResult={fintrackImportResult}
+                  onCurrentUserRemoved={() => refreshHouseholds(selectedUserId)}
                 />
               </WorkspaceView>
             }

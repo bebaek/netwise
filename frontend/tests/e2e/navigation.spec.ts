@@ -77,7 +77,9 @@ test('shows progress while a projection is running', async ({ page }) => {
 
   const runningButton = page.getByRole('button', { name: 'Running projection…', exact: true });
   await expect(runningButton).toBeDisabled();
-  await expect(page.getByRole('status')).toContainText('Calculating your projection');
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Calculating your projection' }),
+  ).toContainText('Calculating your projection');
   await expect(page.locator('form[aria-busy="true"]')).toHaveCount(1);
 
   releaseProjection();
