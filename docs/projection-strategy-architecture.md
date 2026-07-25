@@ -2,7 +2,10 @@
 
 ## Status
 
-**Proposed.** This document records a future refactoring direction; it does not describe the current implementation.
+**Implementation in progress.** The persistence queries now live in
+`backend/app/analytics/projection_input.py`, which returns an immutable
+`ProjectionInput` container. Its members are still SQLAlchemy records, so the
+plain-data strategy boundary described below remains proposed.
 
 ## Context
 
@@ -12,8 +15,8 @@ outside API routes and supports configurable assumptions such as account yields,
 spending, income, tax records, mortgages, real-estate appreciation, and dated
 account events.
 
-However, the projection function currently also loads SQLAlchemy models,
-resolves settings, applies all calculation policies, and formats the API result.
+However, the projection engine still consumes SQLAlchemy records, resolves
+settings, applies all calculation policies, and formats the API result.
 Important behavioral decisions are embedded as private helpers and constants:
 
 - category-level return defaults;
@@ -46,6 +49,19 @@ monthly timing, and Monte Carlo return simulations.
 
 A small in-process registry of application-owned strategies is sufficient until
 there is a demonstrated need for more.
+
+## Implemented boundary
+
+`load_projection_input()` is now the only projection-specific persistence
+loader. It resolves active accounts, starting balances, profiles, sales,
+events, income, transfers, spending, settings, tax rate, and cost bases before
+the deterministic calculation begins. Optimization candidates reuse the same
+frozen `ProjectionInput` container.
+
+This is intentionally an intermediate boundary: the container prevents the
+engine from issuing additional projection queries, but its collections still
+contain ORM models. The next contract step is to map those records to immutable
+plain-data records before they reach the engine.
 
 ## Target structure
 
@@ -219,7 +235,8 @@ to a strategy.
 
 ## Current implementation references
 
-- Main implementation: `backend/app/analytics/projections.py`
+- Input loader and transitional contract: `backend/app/analytics/projection_input.py`
+- Deterministic engine: `backend/app/analytics/projections.py`
 - Projection endpoint: `backend/app/api/routes/dashboard.py`
 - Household settings: `backend/app/db/models.py` (`ProjectionSettings`)
 - Event scenario field: `backend/app/db/models.py` (`AccountEvent.scenario_id`)

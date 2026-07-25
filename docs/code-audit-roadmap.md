@@ -177,13 +177,13 @@ Suggested initial slices:
 
 ## P1: Projection engine boundaries
 
-**Status:** `not started`
+**Status:** `in progress`
 
 ### Directly verified findings
 
-- `backend/app/analytics/projections.py` is 2,149 lines.
-- `calculate_net_worth_projection()` spans roughly 710 lines.
-- The function accepts a SQLAlchemy `Session`, loads ORM data, resolves settings, executes projection behavior, performs optimization, and formats the response.
+- `backend/app/analytics/projections.py` is 1,984 lines after projection persistence loading was extracted.
+- `calculate_net_worth_projection()` spans 626 lines.
+- The function still accepts a SQLAlchemy `Session` as a compatibility boundary, consumes ORM-backed inputs, resolves settings, executes projection behavior, performs optimization, and formats the response.
 - `docs/projection-strategy-architecture.md` already proposes separating input loading, strategies, policies, and presentation.
 
 ### Intended work
@@ -204,6 +204,14 @@ Refactor incrementally while retaining the current deterministic output:
    - property sales
 5. Include strategy key/version and resolved assumptions in results where needed for reproducibility.
 6. Use existing tests as characterization tests and add focused unit tests for extracted policies.
+
+### Implementation progress
+
+- [x] Extract projection-specific SQLAlchemy queries into `load_projection_input()`.
+- [x] Add an immutable transitional `ProjectionInput` container and parity coverage.
+- [ ] Convert ORM-backed input members to immutable plain-data records.
+- [ ] Make deterministic projection calculation operate without a database session.
+- [ ] Extract focused projection policies and response formatting.
 
 ### Completion criteria
 
@@ -306,6 +314,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Projection input-loading boundary | Extracted projection persistence queries and cost-basis resolution into `projection_input.py`, added an immutable transitional input contract, and verified injected-input output parity. |
 | 2026-07-25 | Planning boundary completion | Extracted projection settings, spending coordination, recurring transfers, and projection results into focused components; `PlanningPage` fell from 686 to 123 lines and the frontend component-boundary audit item was completed. |
 | 2026-07-25 | Planning income and tax boundary | Extracted income-source and annual-tax-record mutations, errors, and rendering into `IncomeAndTaxSection`; `PlanningPage` fell from 845 to 686 lines. |
 | 2026-07-25 | Planning real-estate boundary | Extracted automatic and planned property-sale mutations, errors, and rendering into real-estate planning sections; `PlanningPage` fell from 1,030 to 845 lines. |
