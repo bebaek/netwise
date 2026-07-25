@@ -56,7 +56,10 @@ there is a demonstrated need for more.
 loader. It resolves active accounts, starting balances, profiles, sales,
 events, income, transfers, spending, settings, tax rate, and cost bases before
 the deterministic calculation begins. Optimization candidates reuse the same
-frozen `ProjectionInput` container.
+frozen `ProjectionInput` container. The route-facing
+`calculate_net_worth_projection()` function is now a compatibility adapter;
+`calculate_projection_from_input()` runs the deterministic engine and all
+optimization candidates without a database session.
 
 This is intentionally an intermediate boundary: the container prevents the
 engine from issuing additional projection queries, but its collections still
@@ -236,7 +239,8 @@ to a strategy.
 ## Current implementation references
 
 - Input loader and transitional contract: `backend/app/analytics/projection_input.py`
-- Deterministic engine: `backend/app/analytics/projections.py`
+- Deterministic in-memory entry point: `calculate_projection_from_input()` in `backend/app/analytics/projections.py`
+- Route-facing persistence adapter: `calculate_net_worth_projection()` in `backend/app/analytics/projections.py`
 - Projection endpoint: `backend/app/api/routes/dashboard.py`
 - Household settings: `backend/app/db/models.py` (`ProjectionSettings`)
 - Event scenario field: `backend/app/db/models.py` (`AccountEvent.scenario_id`)

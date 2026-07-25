@@ -181,9 +181,9 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `backend/app/analytics/projections.py` is 1,984 lines after projection persistence loading was extracted.
-- `calculate_net_worth_projection()` spans 626 lines.
-- The function still accepts a SQLAlchemy `Session` as a compatibility boundary, consumes ORM-backed inputs, resolves settings, executes projection behavior, performs optimization, and formats the response.
+- `backend/app/analytics/projections.py` is 2,008 lines after persistence loading and the database-free entry point were separated.
+- The route-facing `calculate_net_worth_projection()` adapter spans 30 lines; the in-memory `calculate_projection_from_input()` core spans 611 lines.
+- The compatibility adapter accepts a SQLAlchemy `Session`, while the deterministic core consumes a detached `ProjectionInput`, resolves settings, executes projection behavior, performs optimization, and formats the response.
 - `docs/projection-strategy-architecture.md` already proposes separating input loading, strategies, policies, and presentation.
 
 ### Intended work
@@ -210,7 +210,7 @@ Refactor incrementally while retaining the current deterministic output:
 - [x] Extract projection-specific SQLAlchemy queries into `load_projection_input()`.
 - [x] Add an immutable transitional `ProjectionInput` container and parity coverage.
 - [ ] Convert ORM-backed input members to immutable plain-data records.
-- [ ] Make deterministic projection calculation operate without a database session.
+- [x] Make deterministic projection calculation operate without a database session.
 - [ ] Extract focused projection policies and response formatting.
 
 ### Completion criteria
@@ -314,6 +314,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Database-free projection core | Split the route-facing persistence adapter from `calculate_projection_from_input()`, moved optimization candidate runs onto the in-memory core, and verified output parity with a detached input. |
 | 2026-07-25 | Projection input-loading boundary | Extracted projection persistence queries and cost-basis resolution into `projection_input.py`, added an immutable transitional input contract, and verified injected-input output parity. |
 | 2026-07-25 | Planning boundary completion | Extracted projection settings, spending coordination, recurring transfers, and projection results into focused components; `PlanningPage` fell from 686 to 123 lines and the frontend component-boundary audit item was completed. |
 | 2026-07-25 | Planning income and tax boundary | Extracted income-source and annual-tax-record mutations, errors, and rendering into `IncomeAndTaxSection`; `PlanningPage` fell from 845 to 686 lines. |

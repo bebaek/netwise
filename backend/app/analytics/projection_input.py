@@ -35,6 +35,7 @@ class ProjectionInput:
     follow-up step.
     """
 
+    household_id: UUID
     accounts: list[Account]
     initial_balances: dict[UUID, Decimal]
     mortgage_profiles: dict[UUID, MortgageProfile]
@@ -134,6 +135,7 @@ def load_projection_input(
     tax_rate = _latest_effective_tax_rate(db, household_id)
     cost_bases, cost_basis_estimates = _resolve_cost_bases(db, accounts, start_date)
     return ProjectionInput(
+        household_id=household_id,
         accounts=accounts,
         initial_balances=initial_balances,
         mortgage_profiles=mortgage_profiles,

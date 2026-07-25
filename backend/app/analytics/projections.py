@@ -158,6 +158,13 @@ AccountEventInflowTypes = {
 }
 
 
+def _validate_projection_request(start_year: int, end_year: int, interval: str) -> None:
+    if end_year < start_year:
+        raise ValueError("end_year must be greater than or equal to start_year")
+    if interval not in {"annual", "quarterly", "monthly"}:
+        raise ValueError("interval must be one of: annual, quarterly, monthly")
+
+
 def calculate_net_worth_projection(
     db: Session,
     household_id: UUID,
@@ -169,39 +176,58 @@ def calculate_net_worth_projection(
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
     interval: str = "annual",
-    _projection_data: ProjectionInput | None = None,
+) -> dict:
+    """Compatibility adapter that loads persisted input before projection."""
+    _validate_projection_request(start_year, end_year, interval)
+    projection_input = load_projection_input(
+        db,
+        household_id,
+        start_date=date(start_year, 1, 1),
+        end_date=date(end_year, 12, 31),
+    )
+    return calculate_projection_from_input(
+        projection_input,
+        start_year=start_year,
+        end_year=end_year,
+        annual_spending=annual_spending,
+        spending_inflation_rate=spending_inflation_rate,
+        spending_account_id=spending_account_id,
+        tax_account_id=tax_account_id,
+        interval=interval,
+    )
+
+
+def calculate_projection_from_input(
+    projection_input: ProjectionInput,
+    *,
+    start_year: int,
+    end_year: int,
+    annual_spending: Decimal | None = None,
+    spending_inflation_rate: Decimal | None = None,
+    spending_account_id: UUID | None = None,
+    tax_account_id: UUID | None = None,
+    interval: str = "annual",
     _scheduled_sales: dict[UUID, date | None] | None = None,
     _skip_optimization: bool = False,
 ) -> dict:
-    if end_year < start_year:
-        raise ValueError("end_year must be greater than or equal to start_year")
-    if interval not in {"annual", "quarterly", "monthly"}:
-        raise ValueError("interval must be one of: annual, quarterly, monthly")
-
+    """Run the deterministic projection without database access."""
+    _validate_projection_request(start_year, end_year, interval)
+    household_id = projection_input.household_id
     projection_date = _current_date()
-    start_date = date(start_year, 1, 1)
-    if _projection_data is None:
-        _projection_data = load_projection_input(
-            db,
-            household_id,
-            start_date=start_date,
-            end_date=date(end_year, 12, 31),
-        )
-
-    accounts = _projection_data.accounts
-    initial_balances = _projection_data.initial_balances
-    mortgage_profiles = _projection_data.mortgage_profiles
-    property_profiles = _projection_data.property_profiles
-    real_estate_sales = _projection_data.real_estate_sales
-    automatic_sale_strategies = _projection_data.automatic_sale_strategies
-    projection_events = _projection_data.projection_events
-    income_sources = _projection_data.income_sources
-    projection_transfers = _projection_data.projection_transfers
-    spending_items = _projection_data.spending_items
-    projection_settings = _projection_data.projection_settings
-    tax_rate = _projection_data.tax_rate
-    cost_bases = _projection_data.cost_bases
-    cost_basis_estimates = _projection_data.cost_basis_estimates
+    accounts = projection_input.accounts
+    initial_balances = projection_input.initial_balances
+    mortgage_profiles = projection_input.mortgage_profiles
+    property_profiles = projection_input.property_profiles
+    real_estate_sales = projection_input.real_estate_sales
+    automatic_sale_strategies = projection_input.automatic_sale_strategies
+    projection_events = projection_input.projection_events
+    income_sources = projection_input.income_sources
+    projection_transfers = projection_input.projection_transfers
+    spending_items = projection_input.spending_items
+    projection_settings = projection_input.projection_settings
+    tax_rate = projection_input.tax_rate
+    cost_bases = projection_input.cost_bases
+    cost_basis_estimates = projection_input.cost_basis_estimates
 
     balances = dict(initial_balances)
     # Cost basis is only tracked for taxable investment accounts and must be
@@ -292,8 +318,6 @@ def calculate_net_worth_projection(
         ]
         if optimization_strategies:
             return _optimize_liquid_runway_sales(
-                db,
-                household_id,
                 start_year=start_year,
                 end_year=end_year,
                 annual_spending=annual_spending,
@@ -301,7 +325,7 @@ def calculate_net_worth_projection(
                 spending_account_id=spending_account_id,
                 tax_account_id=tax_account_id,
                 interval=interval,
-                projection_data=_projection_data,
+                projection_input=projection_input,
                 strategies=optimization_strategies,
             )
 
@@ -787,8 +811,6 @@ def calculate_net_worth_projection(
 
 
 def _optimize_liquid_runway_sales(
-    db: Session,
-    household_id: UUID,
     *,
     start_year: int,
     end_year: int,
@@ -797,7 +819,7 @@ def _optimize_liquid_runway_sales(
     spending_account_id: UUID | None,
     tax_account_id: UUID | None,
     interval: str,
-    projection_data: ProjectionInput,
+    projection_input: ProjectionInput,
     strategies: list[RealEstateLiquidationStrategy],
 ) -> dict:
     """Choose ordered March 1 property sales that delay retirement withdrawals longest."""
@@ -807,7 +829,7 @@ def _optimize_liquid_runway_sales(
             strategy.priority,
             next(
                 account.name.lower()
-                for account in projection_data.accounts
+                for account in projection_input.accounts
                 if account.id == strategy.property_account_id
             ),
         ),
@@ -826,9 +848,8 @@ def _optimize_liquid_runway_sales(
         if schedule_key in evaluated_schedules:
             return
         evaluated_schedules.add(schedule_key)
-        result = calculate_net_worth_projection(
-            db,
-            household_id,
+        result = calculate_projection_from_input(
+            projection_input,
             start_year=start_year,
             end_year=end_year,
             annual_spending=annual_spending,
@@ -836,12 +857,11 @@ def _optimize_liquid_runway_sales(
             spending_account_id=spending_account_id,
             tax_account_id=tax_account_id,
             interval=interval,
-            _projection_data=projection_data,
             _scheduled_sales=schedule,
             _skip_optimization=True,
         )
         schedules_evaluated += 1
-        score = _liquid_runway_score(result, projection_data.accounts)
+        score = _liquid_runway_score(result, projection_input.accounts)
         if best_score is None or score > best_score:
             best_result = result
             best_score = score
@@ -852,7 +872,9 @@ def _optimize_liquid_runway_sales(
     if best_result is None:
         raise ValueError("Unable to evaluate property sale schedules")
 
-    first_retirement_date = _first_retirement_withdrawal_date(best_result, projection_data.accounts)
+    first_retirement_date = _first_retirement_withdrawal_date(
+        best_result, projection_input.accounts
+    )
     candidate_end_year = first_retirement_date.year if first_retirement_date else end_year
     while True:
         for schedule in _ordered_march_sale_schedules(
@@ -866,15 +888,17 @@ def _optimize_liquid_runway_sales(
         if best_result is None:
             raise ValueError("Unable to evaluate property sale schedules")
         expanded_retirement_date = _first_retirement_withdrawal_date(
-            best_result, projection_data.accounts
+            best_result, projection_input.accounts
         )
         expanded_end_year = expanded_retirement_date.year if expanded_retirement_date else end_year
         if expanded_end_year <= candidate_end_year or candidate_end_year == end_year:
             break
         candidate_end_year = min(expanded_end_year, end_year)
 
-    accounts_by_id = {account.id: account for account in projection_data.accounts}
-    first_retirement_date = _first_retirement_withdrawal_date(best_result, projection_data.accounts)
+    accounts_by_id = {account.id: account for account in projection_input.accounts}
+    first_retirement_date = _first_retirement_withdrawal_date(
+        best_result, projection_input.accounts
+    )
     best_result["property_sale_optimization"] = {
         "mode": "maximize_liquid_runway",
         "candidate_month": 3,
