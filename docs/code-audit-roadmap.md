@@ -2,12 +2,13 @@
 
 ## Status
 
-**Accepted for future tracking.**
+**Completed on 2026-07-25.**
 
 - Audit date: 2026-07-22
 - Audited revision: `7fa9100`
+- Completion validation: GitHub Actions run [`30175099620`](https://github.com/bebaek/netwise/actions/runs/30175099620)
 - Default owner: unassigned
-- Review cadence: update this document when an item is started, completed, superseded, or split into an issue/ADR
+- Review cadence: reopen or supersede an item when later work changes its assumptions
 
 Status values used below:
 
@@ -17,17 +18,18 @@ Status values used below:
 - `completed`
 - `superseded`
 
-## Baseline validation
+## Completion validation
 
-The following checks passed at the audited revision:
+The completed roadmap was validated locally and by GitHub Actions:
 
-- Backend: `uv run --extra dev pytest -q` — 56 tests passed
-- Backend: `uv run --extra dev ruff check .` — passed
-- Frontend: `npm run lint` — passed
-- Frontend: `npm run build` — passed
-- Git working tree was clean
+- Backend: `uv run --no-sync pytest -q` — 94 tests passed without warnings.
+- Backend: `uv run --no-sync ruff check app tests` — passed.
+- Frontend: `npm run lint` and `npm run build` — passed.
+- Database: the complete Alembic chain applied to an empty PostgreSQL 16 database.
+- Browser: 14 desktop Chromium Playwright tests passed against an isolated Compose stack.
+- Containers: the production Compose configuration validated and both production images built.
 
-Playwright was not run because its configured workflow requires the live Docker Compose application and a seeded database. Backend tests emitted one FastAPI/Starlette test-client deprecation warning.
+`npm audit` continues to report a React Router advisory affecting RSC mode. Netwise is a Vite SPA and does not use RSC mode; no non-vulnerable compatible release was available when this roadmap was closed, so the advisory remains monitored rather than suppressed.
 
 ## Priority summary
 
@@ -35,10 +37,10 @@ Playwright was not run because its configured workflow requires the live Docker 
 | --- | --- | --- |
 | P0 | Add authentication and household-level authorization | completed |
 | P1 | Decompose frontend server state and remove full-dashboard reloads | completed |
-| P1 | Refactor projections around pure, typed inputs and policies | not started |
-| P1 | Separate development deployment from supported production deployment | not started |
-| P2 | Extract focused component boundaries from large frontend pages | in progress |
-| P2 | Bring documentation, licensing, and CI in line with the implementation | not started |
+| P1 | Refactor projections around pure, typed inputs and policies | completed |
+| P1 | Separate development deployment from supported production deployment | completed |
+| P2 | Extract focused component boundaries from large frontend pages | completed |
+| P2 | Bring documentation, licensing, and CI in line with the implementation | completed |
 
 ## P0: Authentication and household authorization
 
