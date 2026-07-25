@@ -129,30 +129,83 @@ Behavior:
 
 ## Backups
 
-Backup requirements:
+Create a transaction-consistent PostgreSQL custom-format archive while the
+application is running:
 
-- Database backup command or container job.
-- Full household JSON export from the app.
-- Clear restore documentation.
-- Upgrade notes that mention migration compatibility.
+```bash
+./scripts/backup-production.sh
+```
+
+The default destination is the ignored `backups/` directory. Pass a different
+directory as the first argument for storage on a protected filesystem:
+
+```bash
+./scripts/backup-production.sh /srv/netwise/backups
+```
+
+Each run writes a timestamped `.dump` archive and a `.sha256` checksum using an
+owner-only umask. The script starts only PostgreSQL if needed, validates the
+archive with `pg_restore --list`, and never stops the application. The checksum
+detects accidental corruption but does not authenticate or encrypt the backup.
+Financial data in the archive is plaintext to anyone who can read it; encrypt
+off-host copies and test retention and deletion policies appropriate to the
+household.
+
+Restore is deliberately destructive and requires an explicit confirmation flag:
+
+```bash
+./scripts/restore-production.sh \
+  /srv/netwise/backups/netwise-YYYYMMDDTHHMMSSZ.dump \
+  --confirm-destroy-current-data
+```
+
+Before changing the database, the restore script verifies the checksum when its
+sidecar is present and validates the archive. It then stops frontend and backend
+services, terminates remaining database sessions, drops and recreates the
+`netwise` database from the archive, runs current migrations, and starts the
+production stack with health checks. If restore or migration fails, application
+services remain stopped for inspection.
+
+Both scripts use `.env.production`, `compose.production.yml`, and the `netwise`
+Compose project by default. Automation can override
+`NETWISE_PRODUCTION_ENV_FILE`, `NETWISE_PRODUCTION_COMPOSE_FILE`, and
+`NETWISE_PRODUCTION_PROJECT`. Set `NETWISE_PRODUCTION_ENV_FILE=-` only when all
+required values are already supplied securely in the process environment.
 
 Recommended backup artifacts:
 
-- PostgreSQL dump
-- Application configuration, excluding secrets where possible
-- Exported household JSON for portability
+- PostgreSQL custom-format dump and checksum
+- The non-secret configuration template and a separately protected credential record
+- Application-level household JSON exports when portability is required
 
 ## Upgrades
 
-Upgrades should run database migrations explicitly.
+Use this order so a failed image build does not interrupt the running service and
+a migration never races the old backend:
 
-Preferred process:
+1. Create and retain a verified backup with `backup-production.sh`.
+2. Fetch and check out the intended Netwise release.
+3. Build the new images while the current containers continue running.
+4. Stop frontend and backend services.
+5. Run the one-shot migration job.
+6. Start the stack and wait for health checks.
+7. Verify both public health paths and representative application data.
 
-1. Back up database.
-2. Pull new container images.
-3. Run migrations.
-4. Start application services.
-5. Verify health endpoint.
+```bash
+./scripts/backup-production.sh /srv/netwise/backups
+docker compose --env-file .env.production -f compose.production.yml build
+docker compose --env-file .env.production -f compose.production.yml stop frontend backend
+docker compose --env-file .env.production -f compose.production.yml run --rm migrate
+docker compose --env-file .env.production -f compose.production.yml up -d --wait
+curl --fail https://finance.example.com/health/live
+curl --fail https://finance.example.com/api/health/ready
+```
+
+If image building fails, the old application remains running. If migration fails,
+leave application services stopped and inspect the migration and PostgreSQL logs.
+To roll back with a pre-upgrade archive, first restore the matching older
+application checkout or images; otherwise `restore-production.sh` will correctly
+apply migrations from the currently checked-out release after restoring.
 
 ## Health checks
 
@@ -204,7 +257,6 @@ Self-hosted operators control data retention. The app should provide tools to de
 - Multi-stage backend image built from `backend/uv.lock` with pinned uv
 - Frontend images built from `package-lock.json` with `npm ci`
 - Explicit `migrate` Compose service
-- Backup script (planned)
-- Restore script (planned)
-- Upgrade documentation (in progress)
+- Exercised PostgreSQL backup and destructive restore scripts
+- Upgrade documentation and rehearsal
 - Helm chart after the Docker Compose path is stable

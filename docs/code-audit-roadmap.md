@@ -231,7 +231,7 @@ Refactor incrementally while retaining the current deterministic output:
 
 ## P1: Development and production deployment separation
 
-**Status:** `in progress`
+**Status:** `completed`
 
 ### Directly verified findings
 
@@ -241,7 +241,7 @@ Refactor incrementally while retaining the current deterministic output:
 - Administrative tools are disabled in both committed Compose paths; production does not expose an override for that setting.
 - Development backend startup still runs Alembic automatically; production overrides that command and provides an explicit one-shot migration service.
 - Backend and frontend Docker builds now install from committed lockfiles: pinned uv runs `uv sync --locked` for the backend, and both frontend images run `npm ci`.
-- Production setup and HTTPS termination are documented with implemented setting names; backup, restore, and complete upgrade procedures still need implementation and exercise.
+- Production setup, HTTPS termination, backup, destructive restore, and safe upgrade ordering are documented with implemented commands and have been exercised against disposable production stacks.
 
 ### Intended work
 
@@ -275,7 +275,7 @@ Production mode should provide:
 - [x] Separate production migrations from backend application startup.
 - [x] Add PostgreSQL, backend, and frontend health checks.
 - [x] Make backend and frontend images install dependencies from committed lockfiles.
-- [ ] Reconcile and exercise production backup, restore, and complete upgrade documentation.
+- [x] Implement and exercise production backup, destructive restore, and complete upgrade procedures.
 
 ### Completion criteria
 
@@ -330,6 +330,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Production recovery and upgrades | Added checksum-producing custom-format PostgreSQL backups and confirmation-gated destructive restores; verified database replacement, post-restore migrations, service health, owner-only artifact permissions, and the documented backup-build-stop-migrate-start upgrade sequence. |
 | 2026-07-25 | Reproducible container dependencies | Replaced unconstrained backend `pip install` with a pinned uv dependency stage using `uv.lock`, copied only the resulting production virtual environment into the runtime image, and moved the development frontend image to `npm ci`. |
 | 2026-07-25 | Production Compose boundary | Added an external-password-gated production stack that publishes only Nginx, isolates PostgreSQL on an internal network, enables secure cookies, keeps signup and admin tools disabled, health-checks every runtime service, and runs Alembic through an explicit one-shot profile. |
 | 2026-07-25 | Production frontend image | Added a multi-stage, `npm ci`-based Vite build served by Nginx with SPA routing, same-origin API proxying, immutable asset caching, and a container health check; the existing Vite image remains the development path. |

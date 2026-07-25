@@ -106,7 +106,16 @@ cookies are marked secure, so put an HTTPS terminator such as Caddy, Nginx, or a
 managed load balancer in front before using the application. Do not expose the
 plain HTTP port directly to an untrusted network. See
 [`docs/self-hosted-operations.md`](docs/self-hosted-operations.md) for the
-service boundaries and migration workflow.
+service boundaries, backup and restore procedures, and safe upgrade ordering.
+
+Create an owner-readable backup with a checksum, or perform a confirmed
+destructive restore, using:
+
+```bash
+./scripts/backup-production.sh
+./scripts/restore-production.sh backups/netwise-YYYYMMDDTHHMMSSZ.dump \
+  --confirm-destroy-current-data
+```
 
 The standalone frontend image can also be built with:
 
