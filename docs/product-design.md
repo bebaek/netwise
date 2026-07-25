@@ -282,7 +282,11 @@ Historical events improve expense estimation by explaining net worth changes. Fu
 
 ## Projection scenarios
 
-A scenario contains assumptions for future projection.
+A scenario contains assumptions for future projection. The initial implementation will use named,
+materialized scenarios: duplicating a scenario creates an independent copy of its future assumptions,
+while current balances and historical household facts remain shared. See the
+[Projection Scenarios Implementation Plan](projection-scenarios-plan.md) for the data model, migration,
+API, comparison workflow, and delivery slices.
 
 Examples:
 
