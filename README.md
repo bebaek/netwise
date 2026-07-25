@@ -88,7 +88,10 @@ printf 'NETWISE_POSTGRES_PASSWORD=%s\nNETWISE_HTTP_BIND_ADDRESS=127.0.0.1\nNETWI
 chmod 600 .env.production
 ```
 
-Build the images, run the one-shot migration job, and then start the application:
+Build the images, run the one-shot migration job, and then start the application.
+The backend image resolves production dependencies from `backend/uv.lock` with a
+pinned uv release, and both frontend images install from `package-lock.json` with
+`npm ci`:
 
 ```bash
 docker compose --env-file .env.production -f compose.production.yml build

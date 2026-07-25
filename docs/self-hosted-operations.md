@@ -42,7 +42,9 @@ The password is restricted to hexadecimal characters so it can safely be
 interpolated into the PostgreSQL connection URL. Compose rejects a missing or
 empty password.
 
-Build and migrate before the first startup:
+Build and migrate before the first startup. Container dependency installation is
+lockfile-driven: the backend dependency stage runs pinned uv with
+`uv sync --locked`, and frontend builds use `npm ci`.
 
 ```bash
 docker compose --env-file .env.production -f compose.production.yml build
@@ -199,6 +201,8 @@ Self-hosted operators control data retention. The app should provide tools to de
 
 - `docker-compose.yml` for development
 - `compose.production.yml` and `production.env.example` for production
+- Multi-stage backend image built from `backend/uv.lock` with pinned uv
+- Frontend images built from `package-lock.json` with `npm ci`
 - Explicit `migrate` Compose service
 - Backup script (planned)
 - Restore script (planned)

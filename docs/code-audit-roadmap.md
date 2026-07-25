@@ -240,7 +240,7 @@ Refactor incrementally while retaining the current deterministic output:
 - Development database credentials remain hardcoded for local use; production Compose rejects a missing external database password.
 - Administrative tools are disabled in both committed Compose paths; production does not expose an override for that setting.
 - Development backend startup still runs Alembic automatically; production overrides that command and provides an explicit one-shot migration service.
-- The backend Docker build does not use `uv.lock`; the development frontend build uses `npm install`, while the production frontend image uses `npm ci`.
+- Backend and frontend Docker builds now install from committed lockfiles: pinned uv runs `uv sync --locked` for the backend, and both frontend images run `npm ci`.
 - Production setup and HTTPS termination are documented with implemented setting names; backup, restore, and complete upgrade procedures still need implementation and exercise.
 
 ### Intended work
@@ -274,7 +274,7 @@ Production mode should provide:
 - [x] Require an external production database password and keep public signup and admin tools disabled.
 - [x] Separate production migrations from backend application startup.
 - [x] Add PostgreSQL, backend, and frontend health checks.
-- [ ] Make the backend image install from `uv.lock`.
+- [x] Make backend and frontend images install dependencies from committed lockfiles.
 - [ ] Reconcile and exercise production backup, restore, and complete upgrade documentation.
 
 ### Completion criteria
@@ -330,6 +330,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Reproducible container dependencies | Replaced unconstrained backend `pip install` with a pinned uv dependency stage using `uv.lock`, copied only the resulting production virtual environment into the runtime image, and moved the development frontend image to `npm ci`. |
 | 2026-07-25 | Production Compose boundary | Added an external-password-gated production stack that publishes only Nginx, isolates PostgreSQL on an internal network, enables secure cookies, keeps signup and admin tools disabled, health-checks every runtime service, and runs Alembic through an explicit one-shot profile. |
 | 2026-07-25 | Production frontend image | Added a multi-stage, `npm ci`-based Vite build served by Nginx with SPA routing, same-origin API proxying, immutable asset caching, and a container health check; the existing Vite image remains the development path. |
 | 2026-07-25 | Projection response boundary | Added immutable simulation result records, moved API dictionary mapping into `projection_results.py`, and kept optimization scoring on typed results so response formatting no longer runs inside the deterministic engine. |
