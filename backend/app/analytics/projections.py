@@ -104,6 +104,7 @@ def calculate_net_worth_projection(
     db: Session,
     household_id: UUID,
     *,
+    scenario_id: UUID | None = None,
     start_year: int,
     end_year: int,
     annual_spending: Decimal | None = None,
@@ -117,6 +118,7 @@ def calculate_net_worth_projection(
     projection_input = load_projection_input(
         db,
         household_id,
+        scenario_id,
         start_date=date(start_year, 1, 1),
         end_date=date(end_year, 12, 31),
     )
@@ -741,6 +743,8 @@ def _calculate_projection_result_from_input(
             )
     result = ProjectionResult(
         household_id=household_id,
+        scenario_id=projection_input.scenario_id,
+        scenario_name=projection_input.scenario_name,
         start_year=start_year,
         end_year=end_year,
         interval=interval,

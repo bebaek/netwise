@@ -235,6 +235,7 @@ export type RealEstateAnalytics = {
 export type RealEstateSale = {
   id: string;
   household_id: string;
+  scenario_id: string;
   property_account_id: string;
   sale_date: string;
   gross_sale_price: string;
@@ -248,6 +249,7 @@ export type RealEstateSale = {
 export type RealEstateLiquidationStrategy = {
   id: string;
   household_id: string;
+  scenario_id: string;
   property_account_id: string;
   enabled: boolean;
   optimization_mode: 'liquidity_shortfall' | 'maximize_liquid_runway';
@@ -278,6 +280,7 @@ export type MortgageProfile = {
 export type IncomeSource = {
   id: string;
   household_id: string;
+  scenario_id: string;
   name: string;
   income_type: string;
   amount: string;
@@ -303,6 +306,7 @@ export type HouseholdPerson = {
 export type SocialSecurityEstimate = {
   id: string;
   household_id: string;
+  scenario_id: string;
   person_id: string;
   income_source_id: string;
   calculation_mode: 'manual' | 'ballpark';
@@ -341,6 +345,7 @@ export type SocialSecurityEstimateInput = {
 export type ProjectionTransfer = {
   id: string;
   household_id: string;
+  scenario_id: string;
   name: string;
   from_account_id: string;
   to_account_id: string;
@@ -355,6 +360,7 @@ export type ProjectionTransfer = {
 export type SpendingItem = {
   id: string;
   household_id: string;
+  scenario_id: string;
   name: string;
   category: string;
   annual_amount: string;
@@ -367,6 +373,7 @@ export type SpendingItem = {
 export type ProjectionSettings = {
   id: string;
   household_id: string;
+  scenario_id: string;
   annual_spending: string | null;
   spending_mode: 'manual' | 'itemized';
   spending_inflation_rate: string | null;
@@ -393,6 +400,8 @@ export type AnnualTaxRecord = {
 
 export type NetWorthProjection = {
   household_id: string;
+  scenario_id: string;
+  scenario_name: string;
   start_year: number;
   end_year: number;
   interval: 'annual' | 'quarterly' | 'monthly';

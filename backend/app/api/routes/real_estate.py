@@ -9,6 +9,7 @@ from app.db.models import (
     Account,
     AccountKind,
     MortgageProfile,
+    ProjectionScenarioPropertyAssumption,
     RealEstateLiquidationStrategy,
     RealEstateProperty,
     RealEstateSale,
@@ -26,8 +27,28 @@ from app.schemas.real_estate import (
     RealEstateSaleCreate,
     RealEstateSaleRead,
 )
+from app.services.projection_scenarios import (
+    ProjectionScenarioNotFoundError,
+    ensure_property_assumptions_for_all_scenarios,
+    get_baseline_scenario,
+    resolve_scenario,
+)
 
 router = APIRouter(tags=["real-estate"])
+
+
+def _resolve_scenario_or_404(
+    db: Session,
+    household_id: UUID,
+    scenario_id: UUID | None,
+):
+    try:
+        return resolve_scenario(db, household_id, scenario_id)
+    except ProjectionScenarioNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projection scenario not found",
+        ) from exc
 
 BANK_CATEGORIES = {"cash", "checking", "savings"}
 LIQUIDITY_CLASSES = {"cash", "liquid", "marketable", "retirement_liquid"}
@@ -96,6 +117,7 @@ def _validate_automatic_sale_proceeds_account(
 )
 def create_real_estate_sale(
     payload: RealEstateSaleCreate,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> RealEstateSale:
     property_account = db.get(Account, payload.property_account_id)
@@ -112,9 +134,13 @@ def create_real_estate_sale(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Property sale must be linked to an active real estate asset account",
         )
+    scenario = _resolve_scenario_or_404(db, property_account.household_id, scenario_id)
     if (
         db.scalars(
-            select(RealEstateSale).where(RealEstateSale.property_account_id == property_account.id)
+            select(RealEstateSale).where(
+                RealEstateSale.scenario_id == scenario.id,
+                RealEstateSale.property_account_id == property_account.id,
+            )
         ).first()
         is not None
     ):
@@ -138,6 +164,7 @@ def create_real_estate_sale(
     )
     sale = RealEstateSale(
         household_id=property_account.household_id,
+        scenario_id=scenario.id,
         property_account_id=property_account.id,
         sale_date=payload.sale_date,
         gross_sale_price=payload.gross_sale_price,
@@ -154,12 +181,17 @@ def create_real_estate_sale(
 @router.get("/real-estate/sales", response_model=list[RealEstateSaleRead])
 def list_real_estate_sales(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[RealEstateSale]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(RealEstateSale)
-            .where(RealEstateSale.household_id == household_id)
+            .where(
+                RealEstateSale.household_id == household_id,
+                RealEstateSale.scenario_id == scenario.id,
+            )
             .order_by(RealEstateSale.sale_date)
         ).all()
     )
@@ -181,12 +213,17 @@ def delete_real_estate_sale(sale_id: UUID, db: Session = Depends(get_db)) -> Res
 )
 def list_real_estate_liquidation_strategies(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[RealEstateLiquidationStrategy]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(RealEstateLiquidationStrategy)
-            .where(RealEstateLiquidationStrategy.household_id == household_id)
+            .where(
+                RealEstateLiquidationStrategy.household_id == household_id,
+                RealEstateLiquidationStrategy.scenario_id == scenario.id,
+            )
             .order_by(
                 RealEstateLiquidationStrategy.priority,
                 RealEstateLiquidationStrategy.created_at,
@@ -202,6 +239,7 @@ def list_real_estate_liquidation_strategies(
 def upsert_real_estate_liquidation_strategy(
     property_account_id: UUID,
     payload: RealEstateLiquidationStrategyUpsert,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> RealEstateLiquidationStrategy:
     property_account = db.get(Account, property_account_id)
@@ -216,6 +254,7 @@ def upsert_real_estate_liquidation_strategy(
             detail="Automatic sale strategy requires an active real estate asset account",
         )
 
+    scenario = _resolve_scenario_or_404(db, property_account.household_id, scenario_id)
     proceeds_account_id = payload.proceeds_account_id
     if proceeds_account_id is None:
         proceeds_account = _default_sale_proceeds_account(db, property_account.household_id)
@@ -231,12 +270,14 @@ def upsert_real_estate_liquidation_strategy(
 
     strategy = db.scalars(
         select(RealEstateLiquidationStrategy).where(
-            RealEstateLiquidationStrategy.property_account_id == property_account.id
+            RealEstateLiquidationStrategy.scenario_id == scenario.id,
+            RealEstateLiquidationStrategy.property_account_id == property_account.id,
         )
     ).first()
     if strategy is None:
         strategy = RealEstateLiquidationStrategy(
             household_id=property_account.household_id,
+            scenario_id=scenario.id,
             property_account_id=property_account.id,
             proceeds_account_id=proceeds_account_id,
         )
@@ -260,11 +301,17 @@ def upsert_real_estate_liquidation_strategy(
 )
 def delete_real_estate_liquidation_strategy(
     property_account_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
+    property_account = db.get(Account, property_account_id)
+    if property_account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    scenario = _resolve_scenario_or_404(db, property_account.household_id, scenario_id)
     strategy = db.scalars(
         select(RealEstateLiquidationStrategy).where(
-            RealEstateLiquidationStrategy.property_account_id == property_account_id
+            RealEstateLiquidationStrategy.scenario_id == scenario.id,
+            RealEstateLiquidationStrategy.property_account_id == property_account_id,
         )
     ).first()
     if strategy is None:
@@ -313,6 +360,8 @@ def create_real_estate_property(
         **payload.model_dump(),
     )
     db.add(real_estate_property)
+    db.flush()
+    ensure_property_assumptions_for_all_scenarios(db, real_estate_property)
     db.commit()
     db.refresh(real_estate_property)
     return real_estate_property
@@ -343,6 +392,29 @@ def update_real_estate_property(
             )
     for field, value in changes.items():
         setattr(property_record, field, value)
+    planning_fields = {"expected_appreciation_rate", "rent_growth_rate", "vacancy_rate"}
+    if planning_fields & changes.keys():
+        baseline = get_baseline_scenario(db, property_record.household_id)
+        assumption = db.scalar(
+            select(ProjectionScenarioPropertyAssumption).where(
+                ProjectionScenarioPropertyAssumption.scenario_id == baseline.id,
+                ProjectionScenarioPropertyAssumption.property_account_id
+                == property_record.account_id,
+            )
+        )
+        if assumption is None:
+            ensure_property_assumptions_for_all_scenarios(db, property_record)
+            db.flush()
+            assumption = db.scalar(
+                select(ProjectionScenarioPropertyAssumption).where(
+                    ProjectionScenarioPropertyAssumption.scenario_id == baseline.id,
+                    ProjectionScenarioPropertyAssumption.property_account_id
+                    == property_record.account_id,
+                )
+            )
+        if assumption is not None:
+            for field in planning_fields & changes.keys():
+                setattr(assumption, field, changes[field])
     db.commit()
     db.refresh(property_record)
     return property_record

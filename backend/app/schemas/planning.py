@@ -54,6 +54,7 @@ class SocialSecurityEstimateUpdate(SocialSecurityEstimateCreate):
 class SocialSecurityEstimateRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     person_id: UUID
     income_source_id: UUID
     calculation_mode: str
@@ -93,6 +94,7 @@ class IncomeSourceCreate(BaseModel):
 class IncomeSourceRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     name: str
     income_type: str
     amount: Decimal
@@ -122,6 +124,7 @@ class ProjectionTransferCreate(BaseModel):
 class ProjectionTransferRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     name: str
     from_account_id: UUID
     to_account_id: UUID
@@ -159,6 +162,7 @@ class SpendingItemUpdate(BaseModel):
 class SpendingItemRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     name: str
     category: str
     annual_amount: Decimal
@@ -185,6 +189,7 @@ class ProjectionSettingsUpsert(BaseModel):
 class ProjectionSettingsRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     annual_spending: Decimal | None
     spending_mode: str
     spending_inflation_rate: Decimal | None

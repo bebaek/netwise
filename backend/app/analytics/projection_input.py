@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.analytics.projection_contracts import (
@@ -26,6 +26,8 @@ from app.db.models import (
     IncomeSource,
     MortgageProfile,
     ProjectionBehavior,
+    ProjectionScenarioAccountAssumption,
+    ProjectionScenarioPropertyAssumption,
     ProjectionSettings,
     ProjectionTransfer,
     RealEstateLiquidationStrategy,
@@ -33,6 +35,8 @@ from app.db.models import (
     RealEstateSale,
     SpendingItem,
 )
+
+from app.services.projection_scenarios import resolve_scenario
 
 TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 
@@ -47,6 +51,8 @@ class ProjectionInput:
     """
 
     household_id: UUID
+    scenario_id: UUID
+    scenario_name: str
     accounts: tuple[ProjectionAccount, ...]
     initial_balances: dict[UUID, Decimal]
     mortgage_profiles: dict[UUID, ProjectionMortgage]
@@ -66,11 +72,13 @@ class ProjectionInput:
 def load_projection_input(
     db: Session,
     household_id: UUID,
+    scenario_id: UUID | None = None,
     *,
     start_date: date,
     end_date: date,
 ) -> ProjectionInput:
     """Resolve all persisted records needed for a deterministic projection."""
+    scenario = resolve_scenario(db, household_id, scenario_id)
     account_records = list(
         db.scalars(
             select(Account)
@@ -78,6 +86,14 @@ def load_projection_input(
             .order_by(Account.name)
         ).all()
     )
+    account_assumption_records = list(
+        db.scalars(
+            select(ProjectionScenarioAccountAssumption).where(
+                ProjectionScenarioAccountAssumption.scenario_id == scenario.id
+            )
+        ).all()
+    )
+    account_assumptions = {record.account_id: record for record in account_assumption_records}
     initial_balances = {
         account.id: _latest_balance_on_or_before(db, account.id, start_date) or Decimal("0.00")
         for account in account_records
@@ -92,17 +108,33 @@ def load_projection_input(
             select(RealEstateProperty).where(RealEstateProperty.household_id == household_id)
         ).all()
     )
+    property_assumption_records = list(
+        db.scalars(
+            select(ProjectionScenarioPropertyAssumption).where(
+                ProjectionScenarioPropertyAssumption.scenario_id == scenario.id
+            )
+        ).all()
+    )
+    property_assumptions = {
+        record.property_account_id: record for record in property_assumption_records
+    }
     real_estate_sale_records = list(
         db.scalars(
             select(RealEstateSale)
-            .where(RealEstateSale.household_id == household_id)
+            .where(
+                RealEstateSale.household_id == household_id,
+                RealEstateSale.scenario_id == scenario.id,
+            )
             .order_by(RealEstateSale.sale_date)
         ).all()
     )
     automatic_sale_strategy_records = list(
         db.scalars(
             select(RealEstateLiquidationStrategy)
-            .where(RealEstateLiquidationStrategy.household_id == household_id)
+            .where(
+                RealEstateLiquidationStrategy.household_id == household_id,
+                RealEstateLiquidationStrategy.scenario_id == scenario.id,
+            )
             .order_by(
                 RealEstateLiquidationStrategy.priority,
                 RealEstateLiquidationStrategy.created_at,
@@ -114,6 +146,7 @@ def load_projection_input(
             select(AccountEvent)
             .where(
                 AccountEvent.household_id == household_id,
+                or_(AccountEvent.scenario_id.is_(None), AccountEvent.scenario_id == scenario.id),
                 AccountEvent.projection_behavior != ProjectionBehavior.historical_only,
                 AccountEvent.event_date >= start_date,
                 AccountEvent.event_date <= end_date,
@@ -122,34 +155,54 @@ def load_projection_input(
         ).all()
     )
     income_source_records = list(
-        db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
+        db.scalars(
+            select(IncomeSource).where(
+                IncomeSource.household_id == household_id,
+                IncomeSource.scenario_id == scenario.id,
+            )
+        ).all()
     )
     projection_transfer_records = list(
         db.scalars(
             select(ProjectionTransfer)
-            .where(ProjectionTransfer.household_id == household_id)
+            .where(
+                ProjectionTransfer.household_id == household_id,
+                ProjectionTransfer.scenario_id == scenario.id,
+            )
             .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
         ).all()
     )
     spending_item_records = list(
         db.scalars(
             select(SpendingItem)
-            .where(SpendingItem.household_id == household_id)
+            .where(
+                SpendingItem.household_id == household_id,
+                SpendingItem.scenario_id == scenario.id,
+            )
             .order_by(SpendingItem.category, SpendingItem.name, SpendingItem.created_at)
         ).all()
     )
     projection_settings_record = db.scalars(
-        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+        select(ProjectionSettings).where(
+            ProjectionSettings.household_id == household_id,
+            ProjectionSettings.scenario_id == scenario.id,
+        )
     ).first()
     tax_rate = _latest_effective_tax_rate(db, household_id)
     cost_bases, cost_basis_estimates = _resolve_cost_bases(db, account_records, start_date)
-    accounts = tuple(_to_projection_account(account) for account in account_records)
+    accounts = tuple(
+        _to_projection_account(account, account_assumptions.get(account.id))
+        for account in account_records
+    )
     mortgage_profiles = {
         record.liability_account_id: _to_projection_mortgage(record)
         for record in mortgage_profile_records
     }
     property_profiles = {
-        record.account_id: _to_projection_property(record) for record in property_profile_records
+        record.account_id: _to_projection_property(
+            record, property_assumptions.get(record.account_id)
+        )
+        for record in property_profile_records
     }
     real_estate_sales = tuple(
         _to_projection_property_sale(sale) for sale in real_estate_sale_records
@@ -171,6 +224,8 @@ def load_projection_input(
     )
     return ProjectionInput(
         household_id=household_id,
+        scenario_id=scenario.id,
+        scenario_name=scenario.name,
         accounts=accounts,
         initial_balances=initial_balances,
         mortgage_profiles=mortgage_profiles,
@@ -188,7 +243,18 @@ def load_projection_input(
     )
 
 
-def _to_projection_account(account: Account) -> ProjectionAccount:
+def _to_projection_account(
+    account: Account,
+    assumption: ProjectionScenarioAccountAssumption | None,
+) -> ProjectionAccount:
+    expected_annual_yield = (
+        assumption.expected_annual_yield if assumption is not None else account.expected_annual_yield
+    )
+    liquidation_expense_rate = (
+        assumption.liquidation_expense_rate
+        if assumption is not None
+        else account.liquidation_expense_rate
+    )
     return ProjectionAccount(
         id=account.id,
         name=account.name,
@@ -196,8 +262,8 @@ def _to_projection_account(account: Account) -> ProjectionAccount:
         category=account.category,
         liquidity_class=account.liquidity_class,
         retirement_tax_treatment=account.retirement_tax_treatment,
-        expected_annual_yield=account.expected_annual_yield,
-        liquidation_expense_rate=account.liquidation_expense_rate,
+        expected_annual_yield=expected_annual_yield,
+        liquidation_expense_rate=liquidation_expense_rate,
     )
 
 
@@ -213,13 +279,23 @@ def _to_projection_mortgage(profile: MortgageProfile) -> ProjectionMortgage:
     )
 
 
-def _to_projection_property(profile: RealEstateProperty) -> ProjectionProperty:
+def _to_projection_property(
+    profile: RealEstateProperty,
+    assumption: ProjectionScenarioPropertyAssumption | None,
+) -> ProjectionProperty:
+    expected_appreciation_rate = (
+        assumption.expected_appreciation_rate
+        if assumption is not None
+        else profile.expected_appreciation_rate
+    )
+    rent_growth_rate = assumption.rent_growth_rate if assumption is not None else profile.rent_growth_rate
+    vacancy_rate = assumption.vacancy_rate if assumption is not None else profile.vacancy_rate
     return ProjectionProperty(
         account_id=profile.account_id,
         purchase_date=profile.purchase_date,
         purchase_price=profile.purchase_price,
         adjusted_tax_basis=profile.adjusted_tax_basis,
-        expected_appreciation_rate=profile.expected_appreciation_rate,
+        expected_appreciation_rate=expected_appreciation_rate,
         property_tax_annual=profile.property_tax_annual,
         insurance_annual=profile.insurance_annual,
         tax_and_insurance_annual=profile.tax_and_insurance_annual,
@@ -229,8 +305,8 @@ def _to_projection_property(profile: RealEstateProperty) -> ProjectionProperty:
         rental_start_date=profile.rental_start_date,
         monthly_market_rent=profile.monthly_market_rent,
         other_monthly_income=profile.other_monthly_income,
-        rent_growth_rate=profile.rent_growth_rate,
-        vacancy_rate=profile.vacancy_rate,
+        rent_growth_rate=rent_growth_rate,
+        vacancy_rate=vacancy_rate,
         management_fee_rate=profile.management_fee_rate,
         utilities_annual=profile.utilities_annual,
         other_operating_expense_annual=profile.other_operating_expense_annual,

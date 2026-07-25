@@ -161,6 +161,7 @@ class RealEstateSaleCreate(BaseModel):
 class RealEstateSaleRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     property_account_id: UUID
     sale_date: date
     gross_sale_price: Decimal
@@ -192,6 +193,7 @@ class RealEstateLiquidationStrategyUpsert(BaseModel):
 class RealEstateLiquidationStrategyRead(BaseModel):
     id: UUID
     household_id: UUID
+    scenario_id: UUID
     property_account_id: UUID
     enabled: bool
     optimization_mode: str

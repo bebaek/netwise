@@ -17,10 +17,7 @@ def test_projection_scenario_migration_backfills_existing_households(tmp_path, m
 
     try:
         engine = create_engine(database_url)
-        pre_scenario_tables = [
-            table for table in Base.metadata.sorted_tables if table.name != "projection_scenarios"
-        ]
-        Base.metadata.create_all(engine, tables=pre_scenario_tables)
+        Base.metadata.tables["households"].create(engine)
         command.stamp(config, "0024_user_authentication")
         metadata = MetaData()
         households = Table("households", metadata, autoload_with=engine)
@@ -35,7 +32,7 @@ def test_projection_scenario_migration_backfills_existing_households(tmp_path, m
                 )
             )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0025_projection_scenarios")
         migrated_metadata = MetaData()
         scenarios = Table("projection_scenarios", migrated_metadata, autoload_with=engine)
         with engine.connect() as connection:

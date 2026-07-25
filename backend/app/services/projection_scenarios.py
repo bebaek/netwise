@@ -3,13 +3,20 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Household, ProjectionScenario
+from app.db.models import (
+    Account,
+    Household,
+    ProjectionScenario,
+    ProjectionScenarioAccountAssumption,
+    ProjectionScenarioPropertyAssumption,
+    RealEstateProperty,
+)
 
 BASELINE_SCENARIO_NAME = "Baseline"
 MAX_SCENARIOS_PER_HOUSEHOLD = 20
 
 
-class ProjectionScenarioError(Exception):
+class ProjectionScenarioError(ValueError):
     """Base exception for projection-scenario service failures."""
 
 
@@ -106,7 +113,113 @@ def ensure_baseline_scenario(db: Session, household: Household) -> ProjectionSce
     )
     db.add(scenario)
     db.flush()
+    _initialize_scenario_assumptions(db, scenario)
     return scenario
+
+
+def resolve_scenario(
+    db: Session,
+    household_id: UUID,
+    scenario_id: UUID | None,
+) -> ProjectionScenario:
+    if scenario_id is None:
+        return get_baseline_scenario(db, household_id)
+    return get_household_scenario(db, household_id, scenario_id)
+
+
+def ensure_account_assumptions_for_all_scenarios(
+    db: Session,
+    account: Account,
+) -> None:
+    scenario_ids = db.scalars(
+        select(ProjectionScenario.id).where(ProjectionScenario.household_id == account.household_id)
+    ).all()
+    existing_scenario_ids = set(
+        db.scalars(
+            select(ProjectionScenarioAccountAssumption.scenario_id).where(
+                ProjectionScenarioAccountAssumption.account_id == account.id
+            )
+        ).all()
+    )
+    for scenario_id in scenario_ids:
+        if scenario_id in existing_scenario_ids:
+            continue
+        db.add(
+            ProjectionScenarioAccountAssumption(
+                scenario_id=scenario_id,
+                household_id=account.household_id,
+                account_id=account.id,
+                expected_annual_yield=account.expected_annual_yield,
+                liquidation_expense_rate=account.liquidation_expense_rate,
+            )
+        )
+
+
+def ensure_property_assumptions_for_all_scenarios(
+    db: Session,
+    property_record: RealEstateProperty,
+) -> None:
+    scenario_ids = db.scalars(
+        select(ProjectionScenario.id).where(
+            ProjectionScenario.household_id == property_record.household_id
+        )
+    ).all()
+    existing_scenario_ids = set(
+        db.scalars(
+            select(ProjectionScenarioPropertyAssumption.scenario_id).where(
+                ProjectionScenarioPropertyAssumption.property_account_id
+                == property_record.account_id
+            )
+        ).all()
+    )
+    for scenario_id in scenario_ids:
+        if scenario_id in existing_scenario_ids:
+            continue
+        db.add(
+            ProjectionScenarioPropertyAssumption(
+                scenario_id=scenario_id,
+                household_id=property_record.household_id,
+                property_account_id=property_record.account_id,
+                expected_appreciation_rate=property_record.expected_appreciation_rate,
+                rent_growth_rate=property_record.rent_growth_rate,
+                vacancy_rate=property_record.vacancy_rate,
+            )
+        )
+
+
+def _initialize_scenario_assumptions(
+    db: Session,
+    scenario: ProjectionScenario,
+) -> None:
+    accounts = db.scalars(
+        select(Account).where(Account.household_id == scenario.household_id)
+    ).all()
+    for account in accounts:
+        db.add(
+            ProjectionScenarioAccountAssumption(
+                scenario_id=scenario.id,
+                household_id=scenario.household_id,
+                account_id=account.id,
+                expected_annual_yield=account.expected_annual_yield,
+                liquidation_expense_rate=account.liquidation_expense_rate,
+            )
+        )
+    properties = db.scalars(
+        select(RealEstateProperty).where(
+            RealEstateProperty.household_id == scenario.household_id
+        )
+    ).all()
+    for property_record in properties:
+        db.add(
+            ProjectionScenarioPropertyAssumption(
+                scenario_id=scenario.id,
+                household_id=scenario.household_id,
+                property_account_id=property_record.account_id,
+                expected_appreciation_rate=property_record.expected_appreciation_rate,
+                rent_growth_rate=property_record.rent_growth_rate,
+                vacancy_rate=property_record.vacancy_rate,
+            )
+        )
 
 
 def list_scenarios(db: Session, household_id: UUID) -> list[ProjectionScenario]:
@@ -159,6 +272,7 @@ def create_scenario(
     )
     db.add(scenario)
     db.flush()
+    _initialize_scenario_assumptions(db, scenario)
     return scenario
 
 

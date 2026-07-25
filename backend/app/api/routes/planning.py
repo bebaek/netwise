@@ -43,8 +43,26 @@ from app.schemas.planning import (
     SocialSecurityEstimateRead,
     SocialSecurityEstimateUpdate,
 )
+from app.services.projection_scenarios import (
+    ProjectionScenarioNotFoundError,
+    resolve_scenario,
+)
 
 router = APIRouter(tags=["planning"])
+
+
+def _resolve_scenario_or_404(
+    db: Session,
+    household_id: UUID,
+    scenario_id: UUID | None,
+):
+    try:
+        return resolve_scenario(db, household_id, scenario_id)
+    except ProjectionScenarioNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projection scenario not found",
+        ) from exc
 
 
 def _validate_asset_account(
@@ -138,8 +156,10 @@ def list_household_people(
 )
 def create_social_security_estimate(
     payload: SocialSecurityEstimateCreate,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> SocialSecurityEstimate:
+    scenario = _resolve_scenario_or_404(db, payload.household_id, scenario_id)
     person = db.get(HouseholdPerson, payload.person_id)
     if person is None or person.household_id != payload.household_id:
         raise HTTPException(
@@ -148,7 +168,10 @@ def create_social_security_estimate(
         )
     _validate_asset_account(db, payload.household_id, payload.deposit_account_id, "Deposit account")
     existing_estimate = db.scalars(
-        select(SocialSecurityEstimate).where(SocialSecurityEstimate.person_id == payload.person_id)
+        select(SocialSecurityEstimate).where(
+            SocialSecurityEstimate.scenario_id == scenario.id,
+            SocialSecurityEstimate.person_id == payload.person_id,
+        )
     ).first()
     if existing_estimate is not None:
         raise HTTPException(
@@ -159,6 +182,7 @@ def create_social_security_estimate(
 
     income_source = IncomeSource(
         household_id=payload.household_id,
+        scenario_id=scenario.id,
         name=f"{person.name} Social Security",
         income_type="social_security",
         amount=calculation.monthly_benefit,
@@ -172,6 +196,7 @@ def create_social_security_estimate(
     db.flush()
     estimate = SocialSecurityEstimate(
         household_id=payload.household_id,
+        scenario_id=scenario.id,
         person_id=payload.person_id,
         income_source_id=income_source.id,
         calculation_mode=payload.calculation_mode,
@@ -199,12 +224,17 @@ def create_social_security_estimate(
 @router.get("/social-security-estimates", response_model=list[SocialSecurityEstimateRead])
 def list_social_security_estimates(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[SocialSecurityEstimate]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(SocialSecurityEstimate)
-            .where(SocialSecurityEstimate.household_id == household_id)
+            .where(
+                SocialSecurityEstimate.household_id == household_id,
+                SocialSecurityEstimate.scenario_id == scenario.id,
+            )
             .order_by(SocialSecurityEstimate.claiming_date)
         ).all()
     )
@@ -282,13 +312,15 @@ def delete_social_security_estimate(
 )
 def create_income_source(
     payload: IncomeSourceCreate,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> IncomeSource:
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    scenario = _resolve_scenario_or_404(db, payload.household_id, scenario_id)
     _validate_asset_account(db, payload.household_id, payload.deposit_account_id, "Deposit account")
 
-    income_source = IncomeSource(**payload.model_dump())
+    income_source = IncomeSource(scenario_id=scenario.id, **payload.model_dump())
     db.add(income_source)
     db.commit()
     db.refresh(income_source)
@@ -302,10 +334,12 @@ def create_income_source(
 )
 def create_projection_transfer(
     payload: ProjectionTransferCreate,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> ProjectionTransfer:
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    scenario = _resolve_scenario_or_404(db, payload.household_id, scenario_id)
     _validate_asset_account(db, payload.household_id, payload.from_account_id, "Source account")
     _validate_asset_account(db, payload.household_id, payload.to_account_id, "Destination account")
     if payload.from_account_id == payload.to_account_id:
@@ -319,7 +353,7 @@ def create_projection_transfer(
             detail="End date must be on or after start date",
         )
 
-    projection_transfer = ProjectionTransfer(**payload.model_dump())
+    projection_transfer = ProjectionTransfer(scenario_id=scenario.id, **payload.model_dump())
     db.add(projection_transfer)
     db.commit()
     db.refresh(projection_transfer)
@@ -329,12 +363,17 @@ def create_projection_transfer(
 @router.get("/projection-transfers", response_model=list[ProjectionTransferRead])
 def list_projection_transfers(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[ProjectionTransfer]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(ProjectionTransfer)
-            .where(ProjectionTransfer.household_id == household_id)
+            .where(
+                ProjectionTransfer.household_id == household_id,
+                ProjectionTransfer.scenario_id == scenario.id,
+            )
             .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
         ).all()
     )
@@ -363,11 +402,13 @@ def delete_projection_transfer(
 )
 def create_spending_item(
     payload: SpendingItemCreate,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> SpendingItem:
     if db.get(Household, payload.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
-    spending_item = SpendingItem(**payload.model_dump())
+    scenario = _resolve_scenario_or_404(db, payload.household_id, scenario_id)
+    spending_item = SpendingItem(scenario_id=scenario.id, **payload.model_dump())
     spending_item.name = spending_item.name.strip()
     spending_item.category = spending_item.category.strip().lower()
     if not spending_item.name or not spending_item.category:
@@ -384,12 +425,17 @@ def create_spending_item(
 @router.get("/spending-items", response_model=list[SpendingItemRead])
 def list_spending_items(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[SpendingItem]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(SpendingItem)
-            .where(SpendingItem.household_id == household_id)
+            .where(
+                SpendingItem.household_id == household_id,
+                SpendingItem.scenario_id == scenario.id,
+            )
             .order_by(SpendingItem.category, SpendingItem.name, SpendingItem.created_at)
         ).all()
     )
@@ -445,12 +491,17 @@ def delete_spending_item(
 @router.get("/projection-settings/{household_id}", response_model=ProjectionSettingsRead)
 def get_projection_settings(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> ProjectionSettings:
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     projection_settings = db.scalars(
-        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+        select(ProjectionSettings).where(
+            ProjectionSettings.household_id == household_id,
+            ProjectionSettings.scenario_id == scenario.id,
+        )
     ).first()
     if projection_settings is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projection settings not found")
@@ -461,19 +512,27 @@ def get_projection_settings(
 def upsert_projection_settings(
     household_id: UUID,
     payload: ProjectionSettingsUpsert,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> ProjectionSettings:
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
 
     _validate_asset_account(db, household_id, payload.spending_account_id, "Spending account")
     _validate_asset_account(db, household_id, payload.tax_account_id, "Tax account")
 
     projection_settings = db.scalars(
-        select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
+        select(ProjectionSettings).where(
+            ProjectionSettings.household_id == household_id,
+            ProjectionSettings.scenario_id == scenario.id,
+        )
     ).first()
     if projection_settings is None:
-        projection_settings = ProjectionSettings(household_id=household_id)
+        projection_settings = ProjectionSettings(
+            household_id=household_id,
+            scenario_id=scenario.id,
+        )
         db.add(projection_settings)
 
     for field, value in payload.model_dump().items():
@@ -487,12 +546,17 @@ def upsert_projection_settings(
 @router.get("/income-sources", response_model=list[IncomeSourceRead])
 def list_income_sources(
     household_id: UUID,
+    scenario_id: UUID | None = None,
     db: Session = Depends(get_db),
 ) -> list[IncomeSource]:
+    scenario = _resolve_scenario_or_404(db, household_id, scenario_id)
     return list(
         db.scalars(
             select(IncomeSource)
-            .where(IncomeSource.household_id == household_id)
+            .where(
+                IncomeSource.household_id == household_id,
+                IncomeSource.scenario_id == scenario.id,
+            )
             .order_by(IncomeSource.name)
         ).all()
     )

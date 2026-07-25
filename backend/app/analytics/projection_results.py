@@ -72,6 +72,8 @@ class PropertySaleOptimizationResult:
 @dataclass(frozen=True)
 class ProjectionResult:
     household_id: UUID
+    scenario_id: UUID
+    scenario_name: str
     start_year: int
     end_year: int
     interval: str
@@ -88,6 +90,8 @@ def format_projection_result(result: ProjectionResult) -> dict:
     """Translate the simulation result into the stable API response shape."""
     response = {
         "household_id": result.household_id,
+        "scenario_id": result.scenario_id,
+        "scenario_name": result.scenario_name,
         "start_year": result.start_year,
         "end_year": result.end_year,
         "interval": result.interval,

@@ -5,7 +5,7 @@
 **In progress.**
 
 - [x] Slice 1: scenario identity, baseline migration, CRUD, and authorization
-- [ ] Slice 2: scenario-aware persisted projection inputs
+- [x] Slice 2: scenario-aware persisted projection inputs
 - [ ] Slice 3: transactional duplication and data portability
 - [ ] Slice 4: frontend scenario editing
 - [ ] Slice 5: scenario comparison
@@ -533,6 +533,8 @@ Seed reset remains idempotent.
 Completion signal: every household has a baseline and scenario CRUD is safe, while current projection behavior remains unchanged.
 
 ### Slice 2: Scenario-aware persisted inputs
+
+**Status:** Complete.
 
 - Add scenario ownership to planning entities.
 - Add account/property assumption tables.

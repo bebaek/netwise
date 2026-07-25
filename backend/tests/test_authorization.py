@@ -178,6 +178,9 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
     baseline = unauthenticated_client.get(
         f"/households/{household_id}/projection-scenarios"
     ).json()[0]
+    account = unauthenticated_client.post(
+        "/accounts", json=_account_payload(household_id, "Scenario Cash")
+    ).json()
 
     viewer = _create_user(db_session, "ScenarioViewer")
     _add_membership(db_session, household_id, viewer, "viewer")
@@ -188,6 +191,19 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
             f"/households/{household_id}/projection-scenarios"
         ).status_code
         == 200
+    )
+    assert (
+        unauthenticated_client.get(
+            f"/projection-scenarios/{baseline['id']}/account-assumptions"
+        ).status_code
+        == 200
+    )
+    assert (
+        unauthenticated_client.put(
+            f"/projection-scenarios/{baseline['id']}/account-assumptions/{account['id']}",
+            json={"expected_annual_yield": "0.010000"},
+        ).status_code
+        == 403
     )
     assert (
         unauthenticated_client.get(f"/projection-scenarios/{baseline['id']}").status_code
@@ -222,9 +238,20 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
         json={"name": "Member scenario"},
     )
     assert create_response.status_code == 201
+    update_assumption = unauthenticated_client.put(
+        f"/projection-scenarios/{baseline['id']}/account-assumptions/{account['id']}",
+        json={"expected_annual_yield": "0.010000"},
+    )
+    assert update_assumption.status_code == 200
 
     outsider = _create_user(db_session, "ScenarioOutsider")
     _use_session(unauthenticated_client, db_session, outsider)
+    assert (
+        unauthenticated_client.get(
+            f"/projection-scenarios/{baseline['id']}/account-assumptions"
+        ).status_code
+        == 404
+    )
     assert (
         unauthenticated_client.get(f"/projection-scenarios/{baseline['id']}").status_code
         == 404
