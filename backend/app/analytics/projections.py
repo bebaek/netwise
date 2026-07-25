@@ -11,7 +11,6 @@ from app.analytics.mortgage import estimate_mortgage_balance
 from app.analytics.projection_contracts import (
     ProjectionAccount,
     ProjectionEvent,
-    ProjectionIncomeSource,
     ProjectionLiquidationStrategy,
     ProjectionMortgage,
     ProjectionProperty,
@@ -19,6 +18,7 @@ from app.analytics.projection_contracts import (
     ProjectionTransferInput,
 )
 from app.analytics.projection_input import ProjectionInput, load_projection_input
+from app.analytics.projection_income import project_income_source_for_period
 from app.analytics.projection_spending import (
     active_months_in_period,
     amortized_monthly_payment,
@@ -33,11 +33,7 @@ from app.analytics.projection_withdrawals import (
     liquidation_expense_rate,
     withdraw_from_account_pool,
 )
-from app.db.models import (
-    AccountEventType,
-    AccountKind,
-    IncomeFrequency,
-)
+from app.db.models import AccountEventType, AccountKind
 
 DEFAULT_CATEGORY_YIELDS = {
     "cash": Decimal("0.010000"),
@@ -51,7 +47,6 @@ DEFAULT_CATEGORY_YIELDS = {
     "credit_card": Decimal("0.000000"),
 }
 DEFAULT_SPENDING_INFLATION_RATE = Decimal("0.030000")
-DEFAULT_INCOME_GROWTH_RATE = Decimal("0.020000")
 TAXABLE_INVESTMENT_CATEGORIES = {"taxable_investment", "brokerage"}
 
 
@@ -466,7 +461,7 @@ def calculate_projection_from_input(
             projected_rental_income += rental_income
             projected_rental_expenses += rental_expenses + rental_mortgage_debt_service
         for income_source in income_sources:
-            income_amount = _projected_income_source_for_period(
+            income_amount = project_income_source_for_period(
                 income_source, period_start, as_of_date, months_per_period
             )
             projected_income += income_amount
@@ -1009,70 +1004,6 @@ def _projected_transfer_for_period(
     years_elapsed = max(period_start.year - transfer.start_date.year, 0)
     annual_amount = transfer.annual_amount * ((Decimal("1.00") + growth_rate) ** years_elapsed)
     return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
-
-
-def _projected_income_for_year(
-    income_sources: Sequence[ProjectionIncomeSource], year: int
-) -> Decimal:
-    return sum(
-        (_projected_income_source_for_year(source, year) for source in income_sources),
-        Decimal("0.00"),
-    )
-
-
-def _projected_income_source_for_period(
-    source: ProjectionIncomeSource,
-    period_start: date,
-    period_end: date,
-    months_per_period: int,
-) -> Decimal:
-    """Allocate an active income source across a monthly, quarterly, or annual period.
-
-    The first fine-grained projection release spreads the source's annualized amount
-    evenly over its active periods.  A later payroll scheduler can replace this for
-    weekly and biweekly sources without changing the projection API.
-    """
-    if source.start_date > period_end or (
-        source.end_date is not None and source.end_date < period_start
-    ):
-        return Decimal("0.00")
-    annual_amount = _projected_income_source_for_year(source, period_start.year)
-    active_start = max(source.start_date, period_start)
-    active_end = min(source.end_date, period_end) if source.end_date is not None else period_end
-    active_months = (
-        (active_end.year - active_start.year) * 12 + active_end.month - active_start.month + 1
-    )
-    return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
-
-
-def _projected_income_source_for_year(source: ProjectionIncomeSource, year: int) -> Decimal:
-    year_start = date(year, 1, 1)
-    year_end = date(year, 12, 31)
-    if source.start_date > year_end or (
-        source.end_date is not None and source.end_date < year_start
-    ):
-        return Decimal("0.00")
-
-    annual_amount = _annualize_income(source.amount, source.frequency)
-    growth_rate = (
-        source.growth_rate if source.growth_rate is not None else DEFAULT_INCOME_GROWTH_RATE
-    )
-    years_elapsed = max(year - source.start_date.year, 0)
-    return (annual_amount * ((Decimal("1") + growth_rate) ** years_elapsed)).quantize(
-        Decimal("0.01")
-    )
-
-
-def _annualize_income(amount: Decimal, frequency: str) -> Decimal:
-    multipliers = {
-        IncomeFrequency.weekly: Decimal("52"),
-        IncomeFrequency.biweekly: Decimal("26"),
-        IncomeFrequency.semimonthly: Decimal("24"),
-        IncomeFrequency.monthly: Decimal("12"),
-        IncomeFrequency.quarterly: Decimal("4"),
-        IncomeFrequency.annually: Decimal("1"),
-    }
-    return amount * multipliers.get(frequency, Decimal("1"))
 
 
 def _validate_cash_flow_account(

@@ -202,6 +202,13 @@ insurance, and scheduled owner mortgage payments. Shared active-month and
 amortized-payment calculations also live there so rental orchestration can reuse
 the same timing rules without duplicating them.
 
+Income timing now lives in `backend/app/analytics/projection_income.py`. The
+policy annualizes supported pay frequencies, applies default or source-specific
+growth, enforces source start and end dates, and allocates annualized income
+evenly across active months. The explicit period-width argument is retained so
+a future payroll scheduler can replace monthly spreading without changing the
+engine boundary.
+
 ## Scenario semantics
 
 `AccountEvent` already has a nullable `scenario_id`, but the current projection
