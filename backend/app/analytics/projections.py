@@ -23,6 +23,13 @@ from app.analytics.projection_returns import (
     project_balance_with_return,
 )
 from app.analytics.projection_income import project_income_source_for_period
+from app.analytics.projection_tax import (
+    effective_income_tax,
+    property_sale_tax,
+    property_sale_tax_basis_warnings,
+    taxable_income_for_period,
+    withdrawal_taxes,
+)
 from app.analytics.projection_spending import (
     active_months_in_period,
     amortized_monthly_payment,
@@ -464,10 +471,12 @@ def calculate_projection_from_input(
         projected_income = projected_income.quantize(Decimal("0.01"))
         projected_rental_income = projected_rental_income.quantize(Decimal("0.01"))
         projected_rental_expenses = projected_rental_expenses.quantize(Decimal("0.01"))
-        taxable_income = max(
-            projected_income + projected_rental_income - projected_rental_expenses, Decimal("0.00")
+        taxable_income = taxable_income_for_period(
+            projected_income,
+            projected_rental_income,
+            projected_rental_expenses,
         )
-        income_taxes = (taxable_income * tax_rate).quantize(Decimal("0.01"))
+        income_taxes = effective_income_tax(taxable_income, tax_rate)
         if use_itemized_spending:
             projected_spending_breakdown = project_spending_items_for_period(
                 spending_items,
@@ -558,13 +567,9 @@ def calculate_projection_from_input(
                     basis_balances,
                 )
             )
-        ordinary_taxable = (withdrawal_result.taxable_amount * tax_rate).quantize(Decimal("0.01"))
-        withdrawal_taxes = (ordinary_taxable + withdrawal_result.capital_gains_tax).quantize(
+        projected_taxes = (income_taxes + withdrawal_taxes(withdrawal_result, tax_rate)).quantize(
             Decimal("0.01")
         )
-        projected_taxes = (
-            income_taxes + withdrawal_taxes + withdrawal_result.explicit_taxes
-        ).quantize(Decimal("0.01"))
         projected_liquidation_expenses = withdrawal_result.liquidation_expenses
         projected_unfunded_cash_flow = withdrawal_result.unfunded_amount
         if income_taxes != Decimal("0.00"):
@@ -581,10 +586,7 @@ def calculate_projection_from_input(
                 basis_balances,
             )
             projected_taxes = (
-                projected_taxes
-                + (tax_payment_result.taxable_amount * tax_rate)
-                + tax_payment_result.capital_gains_tax
-                + tax_payment_result.explicit_taxes
+                projected_taxes + withdrawal_taxes(tax_payment_result, tax_rate)
             ).quantize(Decimal("0.01"))
             projected_liquidation_expenses = (
                 projected_liquidation_expenses + tax_payment_result.liquidation_expenses
@@ -719,7 +721,7 @@ def calculate_projection_from_input(
             }
         )
 
-    warnings = _property_sale_tax_basis_warnings(
+    warnings = property_sale_tax_basis_warnings(
         accounts_by_id,
         property_profiles,
         real_estate_sales,
@@ -1182,45 +1184,6 @@ def _apply_account_cash_flow(
     )
 
 
-def _property_sale_tax_basis_warnings(
-    accounts_by_id: dict[UUID, ProjectionAccount],
-    property_profiles: dict[UUID, ProjectionProperty],
-    real_estate_sales: Sequence[ProjectionPropertySale],
-    automatic_sale_strategies: Sequence[ProjectionLiquidationStrategy],
-) -> list[str]:
-    property_ids = {
-        sale.property_account_id
-        for sale in real_estate_sales
-        if sale.estimated_tax_rate > Decimal("0.00")
-    } | {
-        strategy.property_account_id
-        for strategy in automatic_sale_strategies
-        if strategy.enabled and strategy.estimated_tax_rate > Decimal("0.00")
-    }
-    warnings = []
-    for property_id in sorted(
-        property_ids,
-        key=lambda item: (
-            accounts_by_id[item].name.casefold() if item in accounts_by_id else str(item)
-        ),
-    ):
-        account = accounts_by_id.get(property_id)
-        profile = property_profiles.get(property_id)
-        property_name = account.name if account is not None else str(property_id)
-        if profile is None or (
-            profile.adjusted_tax_basis is None and profile.purchase_price is None
-        ):
-            warnings.append(
-                f"{property_name}: sale tax uses the gross-price fallback because tax basis is missing."
-            )
-        elif profile.adjusted_tax_basis is None:
-            warnings.append(
-                f"{property_name}: sale tax uses purchase price as basis; enter adjusted tax basis "
-                "to reflect improvements and depreciation."
-            )
-    return warnings
-
-
 def _apply_real_estate_sale(
     accounts: Sequence[ProjectionAccount],
     accounts_by_id: dict[UUID, ProjectionAccount],
@@ -1284,12 +1247,12 @@ def _apply_real_estate_sale(
         if property_profile is not None
         else None
     )
-    taxable_gain = (
-        max(sale.gross_sale_price - selling_expense - tax_basis, Decimal("0.00"))
-        if tax_basis is not None
-        else sale.gross_sale_price
+    estimated_sale_tax = property_sale_tax(
+        sale.gross_sale_price,
+        selling_expense,
+        tax_basis,
+        sale.estimated_tax_rate,
     )
-    estimated_sale_tax = (taxable_gain * sale.estimated_tax_rate).quantize(Decimal("0.01"))
     if estimated_sale_tax != Decimal("0.00"):
         cash_flows.append(
             {

@@ -216,6 +216,15 @@ the fallback return in the existing precedence order. It also converts effective
 annual returns to monthly or quarterly returns and applies the result to account
 balances with the engine's existing cent rounding.
 
+Effective-rate tax treatment now lives in
+`backend/app/analytics/projection_tax.py`. It nets rental expenses against
+ordinary and rental income, computes effective-rate income tax, aggregates
+ordinary withdrawal tax with capital-gains and explicit taxes, and calculates
+property-sale tax from net gain or the documented gross-price fallback. The
+missing-property-basis warning is colocated with that fallback decision.
+Account-level taxable withdrawal and cost-basis mechanics remain in the
+withdrawal policy, which supplies the tax components consumed here.
+
 ## Scenario semantics
 
 `AccountEvent` already has a nullable `scenario_id`, but the current projection
