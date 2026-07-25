@@ -75,22 +75,44 @@ curl http://localhost:8001/health/live
 curl http://localhost:8001/health/ready
 ```
 
-### Production frontend image
+### Production Compose quickstart
 
-A production frontend image is available separately from the Vite development
-container:
+The production Compose path builds the static Nginx frontend and exposes only
+that frontend. PostgreSQL and the backend remain on internal container networks.
+Create an ignored, owner-readable environment file with a generated database
+password:
+
+```bash
+printf 'NETWISE_POSTGRES_PASSWORD=%s\nNETWISE_HTTP_BIND_ADDRESS=127.0.0.1\nNETWISE_HTTP_PORT=8080\n' \
+  "$(openssl rand -hex 32)" > .env.production
+chmod 600 .env.production
+```
+
+Build the images, run the one-shot migration job, and then start the application:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yml build
+docker compose --env-file .env.production -f compose.production.yml run --rm migrate
+docker compose --env-file .env.production -f compose.production.yml up -d --wait
+```
+
+The frontend is now available to a same-host HTTPS reverse proxy at
+`http://127.0.0.1:8080`; its health endpoint is `/health/live`, and backend
+readiness is available through `/api/health/ready`. Production authentication
+cookies are marked secure, so put an HTTPS terminator such as Caddy, Nginx, or a
+managed load balancer in front before using the application. Do not expose the
+plain HTTP port directly to an untrusted network. See
+[`docs/self-hosted-operations.md`](docs/self-hosted-operations.md) for the
+service boundaries and migration workflow.
+
+The standalone frontend image can also be built with:
 
 ```bash
 docker build -f frontend/Dockerfile.production -t netwise-frontend:production frontend
 ```
 
-The multi-stage image installs the locked dependencies with `npm ci`, builds the
-static Vite bundle, and serves it with Nginx on port 80. Nginx provides SPA route
-fallback, proxies same-origin `/api/*` requests to `backend:8000`, caches hashed
-assets immutably, and exposes `/health/live`. The image expects to share a
-container network with a service named `backend`. It is currently a building
-block for the production Compose path; continue using `docker compose up` for
-the supported development workflow.
+It expects to share a container network with a service named `backend`. The
+existing `docker compose up` command remains the development workflow.
 
 ### Optional local Docker overrides
 

@@ -1,0 +1,90 @@
+x-backend-image: &backend-image
+  image: netwise-backend:production
+  build:
+    context: ./backend
+
+x-backend-environment: &backend-environment
+  NETWISE_DATABASE_URL: postgresql+psycopg://netwise:${NETWISE_POSTGRES_PASSWORD:?Set NETWISE_POSTGRES_PASSWORD in .env.production}@postgres:5432/netwise
+  NETWISE_PUBLIC_SIGNUP: "false"
+  NETWISE_SINGLE_HOUSEHOLD_MODE: "true"
+  NETWISE_ENABLE_ADMIN_TOOLS: "false"
+  NETWISE_AUTH_COOKIE_SECURE: "true"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: netwise
+      POSTGRES_PASSWORD: ${NETWISE_POSTGRES_PASSWORD:?Set NETWISE_POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: netwise
+    volumes:
+      - postgres-production-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netwise -d netwise"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - database
+
+  migrate:
+    <<: *backend-image
+    command: ["alembic", "upgrade", "head"]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    restart: "no"
+    networks:
+      - database
+
+  backend:
+    <<: *backend-image
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    init: true
+    networks:
+      - application
+      - database
+
+  frontend:
+    image: netwise-frontend:production
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${NETWISE_HTTP_BIND_ADDRESS:-127.0.0.1}:${NETWISE_HTTP_PORT:-8080}:80"
+    restart: unless-stopped
+    init: true
+    networks:
+      - application
+
+volumes:
+  postgres-production-data:
+
+networks:
+  application:
+  database:
+    internal: true

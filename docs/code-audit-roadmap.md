@@ -236,14 +236,12 @@ Refactor incrementally while retaining the current deterministic output:
 ### Directly verified findings
 
 - A separate multi-stage frontend image builds locked Vite assets with `npm ci` and serves them through Nginx; the default development container still runs Vite.
-- PostgreSQL, backend, and frontend ports are published by the default Compose configuration.
-- Development database credentials are hardcoded.
-- Admin tools are disabled in the committed development Compose configuration; the production path must preserve that default.
-- Backend startup runs Alembic automatically before Uvicorn.
+- The default development Compose configuration publishes PostgreSQL, backend, and frontend ports; the production path publishes only the frontend entry point.
+- Development database credentials remain hardcoded for local use; production Compose rejects a missing external database password.
+- Administrative tools are disabled in both committed Compose paths; production does not expose an override for that setting.
+- Development backend startup still runs Alembic automatically; production overrides that command and provides an explicit one-shot migration service.
 - The backend Docker build does not use `uv.lock`; the development frontend build uses `npm install`, while the production frontend image uses `npm ci`.
-- `docs/self-hosted-operations.md` lists configuration variables that are not implemented and uses `DATABASE_URL` where current settings require `NETWISE_DATABASE_URL`.
-- The operations document calls health endpoints planned even though they are implemented.
-- The README's `.env` copy step does not configure the hardcoded Compose service values.
+- Production setup and HTTPS termination are documented with implemented setting names; backup, restore, and complete upgrade procedures still need implementation and exercise.
 
 ### Intended work
 
@@ -272,11 +270,12 @@ Production mode should provide:
 
 - [x] Add a lockfile-driven multi-stage frontend build served by Nginx.
 - [x] Add same-origin `/api` proxying, SPA fallback, static-asset caching, and a frontend health check.
-- [ ] Add a production Compose path with only the frontend entry point published.
-- [ ] Require external production credentials and keep admin tools disabled.
-- [ ] Separate production migrations from backend application startup.
-- [ ] Make the backend image install from `uv.lock` and add service health checks.
-- [ ] Reconcile and exercise production migration, backup, restore, and upgrade documentation.
+- [x] Add a production Compose path with only the frontend entry point published.
+- [x] Require an external production database password and keep public signup and admin tools disabled.
+- [x] Separate production migrations from backend application startup.
+- [x] Add PostgreSQL, backend, and frontend health checks.
+- [ ] Make the backend image install from `uv.lock`.
+- [ ] Reconcile and exercise production backup, restore, and complete upgrade documentation.
 
 ### Completion criteria
 
@@ -331,6 +330,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Production Compose boundary | Added an external-password-gated production stack that publishes only Nginx, isolates PostgreSQL on an internal network, enables secure cookies, keeps signup and admin tools disabled, health-checks every runtime service, and runs Alembic through an explicit one-shot profile. |
 | 2026-07-25 | Production frontend image | Added a multi-stage, `npm ci`-based Vite build served by Nginx with SPA routing, same-origin API proxying, immutable asset caching, and a container health check; the existing Vite image remains the development path. |
 | 2026-07-25 | Projection response boundary | Added immutable simulation result records, moved API dictionary mapping into `projection_results.py`, and kept optimization scoring on typed results so response formatting no longer runs inside the deterministic engine. |
 | 2026-07-25 | Property-sale policy extraction | Moved fixed and automatic sale transaction legs, mortgage payoff, proceeds and basis handling, shortfall delegation, automatic strategy eligibility, and candidate schedule generation into `projection_property_sales.py` with focused unit coverage. |
