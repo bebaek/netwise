@@ -172,6 +172,71 @@ def test_owner_and_admin_membership_boundaries(unauthenticated_client, db_sessio
     assert export_response.status_code == 200
 
 
+def test_projection_scenario_authorization_boundaries(unauthenticated_client, db_session):
+    _register_initial_owner(unauthenticated_client)
+    household_id = unauthenticated_client.get("/households").json()[0]["id"]
+    baseline = unauthenticated_client.get(
+        f"/households/{household_id}/projection-scenarios"
+    ).json()[0]
+
+    viewer = _create_user(db_session, "ScenarioViewer")
+    _add_membership(db_session, household_id, viewer, "viewer")
+    _use_session(unauthenticated_client, db_session, viewer)
+
+    assert (
+        unauthenticated_client.get(
+            f"/households/{household_id}/projection-scenarios"
+        ).status_code
+        == 200
+    )
+    assert (
+        unauthenticated_client.get(f"/projection-scenarios/{baseline['id']}").status_code
+        == 200
+    )
+    assert (
+        unauthenticated_client.post(
+            f"/households/{household_id}/projection-scenarios",
+            json={"name": "Viewer scenario"},
+        ).status_code
+        == 403
+    )
+    assert (
+        unauthenticated_client.patch(
+            f"/projection-scenarios/{baseline['id']}",
+            json={"name": "Viewer rename"},
+        ).status_code
+        == 403
+    )
+    assert (
+        unauthenticated_client.delete(
+            f"/projection-scenarios/{baseline['id']}"
+        ).status_code
+        == 403
+    )
+
+    member = _create_user(db_session, "ScenarioMember")
+    _add_membership(db_session, household_id, member, "member")
+    _use_session(unauthenticated_client, db_session, member)
+    create_response = unauthenticated_client.post(
+        f"/households/{household_id}/projection-scenarios",
+        json={"name": "Member scenario"},
+    )
+    assert create_response.status_code == 201
+
+    outsider = _create_user(db_session, "ScenarioOutsider")
+    _use_session(unauthenticated_client, db_session, outsider)
+    assert (
+        unauthenticated_client.get(f"/projection-scenarios/{baseline['id']}").status_code
+        == 404
+    )
+    assert (
+        unauthenticated_client.get(
+            f"/households/{household_id}/projection-scenarios"
+        ).status_code
+        == 404
+    )
+
+
 def test_new_household_is_owned_by_authenticated_user(unauthenticated_client, db_session):
     _register_initial_owner(unauthenticated_client)
     second_user = _create_user(db_session, "Second")

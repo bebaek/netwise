@@ -2,7 +2,14 @@
 
 ## Status
 
-**Proposed for implementation.**
+**In progress.**
+
+- [x] Slice 1: scenario identity, baseline migration, CRUD, and authorization
+- [ ] Slice 2: scenario-aware persisted projection inputs
+- [ ] Slice 3: transactional duplication and data portability
+- [ ] Slice 4: frontend scenario editing
+- [ ] Slice 5: scenario comparison
+- [ ] Slice 6: compatibility cleanup
 
 - Plan date: 2026-07-25
 - Initial milestone: named, independently editable deterministic scenarios with comparison
@@ -515,6 +522,8 @@ Seed reset remains idempotent.
 ## Delivery sequence
 
 ### Slice 1: Scenario identity and migration
+
+**Status:** Complete.
 
 - Add models and Alembic migration.
 - Backfill baseline scenarios.

@@ -27,6 +27,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import SessionLocal
+from app.services.projection_scenarios import ensure_baseline_scenario
 
 DEMO_HOUSEHOLD_NAME = "Demo Household"
 DEMO_USER_NAME = "Demo User"
@@ -157,11 +158,11 @@ def _delete_demo_households(db: Session) -> None:
 
 def _get_or_create_household(db: Session, name: str) -> Household:
     household = db.scalars(select(Household).where(Household.name == name)).first()
-    if household is not None:
-        return household
-    household = Household(name=name)
-    db.add(household)
-    db.flush()
+    if household is None:
+        household = Household(name=name)
+        db.add(household)
+        db.flush()
+    ensure_baseline_scenario(db, household)
     return household
 
 

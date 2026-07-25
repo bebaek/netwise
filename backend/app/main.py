@@ -9,6 +9,7 @@ from app.api.routes import (
     households,
     imports,
     planning,
+    projection_scenarios,
     real_estate,
     users,
 )
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, dependencies=household_authorized)
     app.include_router(real_estate.router, dependencies=household_authorized)
     app.include_router(planning.router, dependencies=household_authorized)
+    app.include_router(projection_scenarios.router, dependencies=household_authorized)
     return app
 
 
