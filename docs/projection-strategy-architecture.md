@@ -61,11 +61,11 @@ frozen `ProjectionInput` container. The route-facing
 `calculate_projection_from_input()` runs the deterministic engine and all
 optimization candidates without a database session.
 
-This is intentionally an intermediate boundary: active accounts are mapped to
-immutable `ProjectionAccount` records and stored as a tuple, but the remaining
-input collections still contain ORM models. The next contract steps are to map
-profiles, transactions, events, income, transfers, spending, and settings to
-immutable plain-data records before they reach the engine.
+This is intentionally an intermediate boundary: accounts, projection events,
+income sources, recurring transfers, spending items, and settings are immutable
+plain-data records stored in tuple collections. Mortgage/property profiles,
+property sales, and automatic liquidation strategies still use ORM models and
+are the next contract boundary.
 
 ## Target structure
 

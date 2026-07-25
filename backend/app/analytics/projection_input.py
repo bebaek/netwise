@@ -6,7 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analytics.projection_contracts import ProjectionAccount
+from app.analytics.projection_contracts import (
+    ProjectionAccount,
+    ProjectionEvent,
+    ProjectionIncomeSource,
+    ProjectionSettingsInput,
+    ProjectionSpendingItem,
+    ProjectionTransferInput,
+)
 from app.db.models import (
     Account,
     AccountEvent,
@@ -43,11 +50,11 @@ class ProjectionInput:
     property_profiles: dict[UUID, RealEstateProperty]
     real_estate_sales: list[RealEstateSale]
     automatic_sale_strategies: list[RealEstateLiquidationStrategy]
-    projection_events: list[AccountEvent]
-    income_sources: list[IncomeSource]
-    projection_transfers: list[ProjectionTransfer]
-    spending_items: list[SpendingItem]
-    projection_settings: ProjectionSettings | None
+    projection_events: tuple[ProjectionEvent, ...]
+    income_sources: tuple[ProjectionIncomeSource, ...]
+    projection_transfers: tuple[ProjectionTransferInput, ...]
+    spending_items: tuple[ProjectionSpendingItem, ...]
+    projection_settings: ProjectionSettingsInput | None
     tax_rate: Decimal
     cost_bases: dict[UUID, Decimal]
     cost_basis_estimates: dict[UUID, tuple[Decimal, date]]
@@ -101,7 +108,7 @@ def load_projection_input(
             )
         ).all()
     )
-    projection_events = list(
+    projection_event_records = list(
         db.scalars(
             select(AccountEvent)
             .where(
@@ -113,29 +120,40 @@ def load_projection_input(
             .order_by(AccountEvent.event_date)
         ).all()
     )
-    income_sources = list(
+    income_source_records = list(
         db.scalars(select(IncomeSource).where(IncomeSource.household_id == household_id)).all()
     )
-    projection_transfers = list(
+    projection_transfer_records = list(
         db.scalars(
             select(ProjectionTransfer)
             .where(ProjectionTransfer.household_id == household_id)
             .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
         ).all()
     )
-    spending_items = list(
+    spending_item_records = list(
         db.scalars(
             select(SpendingItem)
             .where(SpendingItem.household_id == household_id)
             .order_by(SpendingItem.category, SpendingItem.name, SpendingItem.created_at)
         ).all()
     )
-    projection_settings = db.scalars(
+    projection_settings_record = db.scalars(
         select(ProjectionSettings).where(ProjectionSettings.household_id == household_id)
     ).first()
     tax_rate = _latest_effective_tax_rate(db, household_id)
     cost_bases, cost_basis_estimates = _resolve_cost_bases(db, account_records, start_date)
     accounts = tuple(_to_projection_account(account) for account in account_records)
+    projection_events = tuple(_to_projection_event(event) for event in projection_event_records)
+    income_sources = tuple(_to_projection_income(source) for source in income_source_records)
+    projection_transfers = tuple(
+        _to_projection_transfer(transfer) for transfer in projection_transfer_records
+    )
+    spending_items = tuple(_to_projection_spending_item(item) for item in spending_item_records)
+    projection_settings = (
+        _to_projection_settings(projection_settings_record)
+        if projection_settings_record is not None
+        else None
+    )
     return ProjectionInput(
         household_id=household_id,
         accounts=accounts,
@@ -165,6 +183,59 @@ def _to_projection_account(account: Account) -> ProjectionAccount:
         retirement_tax_treatment=account.retirement_tax_treatment,
         expected_annual_yield=account.expected_annual_yield,
         liquidation_expense_rate=account.liquidation_expense_rate,
+    )
+
+
+def _to_projection_event(event: AccountEvent) -> ProjectionEvent:
+    return ProjectionEvent(
+        account_id=event.account_id,
+        event_date=event.event_date,
+        amount=event.amount,
+        event_type=event.event_type,
+    )
+
+
+def _to_projection_income(source: IncomeSource) -> ProjectionIncomeSource:
+    return ProjectionIncomeSource(
+        amount=source.amount,
+        frequency=source.frequency,
+        start_date=source.start_date,
+        end_date=source.end_date,
+        growth_rate=source.growth_rate,
+        deposit_account_id=source.deposit_account_id,
+    )
+
+
+def _to_projection_transfer(transfer: ProjectionTransfer) -> ProjectionTransferInput:
+    return ProjectionTransferInput(
+        from_account_id=transfer.from_account_id,
+        to_account_id=transfer.to_account_id,
+        annual_amount=transfer.annual_amount,
+        start_date=transfer.start_date,
+        end_date=transfer.end_date,
+        growth_rate=transfer.growth_rate,
+    )
+
+
+def _to_projection_spending_item(item: SpendingItem) -> ProjectionSpendingItem:
+    return ProjectionSpendingItem(
+        name=item.name,
+        category=item.category,
+        annual_amount=item.annual_amount,
+        retirement_annual_amount=item.retirement_annual_amount,
+        growth_rate=item.growth_rate,
+    )
+
+
+def _to_projection_settings(settings: ProjectionSettings) -> ProjectionSettingsInput:
+    return ProjectionSettingsInput(
+        annual_spending=settings.annual_spending,
+        spending_mode=settings.spending_mode,
+        spending_inflation_rate=settings.spending_inflation_rate,
+        retirement_date=settings.retirement_date,
+        retirement_annual_spending=settings.retirement_annual_spending,
+        spending_account_id=settings.spending_account_id,
+        tax_account_id=settings.tax_account_id,
     )
 
 

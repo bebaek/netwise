@@ -8,21 +8,23 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.analytics.mortgage import estimate_mortgage_balance
-from app.analytics.projection_contracts import ProjectionAccount
+from app.analytics.projection_contracts import (
+    ProjectionAccount,
+    ProjectionEvent,
+    ProjectionIncomeSource,
+    ProjectionSpendingItem,
+    ProjectionTransferInput,
+)
 from app.analytics.projection_input import ProjectionInput, load_projection_input
 from app.db.models import (
-    AccountEvent,
     AccountEventType,
     AccountKind,
     IncomeFrequency,
-    IncomeSource,
     MortgageProfile,
-    ProjectionTransfer,
     RealEstateLiquidationStrategy,
     RealEstateProperty,
     RealEstateSale,
     RetirementTaxTreatment,
-    SpendingItem,
 )
 
 DEFAULT_CATEGORY_YIELDS = {
@@ -1020,7 +1022,7 @@ def _first_retirement_withdrawal_date(
 
 
 def _projected_transfer_for_period(
-    transfer: ProjectionTransfer,
+    transfer: ProjectionTransferInput,
     period_start: date,
     period_end: date,
 ) -> Decimal:
@@ -1038,7 +1040,7 @@ def _projected_transfer_for_period(
 
 
 def _projected_spending_items_for_period(
-    spending_items: list[SpendingItem],
+    spending_items: Sequence[ProjectionSpendingItem],
     retirement_date: date | None,
     baseline_year: int,
     period_start: date,
@@ -1212,7 +1214,9 @@ def _projected_spending_for_year(
     )
 
 
-def _projected_income_for_year(income_sources: list[IncomeSource], year: int) -> Decimal:
+def _projected_income_for_year(
+    income_sources: Sequence[ProjectionIncomeSource], year: int
+) -> Decimal:
     return sum(
         (_projected_income_source_for_year(source, year) for source in income_sources),
         Decimal("0.00"),
@@ -1220,7 +1224,7 @@ def _projected_income_for_year(income_sources: list[IncomeSource], year: int) ->
 
 
 def _projected_income_source_for_period(
-    source: IncomeSource,
+    source: ProjectionIncomeSource,
     period_start: date,
     period_end: date,
     months_per_period: int,
@@ -1244,7 +1248,7 @@ def _projected_income_source_for_period(
     return (annual_amount * Decimal(active_months) / Decimal("12")).quantize(Decimal("0.01"))
 
 
-def _projected_income_source_for_year(source: IncomeSource, year: int) -> Decimal:
+def _projected_income_source_for_year(source: ProjectionIncomeSource, year: int) -> Decimal:
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     if source.start_date > year_end or (
@@ -1658,7 +1662,7 @@ def _apply_projection_event(
     accounts_by_id: dict[UUID, ProjectionAccount],
     balances: dict[UUID, Decimal],
     cash_flows: list[dict],
-    event: AccountEvent,
+    event: ProjectionEvent,
     tax_rate: Decimal,
     automatic_sale_context: AutomaticPropertySaleContext | None = None,
     basis_balances: dict[UUID, Decimal] | None = None,
@@ -1693,7 +1697,7 @@ def _apply_projection_event(
     return WithdrawalResult()
 
 
-def _projection_event_amount(event: AccountEvent) -> Decimal:
+def _projection_event_amount(event: ProjectionEvent) -> Decimal:
     if event.event_type in AccountEventOutflowTypes:
         return -abs(event.amount)
     if event.event_type in AccountEventInflowTypes:
