@@ -7,9 +7,9 @@ import type {
   RealEstateSale,
   SocialSecurityEstimate,
   SocialSecurityEstimateInput,
-  SpendingItem,
 } from '../api';
 import { PlanningEventsSection } from '../components/planning/PlanningEventsSection';
+import { SpendingPlanSection } from '../components/planning/SpendingPlanSection';
 import {
   usePlanningBudgetData,
   usePlanningBudgetMutations,
@@ -20,20 +20,6 @@ import {
 } from '../queries/planning';
 import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
-
-const SPENDING_CATEGORY_OPTIONS = [
-  ['housing', 'Housing'],
-  ['food', 'Food'],
-  ['healthcare', 'Healthcare'],
-  ['transportation', 'Transportation'],
-  ['utilities', 'Utilities'],
-  ['insurance', 'Insurance'],
-  ['travel', 'Travel'],
-  ['entertainment', 'Entertainment'],
-  ['personal', 'Personal'],
-  ['giving', 'Giving'],
-  ['other', 'Other'],
-] as const;
 
 function optionalFormString(form: FormData, key: string): string | undefined {
   const value = String(form.get(key) ?? '').trim();
@@ -110,7 +96,7 @@ export function PlanningPage({
   const incomeSources = planningPeopleData.incomeSources.data ?? [];
   const householdPeople = planningPeopleData.householdPeople.data ?? [];
   const socialSecurityEstimates = planningPeopleData.socialSecurityEstimates.data ?? [];
-  const [budgetError, setBudgetError] = useState('');
+  const [taxRecordError, setTaxRecordError] = useState('');
   const planningBudgetData = usePlanningBudgetData(householdId);
   const planningBudgetMutations = usePlanningBudgetMutations(householdId);
   const spendingItems = planningBudgetData.spendingItems.data ?? [];
@@ -120,7 +106,6 @@ export function PlanningPage({
   const planningRealEstateMutations = usePlanningRealEstateMutations(householdId);
   const realEstateSales = planningRealEstateData.sales.data ?? [];
   const liquidationStrategies = planningRealEstateData.liquidationStrategies.data ?? [];
-  const [spendingItemEditId, setSpendingItemEditId] = useState('');
   const [socialSecurityMode, setSocialSecurityMode] = useState<'manual' | 'ballpark'>('ballpark');
   const [socialSecurityEditId, setSocialSecurityEditId] = useState('');
   const workingSpendingTotal = spendingItems.reduce(
@@ -311,72 +296,11 @@ export function PlanningPage({
     }
   }
 
-  async function onCreateSpendingItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = event.currentTarget;
-    const form = new FormData(target);
-    setBudgetError('');
-    try {
-      await planningBudgetMutations.createSpending.mutateAsync({
-        household_id: householdId,
-        name: requiredFormString(form, 'spending_item_name'),
-        category: requiredFormString(form, 'spending_item_category'),
-        annual_amount: requiredFormString(form, 'spending_item_annual_amount'),
-        retirement_annual_amount: optionalFormString(
-          form,
-          'spending_item_retirement_annual_amount',
-        ),
-        growth_rate: optionalFormString(form, 'spending_item_growth_rate'),
-      });
-      target.reset();
-      onInvalidateProjection();
-    } catch (mutationError: unknown) {
-      setBudgetError(String(mutationError));
-    }
-  }
-
-  async function onUpdateSpendingItem(
-    event: FormEvent<HTMLFormElement>,
-    spendingItem: SpendingItem,
-  ) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setBudgetError('');
-    try {
-      await planningBudgetMutations.updateSpending.mutateAsync({
-        spendingItemId: spendingItem.id,
-        payload: {
-          name: requiredFormString(form, 'spending_item_edit_name'),
-          category: requiredFormString(form, 'spending_item_edit_category'),
-          annual_amount: requiredFormString(form, 'spending_item_edit_annual_amount'),
-          retirement_annual_amount:
-            optionalFormString(form, 'spending_item_edit_retirement_annual_amount') ?? null,
-          growth_rate: optionalFormString(form, 'spending_item_edit_growth_rate') ?? null,
-        },
-      });
-      onInvalidateProjection();
-    } catch (mutationError: unknown) {
-      setBudgetError(String(mutationError));
-      throw mutationError;
-    }
-  }
-
-  async function onDeleteSpendingItem(spendingItem: SpendingItem) {
-    if (!window.confirm(`Delete spending item ${spendingItem.name}?`)) return;
-    setBudgetError('');
-    try {
-      await planningBudgetMutations.deleteSpending.mutateAsync(spendingItem);
-      onInvalidateProjection();
-    } catch (mutationError: unknown) {
-      setBudgetError(String(mutationError));
-    }
-  }
-
   async function onCreateTaxRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const target = event.currentTarget;
     const form = new FormData(target);
-    setBudgetError('');
+    setTaxRecordError('');
     try {
       await planningBudgetMutations.createTaxRecord.mutateAsync({
         household_id: householdId,
@@ -388,7 +312,7 @@ export function PlanningPage({
       });
       target.reset();
     } catch (mutationError: unknown) {
-      setBudgetError(String(mutationError));
+      setTaxRecordError(String(mutationError));
     }
   }
 
@@ -505,15 +429,12 @@ export function PlanningPage({
         || planningPeopleData.socialSecurityEstimates.isPending) && (
         <div className="card" role="status">Loading household planning data…</div>
       )}
-      {budgetError && <div className="error" role="alert">{budgetError}</div>}
-      {planningBudgetData.spendingItems.error && (
-        <div className="error" role="alert">{String(planningBudgetData.spendingItems.error)}</div>
-      )}
+      {taxRecordError && <div className="error" role="alert">{taxRecordError}</div>}
       {planningBudgetData.taxRecords.error && (
         <div className="error" role="alert">{String(planningBudgetData.taxRecords.error)}</div>
       )}
-      {(planningBudgetData.spendingItems.isPending || planningBudgetData.taxRecords.isPending) && (
-        <div className="card" role="status">Loading budget data…</div>
+      {planningBudgetData.taxRecords.isPending && (
+        <div className="card" role="status">Loading tax records…</div>
       )}
       {realEstateError && <div className="error" role="alert">{realEstateError}</div>}
       {planningRealEstateData.sales.error && (
@@ -598,112 +519,18 @@ export function PlanningPage({
   </section>
 </details>
 
-<section className="grid two-column">
-  <div className="card">
-    <h2>Spending plan</h2>
-    <p className="muted">Break non-mortgage spending into categories with separate working and retirement amounts. Choose whether projections use the automatically calculated item total or the manually entered household total.</p>
-    {spendingItems.length ? (
-      <>
-        <div className="projection-note">
-          <strong>Automatic item sum:</strong> {formatMoney(String(workingSpendingTotal))} while working · {formatMoney(String(retirementSpendingTotal))} in retirement<br />
-          <strong>Manual total:</strong> {formatMoney(String(manualWorkingSpending))} while working · {formatMoney(String(manualRetirementSpending))} in retirement<br />
-          <strong>Projection source:</strong> {spendingMode === 'itemized' ? 'Automatic item sum' : 'Manual total'}
-        </div>
-        <div className="table-frame">
-          <table className="spaced-table compact-table">
-            <thead>
-              <tr><th>Item</th><th>Category</th><th>Annual</th><th>Monthly</th><th>Retirement</th><th>Growth</th><th /></tr>
-            </thead>
-            <tbody>
-              {spendingItems.map((item) => {
-                const editFormId = `spending-item-edit-${item.id}`;
-                if (spendingItemEditId === item.id) {
-                  return (
-                    <tr key={item.id}>
-                      <td><input form={editFormId} name="spending_item_edit_name" aria-label="Spending item name" defaultValue={item.name} required /></td>
-                      <td>
-                        <select form={editFormId} name="spending_item_edit_category" aria-label="Spending item category" defaultValue={item.category} required>
-                          {SPENDING_CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </td>
-                      <td><input form={editFormId} name="spending_item_edit_annual_amount" aria-label="Current annual amount" inputMode="decimal" defaultValue={item.annual_amount} required /></td>
-                      <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
-                      <td><input form={editFormId} name="spending_item_edit_retirement_annual_amount" aria-label="Retirement annual amount" inputMode="decimal" placeholder="Same as current" defaultValue={item.retirement_annual_amount ?? ''} /></td>
-                      <td><input form={editFormId} name="spending_item_edit_growth_rate" aria-label="Annual growth rate" inputMode="decimal" placeholder="Default inflation" defaultValue={item.growth_rate ?? ''} /></td>
-                      <td>
-                        <form
-                          id={editFormId}
-                          className="form-row"
-                          onSubmit={async (event) => {
-                            try {
-                              await onUpdateSpendingItem(event, item);
-                              setSpendingItemEditId('');
-                            } catch {
-                              // The route handler displays the API error and keeps the row editable.
-                            }
-                          }}
-                        >
-                          <button type="submit" disabled={planningBudgetMutations.isPending}>Save</button>
-                          <button type="button" className="secondary-button" onClick={() => setSpendingItemEditId('')}>Cancel</button>
-                        </form>
-                      </td>
-                    </tr>
-                  );
-                }
-                return (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{readableLabel(item.category)}</td>
-                    <td>{formatMoney(item.annual_amount)}</td>
-                    <td>{formatMoney(String(Number(item.annual_amount) / 12))}</td>
-                    <td>{formatMoney(item.retirement_annual_amount ?? item.annual_amount)}</td>
-                    <td>{item.growth_rate == null ? 'Default inflation' : formatRate(item.growth_rate)}</td>
-                    <td className="form-row">
-                      <button type="button" disabled={planningBudgetMutations.isPending} onClick={() => setSpendingItemEditId(item.id)}>Edit</button>
-                      <button type="button" className="danger-button" disabled={planningBudgetMutations.isPending} onClick={() => onDeleteSpendingItem(item)}>Delete</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </>
-    ) : (
-      <p className="muted">No itemized spending yet. Automatic item sum currently produces $0.00; manual mode uses the household total below.</p>
-    )}
-  </div>
-
-  <div className="card">
-    <h2>Add spending item</h2>
-    <form onSubmit={onCreateSpendingItem} className="stacked-form">
-      <label>
-        Name
-        <input name="spending_item_name" placeholder="Groceries" required />
-      </label>
-      <label>
-        Category
-        <select name="spending_item_category" defaultValue="food" required>
-          {SPENDING_CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
-      <label>
-        Current annual amount
-        <input name="spending_item_annual_amount" inputMode="decimal" placeholder="9000" required />
-      </label>
-      <label>
-        Retirement annual amount
-        <input name="spending_item_retirement_annual_amount" inputMode="decimal" placeholder="Same as current" />
-      </label>
-      <label>
-        Annual growth rate
-        <input name="spending_item_growth_rate" inputMode="decimal" placeholder="Use default inflation" />
-      </label>
-      <p className="muted">Use a retirement amount of 0 for costs that end at retirement. Leave it blank to keep the current amount. A custom growth rate lets healthcare or travel differ from general inflation.</p>
-      <button type="submit" disabled={planningBudgetMutations.isPending}>Add spending item</button>
-    </form>
-  </div>
-</section>
+<SpendingPlanSection
+  householdId={householdId}
+  spendingItems={spendingItems}
+  queryError={planningBudgetData.spendingItems.error}
+  queryPending={planningBudgetData.spendingItems.isPending}
+  spendingMode={spendingMode}
+  workingSpendingTotal={workingSpendingTotal}
+  retirementSpendingTotal={retirementSpendingTotal}
+  manualWorkingSpending={manualWorkingSpending}
+  manualRetirementSpending={manualRetirementSpending}
+  onInvalidateProjection={onInvalidateProjection}
+/>
 
 <section className="card">
   <h2>Projection</h2>

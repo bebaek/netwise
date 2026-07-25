@@ -148,9 +148,9 @@ Suggested initial slices:
 
 ### Directly verified findings
 
-- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 1,441 lines after projection-event state, queries, mutations, and rendering moved into `PlanningEventsSection`.
-- `PlanningEventsSection` is a cohesive route child: it needs only the household ID, default date, accounts, and account-name lookup.
-- Projection configuration, budget, people, Social Security, and real-estate planning remain combined in the parent page.
+- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 1,268 lines after projection-event and spending-plan boundaries were extracted.
+- `PlanningEventsSection` owns event state, queries, mutations, and responsive rendering; `SpendingPlanSection` owns spending-item edit state and mutations while consuming the shared spending query used by projection calculations.
+- Projection configuration, tax records, people, Social Security, and real-estate planning remain combined in the parent page.
 
 ### Intended work
 
@@ -162,6 +162,7 @@ Suggested initial slices:
 ### Implementation progress
 
 - [x] Extract projection-event state, queries, mutations, and responsive rendering.
+- [x] Extract spending-plan state, mutations, errors, and rendering.
 - [ ] Extract the next cohesive Planning domain section.
 - [ ] Reduce `PlanningPage` to route-level orchestration and genuinely shared projection state.
 
@@ -302,6 +303,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Planning spending boundary | Extracted spending-item state, mutations, errors, and rendering into `SpendingPlanSection`; `PlanningPage` fell from 1,441 to 1,268 lines. |
 | 2026-07-25 | Planning component boundaries | Extracted projection-event state, queries, mutations, and responsive UI into `PlanningEventsSection`; `PlanningPage` fell from 1,765 to 1,441 lines. |
 | 2026-07-22 | Household settings data | Moved users, capabilities, membership mutations, imports, and exports into Settings; removed `refreshDashboard()` and reduced initial requests from 18 to 14. |
 | 2026-07-22 | Planning projection configuration | Moved projection transfers and settings into Planning; initial Overview requests fell from 22 to 18. |
