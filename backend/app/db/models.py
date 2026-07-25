@@ -3,7 +3,7 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -140,6 +140,9 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     annual_tax_records: Mapped[list["AnnualTaxRecord"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    projection_scenarios: Mapped[list["ProjectionScenario"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
     projection_settings: Mapped["ProjectionSettings | None"] = relationship(
@@ -516,6 +519,43 @@ class AnnualTaxRecord(Base):
     __table_args__ = (
         UniqueConstraint("household_id", "tax_year", name="uq_annual_tax_records_household_year"),
         Index("ix_annual_tax_records_household_id", "household_id"),
+    )
+
+
+class ProjectionScenario(Base):
+    __tablename__ = "projection_scenarios"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    is_baseline: Mapped[bool] = mapped_column(nullable=False, default=False)
+    created_from_scenario_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+    household: Mapped[Household] = relationship(back_populates="projection_scenarios")
+    created_from_scenario: Mapped["ProjectionScenario | None"] = relationship(
+        remote_side=[id], foreign_keys=[created_from_scenario_id]
+    )
+
+    __table_args__ = (
+        UniqueConstraint("household_id", "name", name="uq_projection_scenarios_household_name"),
+        Index("ix_projection_scenarios_household_created", "household_id", "created_at"),
+        Index(
+            "uq_projection_scenarios_household_baseline",
+            "household_id",
+            unique=True,
+            sqlite_where=text("is_baseline = 1"),
+            postgresql_where=text("is_baseline"),
+        ),
+        Index("ix_projection_scenarios_created_from", "created_from_scenario_id"),
     )
 
 

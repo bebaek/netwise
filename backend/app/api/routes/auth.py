@@ -18,6 +18,7 @@ from app.db.models import Household, HouseholdMembership, User, UserSession
 from app.db.session import get_db
 from app.schemas.auth import AuthLogin, AuthRegister, AuthStatusRead
 from app.schemas.user import UserRead
+from app.services.projection_scenarios import ensure_baseline_scenario
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,6 +43,7 @@ def _set_up_initial_households(db: Session, user: User, settings: Settings) -> N
         households = [household]
 
     for household in households:
+        ensure_baseline_scenario(db, household)
         existing_membership = db.scalar(
             select(HouseholdMembership).where(
                 HouseholdMembership.household_id == household.id,

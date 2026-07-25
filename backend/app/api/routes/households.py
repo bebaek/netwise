@@ -34,6 +34,7 @@ from app.schemas.account import (
 )
 from app.schemas.household import HouseholdCreate, HouseholdRead
 from app.schemas.user import HouseholdMembershipCreate, HouseholdMembershipRead
+from app.services.projection_scenarios import ensure_baseline_scenario
 
 router = APIRouter(prefix="/households", tags=["households"])
 
@@ -220,6 +221,7 @@ def create_household(
     household = Household(name=name)
     db.add(household)
     db.flush()
+    ensure_baseline_scenario(db, household)
     db.add(
         HouseholdMembership(
             household_id=household.id,
