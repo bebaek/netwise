@@ -75,6 +75,23 @@ curl http://localhost:8001/health/live
 curl http://localhost:8001/health/ready
 ```
 
+### Production frontend image
+
+A production frontend image is available separately from the Vite development
+container:
+
+```bash
+docker build -f frontend/Dockerfile.production -t netwise-frontend:production frontend
+```
+
+The multi-stage image installs the locked dependencies with `npm ci`, builds the
+static Vite bundle, and serves it with Nginx on port 80. Nginx provides SPA route
+fallback, proxies same-origin `/api/*` requests to `backend:8000`, caches hashed
+assets immutably, and exposes `/health/live`. The image expects to share a
+container network with a service named `backend`. It is currently a building
+block for the production Compose path; continue using `docker compose up` for
+the supported development workflow.
+
 ### Optional local Docker overrides
 
 Keep machine-specific Docker Compose settings in `docker-compose.override.yml`. This file is ignored by git so local absolute paths and personal mounts are not committed.

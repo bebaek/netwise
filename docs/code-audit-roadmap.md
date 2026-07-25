@@ -231,16 +231,16 @@ Refactor incrementally while retaining the current deterministic output:
 
 ## P1: Development and production deployment separation
 
-**Status:** `not started`
+**Status:** `in progress`
 
 ### Directly verified findings
 
-- The frontend container runs Vite's development server rather than a production static build.
+- A separate multi-stage frontend image builds locked Vite assets with `npm ci` and serves them through Nginx; the default development container still runs Vite.
 - PostgreSQL, backend, and frontend ports are published by the default Compose configuration.
 - Development database credentials are hardcoded.
-- Admin tools are enabled in the default Compose configuration.
+- Admin tools are disabled in the committed development Compose configuration; the production path must preserve that default.
 - Backend startup runs Alembic automatically before Uvicorn.
-- The backend Docker build does not use `uv.lock`; the frontend build uses `npm install` rather than `npm ci`.
+- The backend Docker build does not use `uv.lock`; the development frontend build uses `npm install`, while the production frontend image uses `npm ci`.
 - `docs/self-hosted-operations.md` lists configuration variables that are not implemented and uses `DATABASE_URL` where current settings require `NETWISE_DATABASE_URL`.
 - The operations document calls health endpoints planned even though they are implemented.
 - The README's `.env` copy step does not configure the hardcoded Compose service values.
@@ -266,7 +266,17 @@ Production mode should provide:
 - An explicit, one-shot migration command/job
 - Reproducible dependency installation using lockfiles
 - Container health checks
-- Tested backup, restore, and upgrade procedures
+- Tested backup, restore, and upgrade procedures against the production Compose path.
+
+### Implementation progress
+
+- [x] Add a lockfile-driven multi-stage frontend build served by Nginx.
+- [x] Add same-origin `/api` proxying, SPA fallback, static-asset caching, and a frontend health check.
+- [ ] Add a production Compose path with only the frontend entry point published.
+- [ ] Require external production credentials and keep admin tools disabled.
+- [ ] Separate production migrations from backend application startup.
+- [ ] Make the backend image install from `uv.lock` and add service health checks.
+- [ ] Reconcile and exercise production migration, backup, restore, and upgrade documentation.
 
 ### Completion criteria
 
@@ -321,6 +331,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Production frontend image | Added a multi-stage, `npm ci`-based Vite build served by Nginx with SPA routing, same-origin API proxying, immutable asset caching, and a container health check; the existing Vite image remains the development path. |
 | 2026-07-25 | Projection response boundary | Added immutable simulation result records, moved API dictionary mapping into `projection_results.py`, and kept optimization scoring on typed results so response formatting no longer runs inside the deterministic engine. |
 | 2026-07-25 | Property-sale policy extraction | Moved fixed and automatic sale transaction legs, mortgage payoff, proceeds and basis handling, shortfall delegation, automatic strategy eligibility, and candidate schedule generation into `projection_property_sales.py` with focused unit coverage. |
 | 2026-07-25 | Tax policy extraction | Moved taxable-income netting, effective-rate income tax, withdrawal tax aggregation, property-sale gain tax, and missing-basis warnings into `projection_tax.py` with focused unit coverage. |
