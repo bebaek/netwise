@@ -34,9 +34,10 @@ Playwright was not run because its configured workflow requires the live Docker 
 | Priority | Improvement | Status |
 | --- | --- | --- |
 | P0 | Add authentication and household-level authorization | completed |
-| P1 | Decompose frontend server state and remove full-dashboard reloads | in progress |
+| P1 | Decompose frontend server state and remove full-dashboard reloads | completed |
 | P1 | Refactor projections around pure, typed inputs and policies | not started |
 | P1 | Separate development deployment from supported production deployment | not started |
+| P2 | Extract focused component boundaries from large frontend pages | in progress |
 | P2 | Bring documentation, licensing, and CI in line with the implementation | not started |
 
 ## P0: Authentication and household authorization
@@ -83,7 +84,7 @@ The P0 local/trusted-network security milestone is complete. Production deployme
 
 ## P1: Frontend data and state architecture
 
-**Status:** `complete`
+**Status:** `completed`
 
 ### Directly verified findings
 
@@ -140,6 +141,35 @@ Suggested initial slices:
 - Page-specific data is fetched only when needed.
 - `App()` is primarily routing, workspace selection, theme handling, and top-level error boundaries.
 - Request counts for initial load and representative mutations are recorded before and after the change.
+
+## P2: Frontend component boundaries
+
+**Status:** `in progress`
+
+### Directly verified findings
+
+- `frontend/src/pages/PlanningPage.tsx` fell from 1,765 to 1,441 lines after projection-event state, queries, mutations, and rendering moved into `PlanningEventsSection`.
+- `PlanningEventsSection` is a cohesive route child: it needs only the household ID, default date, accounts, and account-name lookup.
+- Projection configuration, budget, people, Social Security, and real-estate planning remain combined in the parent page.
+
+### Intended work
+
+1. Extract route sections with their local state and mutations rather than creating presentation-only wrappers.
+2. Keep query ownership at the narrowest component that needs the data, while allowing shared query observers where two sections genuinely consume the same cache entry.
+3. Preserve request-count budgets and user-visible loading and error behavior.
+4. Prefer domain components such as projection events, budget, Social Security, and real-estate planning over generic layout abstractions.
+
+### Implementation progress
+
+- [x] Extract projection-event state, queries, mutations, and responsive rendering.
+- [ ] Extract the next cohesive Planning domain section.
+- [ ] Reduce `PlanningPage` to route-level orchestration and genuinely shared projection state.
+
+### Completion criteria
+
+- `PlanningPage` primarily composes domain sections and coordinates only shared projection concerns.
+- Extracted sections own their domain-local state, query observers, mutations, errors, and pending UI.
+- Existing desktop, mobile, accessibility, navigation, and request-count tests continue to pass.
 
 ## P1: Projection engine boundaries
 
@@ -272,6 +302,7 @@ When an item moves to a dedicated issue or ADR, add its link here rather than du
 
 | Date | Item | Update |
 | --- | --- | --- |
+| 2026-07-25 | Planning component boundaries | Extracted projection-event state, queries, mutations, and responsive UI into `PlanningEventsSection`; `PlanningPage` fell from 1,765 to 1,441 lines. |
 | 2026-07-22 | Household settings data | Moved users, capabilities, membership mutations, imports, and exports into Settings; removed `refreshDashboard()` and reduced initial requests from 18 to 14. |
 | 2026-07-22 | Planning projection configuration | Moved projection transfers and settings into Planning; initial Overview requests fell from 22 to 18. |
 | 2026-07-22 | Planning people data | Moved income sources, household people, and Social Security estimates into Planning; initial Overview requests fell from 28 to 22. |

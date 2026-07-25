@@ -1,7 +1,6 @@
 import { useState, type FormEvent, type FormEventHandler } from 'react';
 import type {
   Account,
-  AccountEvent,
   NetWorthProjection,
   ProjectionTransfer,
   RealEstateLiquidationStrategy,
@@ -10,7 +9,7 @@ import type {
   SocialSecurityEstimateInput,
   SpendingItem,
 } from '../api';
-import { useAccountEventMutations, useHouseholdAccountEvents } from '../queries/household';
+import { PlanningEventsSection } from '../components/planning/PlanningEventsSection';
 import {
   usePlanningBudgetData,
   usePlanningBudgetMutations,
@@ -21,38 +20,6 @@ import {
 } from '../queries/planning';
 import { usePlanningRealEstateData, usePlanningRealEstateMutations } from '../queries/realEstate';
 import { formatMoney } from '../utils/format';
-
-type AccountEventDraft = {
-  id?: string;
-  original_account_id?: string;
-  account_id: string;
-  event_date: string;
-  amount: string;
-  currency: string;
-  event_type: string;
-  description: string;
-  projection_behavior: string;
-};
-
-const ACCOUNT_EVENT_TYPE_OPTIONS = [
-  ['contribution', 'Contribution'],
-  ['withdrawal', 'Withdrawal'],
-  ['transfer', 'Transfer'],
-  ['large_purchase', 'Large purchase'],
-  ['asset_sale', 'Asset sale'],
-  ['gift', 'Gift'],
-  ['inheritance', 'Inheritance'],
-  ['tax_payment', 'Tax payment'],
-  ['account_added', 'Account added'],
-  ['account_removed', 'Account removed'],
-  ['manual_projection_adjustment', 'Manual projection adjustment'],
-] as const;
-
-const PROJECTION_BEHAVIOR_OPTIONS = [
-  ['projection_only', 'Projection only'],
-  ['historical_and_projection', 'Historical and projection'],
-  ['historical_only', 'Historical only'],
-] as const;
 
 const SPENDING_CATEGORY_OPTIONS = [
   ['housing', 'Housing'],
@@ -99,14 +66,6 @@ function socialSecurityEstimateInput(
     cola_rate: optionalFormString(form, 'cola_rate') ?? '0.025',
     deposit_account_id: optionalFormString(form, 'social_security_deposit_account_id'),
   };
-}
-
-function eventTypeLabel(value: string): string {
-  return ACCOUNT_EVENT_TYPE_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
-}
-
-function projectionBehaviorLabel(value: string): string {
-  return PROJECTION_BEHAVIOR_OPTIONS.find(([optionValue]) => optionValue === value)?.[1] ?? value;
 }
 
 function readableLabel(value: string): string {
@@ -161,11 +120,6 @@ export function PlanningPage({
   const planningRealEstateMutations = usePlanningRealEstateMutations(householdId);
   const realEstateSales = planningRealEstateData.sales.data ?? [];
   const liquidationStrategies = planningRealEstateData.liquidationStrategies.data ?? [];
-  const [accountEventDraft, setAccountEventDraft] = useState<AccountEventDraft | null>(null);
-  const [accountEventError, setAccountEventError] = useState('');
-  const accountEventsQuery = useHouseholdAccountEvents(householdId);
-  const accountEventMutations = useAccountEventMutations(householdId);
-  const accountEvents = accountEventsQuery.data ?? [];
   const [spendingItemEditId, setSpendingItemEditId] = useState('');
   const [socialSecurityMode, setSocialSecurityMode] = useState<'manual' | 'ballpark'>('ballpark');
   const [socialSecurityEditId, setSocialSecurityEditId] = useState('');
@@ -503,84 +457,6 @@ export function PlanningPage({
       await planningRealEstateMutations.deleteSale.mutateAsync(sale);
     } catch (mutationError: unknown) {
       setRealEstateError(String(mutationError));
-    }
-  }
-
-  function startNewAccountEventDraft() {
-    setAccountEventDraft({
-      account_id: accounts[0]?.id ?? '',
-      event_date: defaultDate,
-      amount: '',
-      currency: 'USD',
-      event_type: 'manual_projection_adjustment',
-      description: '',
-      projection_behavior: 'projection_only',
-    });
-  }
-
-  function startEditAccountEventDraft(accountEvent: AccountEvent) {
-    setAccountEventDraft({
-      id: accountEvent.id,
-      original_account_id: accountEvent.account_id,
-      account_id: accountEvent.account_id,
-      event_date: accountEvent.event_date,
-      amount: accountEvent.amount,
-      currency: accountEvent.currency,
-      event_type: accountEvent.event_type,
-      description: accountEvent.description ?? '',
-      projection_behavior: accountEvent.projection_behavior,
-    });
-  }
-
-  async function handleSaveAccountEvent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!accountEventDraft) return;
-    setAccountEventError('');
-    const payload = {
-      account_id: accountEventDraft.account_id,
-      event_date: accountEventDraft.event_date,
-      amount: accountEventDraft.amount,
-      currency: accountEventDraft.currency,
-      event_type: accountEventDraft.event_type,
-      description: accountEventDraft.description || null,
-      projection_behavior: accountEventDraft.projection_behavior,
-    };
-    try {
-      if (accountEventDraft.id && accountEventDraft.original_account_id) {
-        await accountEventMutations.update.mutateAsync({
-          accountId: accountEventDraft.original_account_id,
-          eventId: accountEventDraft.id,
-          payload,
-        });
-      } else {
-        await accountEventMutations.create.mutateAsync({
-          accountId: accountEventDraft.account_id,
-          payload: {
-            event_date: payload.event_date,
-            amount: payload.amount,
-            currency: payload.currency,
-            event_type: payload.event_type,
-            description: accountEventDraft.description || undefined,
-            projection_behavior: payload.projection_behavior,
-          },
-        });
-      }
-      setAccountEventDraft(null);
-    } catch (mutationError: unknown) {
-      setAccountEventError(String(mutationError));
-    }
-  }
-
-  async function handleDeleteAccountEvent(accountEvent: AccountEvent) {
-    if (!window.confirm(`Delete ${accountEvent.event_type} event from ${accountEvent.event_date}?`)) {
-      return;
-    }
-    setAccountEventError('');
-    try {
-      await accountEventMutations.remove.mutateAsync(accountEvent);
-      if (accountEventDraft?.id === accountEvent.id) setAccountEventDraft(null);
-    } catch (mutationError: unknown) {
-      setAccountEventError(String(mutationError));
     }
   }
 
@@ -1554,212 +1430,12 @@ export function PlanningPage({
   </div>
 </section>
 
-{accountEventError && <div className="error" role="alert">{accountEventError}</div>}
-<section className="card projection-events-card">
-  <div className="section-header">
-    <div>
-      <h2>Projection events</h2>
-      <p className="muted">Capture planned future contributions, withdrawals, purchases, sales, and adjustments.</p>
-    </div>
-    <button type="button" onClick={startNewAccountEventDraft} disabled={!accounts.length}>
-      Add event
-    </button>
-  </div>
-
-  {accountEventDraft && (
-    <form onSubmit={handleSaveAccountEvent} className="event-editor-card">
-      <div className="section-header">
-        <div>
-          <h3>{accountEventDraft.id ? 'Edit projection event' : 'Add projection event'}</h3>
-          <p className="muted">Use positive amounts; outflow event types are applied as withdrawals in projections.</p>
-        </div>
-        <button type="button" className="secondary-button" onClick={() => setAccountEventDraft(null)}>
-          Cancel
-        </button>
-      </div>
-      <div className="event-editor-grid">
-        <label>
-          Account
-          <select
-            required
-            value={accountEventDraft.account_id}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, account_id: changeEvent.target.value })
-            }
-          >
-            {!accountEventDraft.account_id && <option value="">Select account</option>}
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Event date
-          <input
-            required
-            type="date"
-            value={accountEventDraft.event_date}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, event_date: changeEvent.target.value })
-            }
-          />
-        </label>
-        <label>
-          Amount
-          <input
-            required
-            inputMode="decimal"
-            placeholder="2500.00"
-            value={accountEventDraft.amount}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, amount: changeEvent.target.value })
-            }
-          />
-        </label>
-        <label>
-          Type
-          <select
-            required
-            value={accountEventDraft.event_type}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, event_type: changeEvent.target.value })
-            }
-          >
-            {ACCOUNT_EVENT_TYPE_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Projection behavior
-          <select
-            required
-            value={accountEventDraft.projection_behavior}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, projection_behavior: changeEvent.target.value })
-            }
-          >
-            {PROJECTION_BEHAVIOR_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Description
-          <input
-            placeholder="Optional note"
-            value={accountEventDraft.description}
-            onChange={(changeEvent) =>
-              setAccountEventDraft({ ...accountEventDraft, description: changeEvent.target.value })
-            }
-          />
-        </label>
-      </div>
-      <div className="action-row">
-        <button type="submit" disabled={!accountEventDraft.account_id || accountEventMutations.isPending}>Save event</button>
-        <button type="button" className="secondary-button" onClick={() => setAccountEventDraft(null)}>
-          Cancel
-        </button>
-      </div>
-    </form>
-  )}
-
-  {accountEventsQuery.isPending ? (
-    <p className="muted" role="status">Loading projection events…</p>
-  ) : accountEventsQuery.error ? (
-    <div className="error" role="alert">{String(accountEventsQuery.error)}</div>
-  ) : accountEvents.length ? (
-    <>
-      <div className="desktop-table table-frame sticky-actions">
-        <table className="editable-table compact-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Account</th>
-              <th>Type</th>
-              <th>Amount</th>
-              <th>Behavior</th>
-              <th>Description</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {accountEvents.map((event) => (
-              <tr key={event.id}>
-                <td>{event.event_date}</td>
-                <td>{accountNameById.get(event.account_id) ?? event.account_id}</td>
-                <td>{eventTypeLabel(event.event_type)}</td>
-                <td>{formatMoney(event.amount)}</td>
-                <td>{projectionBehaviorLabel(event.projection_behavior)}</td>
-                <td>{event.description || '—'}</td>
-                <td>
-                  <div className="action-row">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => startEditAccountEventDraft(event)}
-                    >
-                      Edit
-                    </button>
-                    <button type="button" className="danger-button" disabled={accountEventMutations.isPending} onClick={() => handleDeleteAccountEvent(event)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mobile-card-list">
-        {accountEvents.map((event) => (
-          <article className="event-card" key={event.id}>
-            <div className="event-card-header">
-              <div>
-                <strong className="event-card-title">{eventTypeLabel(event.event_type)}</strong>
-                <span>{event.event_date}</span>
-              </div>
-              <strong className="event-card-amount">{formatMoney(event.amount)}</strong>
-            </div>
-            <dl className="event-card-meta">
-              <div>
-                <dt>Account</dt>
-                <dd>{accountNameById.get(event.account_id) ?? event.account_id}</dd>
-              </div>
-              <div>
-                <dt>Behavior</dt>
-                <dd>{projectionBehaviorLabel(event.projection_behavior)}</dd>
-              </div>
-              {event.description && (
-                <div>
-                  <dt>Description</dt>
-                  <dd>{event.description}</dd>
-                </div>
-              )}
-            </dl>
-            <div className="event-card-actions">
-              <button type="button" className="secondary-button" onClick={() => startEditAccountEventDraft(event)}>
-                Edit
-              </button>
-              <button type="button" className="danger-button" disabled={accountEventMutations.isPending} onClick={() => handleDeleteAccountEvent(event)}>
-                Delete
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </>
-  ) : (
-    <p className="muted">No projection events yet.</p>
-  )}
-</section>
+<PlanningEventsSection
+  householdId={householdId}
+  defaultDate={defaultDate}
+  accounts={accounts}
+  accountNameById={accountNameById}
+/>
     </>
   );
 }
