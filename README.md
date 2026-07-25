@@ -2,7 +2,8 @@
 
 Netwise is a privacy-conscious personal finance planning app focused on balance snapshots, asset categorization, and long-term projections without transaction tracking.
 
-This repository contains the open-source, self-host-oriented application.
+This repository contains the open-source, self-host-oriented application and is
+licensed under the [Apache License 2.0](LICENSE).
 
 ## Core idea
 
@@ -22,17 +23,33 @@ Netwise helps a household answer:
 - Data portability and transparent assumptions.
 - Simple deterministic projections first; advanced time-series analysis later.
 
-## Intended deployment
+## Implementation status
 
-The project should be easy to run for an individual, couple, family, or small trusted group using container-based deployment.
+| Capability | Status |
+| --- | --- |
+| Authentication and household authorization | Implemented |
+| Accounts, balance snapshots, and net-worth history | Implemented |
+| Asset allocation and historical analytics | Implemented |
+| Deterministic projections with income, tax, spending, and withdrawal policies | Implemented |
+| Real-estate, mortgage, and property-sale planning | Implemented |
+| FinTrack import and household JSON export | Implemented; local admin tools are disabled by default |
+| Development and production Docker Compose deployments | Implemented |
+| Production backup, restore, and upgrade procedures | Implemented |
+| Automatic property-sale optimization | Experimental |
+| Optional institution automation plugins | Planned |
+| Advanced time-series and probabilistic projections | Planned |
+| Kubernetes and Helm deployment | Planned |
 
-Planned deployment options:
+## Deployment
+
+Supported deployment paths:
 
 - Local development with Docker Compose.
 - Small production deployment with Docker Compose.
-- Advanced deployment with Kubernetes and Helm.
 
-## Planned backend stack
+Kubernetes and Helm packaging is planned but not currently provided.
+
+## Backend stack
 
 - Python
 - FastAPI
@@ -40,14 +57,14 @@ Planned deployment options:
 - SQLAlchemy
 - Alembic
 - Pydantic
-- Redis-backed workers when asynchronous jobs are needed
 
-## Current development quickstart
+Redis-backed workers may be added when asynchronous jobs are needed.
 
-The current skeleton starts a FastAPI backend, PostgreSQL database, and Vite frontend:
+## Development quickstart
+
+The development stack starts a FastAPI backend, PostgreSQL database, and Vite frontend. From the repository root:
 
 ```bash
-cd /Users/burm/code/netwise
 cp .env.example .env
 docker compose up --build
 ```
@@ -143,25 +160,22 @@ The example enables administrative tools, configures `/import/fintrack` as the o
 Run backend tests and migrations locally:
 
 ```bash
-cd /Users/burm/code/netwise/backend
-uv run alembic upgrade head
-uv run --extra dev pytest -q
+(cd backend && uv run alembic upgrade head)
+(cd backend && uv run --extra dev pytest -q)
 ```
 
 Create future migrations after model changes:
 
 ```bash
-cd /Users/burm/code/netwise/backend
-uv run alembic revision --autogenerate -m "describe change"
+(cd backend && uv run alembic revision --autogenerate -m "describe change")
 ```
 
 Run frontend type checks and builds locally:
 
 ```bash
-cd /Users/burm/code/netwise/frontend
-npm install
-npm run lint
-npm run build
+npm --prefix frontend ci
+npm --prefix frontend run lint
+npm --prefix frontend run build
 ```
 
 Run Chromium end-to-end checks in an isolated Docker Compose stack:
@@ -182,10 +196,12 @@ docker compose exec backend python -m app.seed_demo --reset
 
 The seed command creates a `Demo Household` with accounts, snapshots, real estate, mortgage, income, tax records, and future projection events. Sign in with `demo@netwise.local` and password `netwise-demo-password`. Omit `--reset` to reuse existing demo data without duplicating records; running the seed command resets the demo account password to this documented local-development value.
 
-## Planned frontend stack
+## Frontend stack
 
-- React or Next.js
-- Charting for net worth history, category breakdowns, and projections
+- React with TypeScript and Vite
+- TanStack Query for server-state management
+- Playwright for browser testing
+- CSS-based responsive layouts and charts
 
 ## Documentation
 
@@ -199,4 +215,4 @@ The seed command creates a `Demo Household` with accounts, snapshots, real estat
 
 ## License
 
-License is not chosen yet. This repository is intended to be open source.
+Netwise is licensed under the [Apache License 2.0](LICENSE).
