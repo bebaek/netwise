@@ -1,5 +1,6 @@
 from calendar import monthrange
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -26,6 +27,16 @@ from app.analytics.projection_property_sales import (
 from app.analytics.projection_returns import (
     annual_return_for_account,
     project_balance_with_return,
+)
+from app.analytics.projection_results import (
+    ProjectionAccountResult,
+    ProjectionCashFlowResult,
+    ProjectionPointResult,
+    ProjectionResult,
+    ProjectionSpendingItemResult,
+    PropertySaleOptimizationResult,
+    PropertySaleOptimizationSelectionResult,
+    format_projection_result,
 )
 from app.analytics.projection_income import project_income_source_for_period
 from app.analytics.projection_tax import (
@@ -131,10 +142,35 @@ def calculate_projection_from_input(
     spending_account_id: UUID | None = None,
     tax_account_id: UUID | None = None,
     interval: str = "annual",
+) -> dict:
+    """Run the deterministic projection and format its API response."""
+    result = _calculate_projection_result_from_input(
+        projection_input,
+        start_year=start_year,
+        end_year=end_year,
+        annual_spending=annual_spending,
+        spending_inflation_rate=spending_inflation_rate,
+        spending_account_id=spending_account_id,
+        tax_account_id=tax_account_id,
+        interval=interval,
+    )
+    return format_projection_result(result)
+
+
+def _calculate_projection_result_from_input(
+    projection_input: ProjectionInput,
+    *,
+    start_year: int,
+    end_year: int,
+    annual_spending: Decimal | None = None,
+    spending_inflation_rate: Decimal | None = None,
+    spending_account_id: UUID | None = None,
+    tax_account_id: UUID | None = None,
+    interval: str = "annual",
     _scheduled_sales: dict[UUID, date | None] | None = None,
     _skip_optimization: bool = False,
-) -> dict:
-    """Run the deterministic projection without database access."""
+) -> ProjectionResult:
+    """Run the deterministic simulation without database or API concerns."""
     _validate_projection_request(start_year, end_year, interval)
     household_id = projection_input.household_id
     projection_date = _current_date()
@@ -253,7 +289,7 @@ def calculate_projection_from_input(
                 strategies=optimization_strategies,
             )
 
-    points = []
+    points: list[ProjectionPointResult] = []
     months_per_period = {"annual": 12, "quarterly": 3, "monthly": 1}[interval]
     period_ends = [
         date(year, month, monthrange(year, month)[1])
@@ -621,17 +657,17 @@ def calculate_projection_from_input(
         if as_of_date <= projection_date:
             continue
 
-        account_points = [
-            {
-                "account_id": account.id,
-                "name": account.name,
-                "account_kind": account.account_kind,
-                "category": account.category,
-                "liquidity_class": account.liquidity_class,
-                "projected_balance": balances[account.id],
-            }
+        account_points = tuple(
+            ProjectionAccountResult(
+                account_id=account.id,
+                name=account.name,
+                account_kind=account.account_kind,
+                category=account.category,
+                liquidity_class=account.liquidity_class,
+                projected_balance=balances[account.id],
+            )
             for account in accounts
-        ]
+        )
         assets_total = sum(
             (
                 balances[account.id]
@@ -649,30 +685,32 @@ def calculate_projection_from_input(
             Decimal("0.00"),
         )
         points.append(
-            {
-                "year": year,
-                "as_of_date": as_of_date,
-                "net_worth": assets_total - liabilities_total,
-                "assets_total": assets_total,
-                "liabilities_total": liabilities_total,
-                "projected_income": projected_income,
-                "projected_rental_income": projected_rental_income,
-                "projected_rental_expenses": projected_rental_expenses,
-                "projected_taxes": projected_taxes,
-                "projected_spending": projected_spending,
-                "projected_owner_property_spending": projected_owner_property_spending,
-                "projected_mortgage_spending": projected_mortgage_spending,
-                "projected_spending_breakdown": projected_spending_breakdown,
-                "projected_liquidation_expenses": projected_liquidation_expenses,
-                "projected_unfunded_cash_flow": projected_unfunded_cash_flow,
-                "net_cash_flow": net_cash_flow,
-                "retirement_phase": (
+            ProjectionPointResult(
+                year=year,
+                as_of_date=as_of_date,
+                net_worth=assets_total - liabilities_total,
+                assets_total=assets_total,
+                liabilities_total=liabilities_total,
+                projected_income=projected_income,
+                projected_rental_income=projected_rental_income,
+                projected_rental_expenses=projected_rental_expenses,
+                projected_taxes=projected_taxes,
+                projected_spending=projected_spending,
+                projected_owner_property_spending=projected_owner_property_spending,
+                projected_mortgage_spending=projected_mortgage_spending,
+                projected_spending_breakdown=tuple(
+                    ProjectionSpendingItemResult(**item) for item in projected_spending_breakdown
+                ),
+                projected_liquidation_expenses=projected_liquidation_expenses,
+                projected_unfunded_cash_flow=projected_unfunded_cash_flow,
+                net_cash_flow=net_cash_flow,
+                retirement_phase=(
                     effective_retirement_date is not None
                     and effective_retirement_date <= as_of_date
                 ),
-                "cash_flows": cash_flows,
-                "accounts": account_points,
-            }
+                cash_flows=tuple(ProjectionCashFlowResult(**flow) for flow in cash_flows),
+                accounts=account_points,
+            )
         )
 
     warnings = property_sale_tax_basis_warnings(
@@ -701,24 +739,24 @@ def calculate_projection_from_input(
                 + ", ".join(estimate_names)
                 + ". Enter an explicit cost basis on each account for more accurate capital gains taxes."
             )
-    result = {
-        "household_id": household_id,
-        "start_year": start_year,
-        "end_year": end_year,
-        "interval": interval,
-        "spending_mode": "itemized" if use_itemized_spending else "manual",
-        "retirement_date": effective_retirement_date,
-        "warnings": warnings,
-        "points": points,
-    }
-    result["first_retirement_withdrawal_date"] = _first_retirement_withdrawal_date(result, accounts)
-    result["first_unfunded_date"] = next(
-        (
-            point["as_of_date"]
-            for point in points
-            if point["projected_unfunded_cash_flow"] > Decimal("0.00")
+    result = ProjectionResult(
+        household_id=household_id,
+        start_year=start_year,
+        end_year=end_year,
+        interval=interval,
+        spending_mode="itemized" if use_itemized_spending else "manual",
+        retirement_date=effective_retirement_date,
+        first_retirement_withdrawal_date=_first_retirement_withdrawal_date(points, accounts),
+        first_unfunded_date=next(
+            (
+                point.as_of_date
+                for point in points
+                if point.projected_unfunded_cash_flow > Decimal("0.00")
+            ),
+            None,
         ),
-        None,
+        warnings=tuple(warnings),
+        points=tuple(points),
     )
     return result
 
@@ -734,7 +772,7 @@ def _optimize_liquid_runway_sales(
     interval: str,
     projection_input: ProjectionInput,
     strategies: Sequence[ProjectionLiquidationStrategy],
-) -> dict:
+) -> ProjectionResult:
     """Choose ordered March 1 property sales that delay retirement withdrawals longest."""
     ordered_strategies = sorted(
         strategies,
@@ -747,7 +785,7 @@ def _optimize_liquid_runway_sales(
             ),
         ),
     )
-    best_result: dict | None = None
+    best_result: ProjectionResult | None = None
     best_score: tuple[int, int, Decimal, Decimal] | None = None
     best_schedule: dict[UUID, date | None] = {}
     schedules_evaluated = 0
@@ -761,7 +799,7 @@ def _optimize_liquid_runway_sales(
         if schedule_key in evaluated_schedules:
             return
         evaluated_schedules.add(schedule_key)
-        result = calculate_projection_from_input(
+        result = _calculate_projection_result_from_input(
             projection_input,
             start_year=start_year,
             end_year=end_year,
@@ -786,7 +824,7 @@ def _optimize_liquid_runway_sales(
         raise ValueError("Unable to evaluate property sale schedules")
 
     first_retirement_date = _first_retirement_withdrawal_date(
-        best_result, projection_input.accounts
+        best_result.points, projection_input.accounts
     )
     candidate_end_year = first_retirement_date.year if first_retirement_date else end_year
     while True:
@@ -801,7 +839,7 @@ def _optimize_liquid_runway_sales(
         if best_result is None:
             raise ValueError("Unable to evaluate property sale schedules")
         expanded_retirement_date = _first_retirement_withdrawal_date(
-            best_result, projection_input.accounts
+            best_result.points, projection_input.accounts
         )
         expanded_end_year = expanded_retirement_date.year if expanded_retirement_date else end_year
         if expanded_end_year <= candidate_end_year or candidate_end_year == end_year:
@@ -810,44 +848,46 @@ def _optimize_liquid_runway_sales(
 
     accounts_by_id = {account.id: account for account in projection_input.accounts}
     first_retirement_date = _first_retirement_withdrawal_date(
-        best_result, projection_input.accounts
+        best_result.points, projection_input.accounts
     )
-    best_result["property_sale_optimization"] = {
-        "mode": "maximize_liquid_runway",
-        "candidate_month": 3,
-        "candidate_day": 1,
-        "schedules_evaluated": schedules_evaluated,
-        "first_retirement_withdrawal_date": first_retirement_date,
-        "selected_sales": [
-            {
-                "property_account_id": strategy.property_account_id,
-                "property_name": accounts_by_id[strategy.property_account_id].name,
-                "sale_date": best_schedule[strategy.property_account_id],
-            }
-            for strategy in ordered_strategies
-        ],
-    }
-    return best_result
+    return replace(
+        best_result,
+        property_sale_optimization=PropertySaleOptimizationResult(
+            mode="maximize_liquid_runway",
+            candidate_month=3,
+            candidate_day=1,
+            schedules_evaluated=schedules_evaluated,
+            first_retirement_withdrawal_date=first_retirement_date,
+            selected_sales=tuple(
+                PropertySaleOptimizationSelectionResult(
+                    property_account_id=strategy.property_account_id,
+                    property_name=accounts_by_id[strategy.property_account_id].name,
+                    sale_date=best_schedule[strategy.property_account_id],
+                )
+                for strategy in ordered_strategies
+            ),
+        ),
+    )
 
 
 def _liquid_runway_score(
-    result: dict,
+    result: ProjectionResult,
     accounts: Sequence[ProjectionAccount],
 ) -> tuple[int, int, Decimal, Decimal]:
-    points = result["points"]
+    points = result.points
     retirement_ids = {account.id for account in accounts if account.category == "retirement"}
     retirement_index = len(points) + 1
     for index, point in enumerate(points):
         if any(
-            cash_flow["account_id"] in retirement_ids and cash_flow["amount"] < Decimal("0.00")
-            for cash_flow in point["cash_flows"]
+            cash_flow.account_id in retirement_ids and cash_flow.amount < Decimal("0.00")
+            for cash_flow in point.cash_flows
         ):
             retirement_index = index
             break
 
     unfunded_index = len(points) + 1
     for index, point in enumerate(points):
-        if point["projected_unfunded_cash_flow"] > Decimal("0.00"):
+        if point.projected_unfunded_cash_flow > Decimal("0.00"):
             unfunded_index = index
             break
 
@@ -861,9 +901,9 @@ def _liquid_runway_score(
     }
     liquid_balance = sum(
         (
-            account_point["projected_balance"]
-            for account_point in points[balance_point_index]["accounts"]
-            if account_point["account_id"] in liquid_account_ids
+            account_point.projected_balance
+            for account_point in points[balance_point_index].accounts
+            if account_point.account_id in liquid_account_ids
         ),
         Decimal("0.00"),
     )
@@ -871,21 +911,21 @@ def _liquid_runway_score(
         retirement_index,
         unfunded_index,
         liquid_balance,
-        points[-1]["net_worth"],
+        points[-1].net_worth,
     )
 
 
 def _first_retirement_withdrawal_date(
-    result: dict,
+    points: Sequence[ProjectionPointResult],
     accounts: Sequence[ProjectionAccount],
 ) -> date | None:
     retirement_ids = {account.id for account in accounts if account.category == "retirement"}
-    for point in result["points"]:
+    for point in points:
         if any(
-            cash_flow["account_id"] in retirement_ids and cash_flow["amount"] < Decimal("0.00")
-            for cash_flow in point["cash_flows"]
+            cash_flow.account_id in retirement_ids and cash_flow.amount < Decimal("0.00")
+            for cash_flow in point.cash_flows
         ):
-            return point["as_of_date"]
+            return point.as_of_date
     return None
 
 

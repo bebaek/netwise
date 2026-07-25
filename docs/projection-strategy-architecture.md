@@ -2,11 +2,14 @@
 
 ## Status
 
-**Implementation in progress.** The persistence queries and SQLAlchemy-to-domain
-mapping now live in `backend/app/analytics/projection_input.py`, which returns a
-plain-data `ProjectionInput` snapshot. The deterministic engine no longer
-consumes SQLAlchemy entities. Focused policy extraction and response-formatting
-separation remain in progress.
+**Baseline boundaries implemented.** Persistence queries and SQLAlchemy-to-domain
+mapping live in `backend/app/analytics/projection_input.py`, which returns a
+plain-data `ProjectionInput` snapshot. The deterministic engine consumes only
+plain records and returns an immutable `ProjectionResult`; API response mapping
+lives separately in `backend/app/analytics/projection_results.py`. The default
+withdrawal, spending, income, return, tax, and property-sale decisions have also
+been extracted into focused policy modules. Strategy registration, scenarios,
+and result provenance remain future work described below.
 
 ## Context
 
@@ -16,21 +19,20 @@ outside API routes and supports configurable assumptions such as account yields,
 spending, income, tax records, mortgages, real-estate appreciation, and dated
 account events.
 
-The projection engine now consumes plain domain records and resolves settings,
-applies all calculation policies, and formats the API result. Important
-behavioral decisions remain embedded as private helpers and constants:
+The projection engine now consumes plain domain records, resolves settings, and
+coordinates extracted calculation policies. It returns typed simulation records
+rather than constructing API dictionaries. Timeline-level behavior still owned
+by the deterministic strategy includes:
 
-- category-level return defaults;
-- spending inflation and income-growth defaults;
-- withdrawal/funding order;
-- whether an account withdrawal is taxable;
-- liquidation-expense defaults; and
-- annual simulation timing.
+- event and transaction ordering within each period;
+- recurring-transfer execution and taxable-basis movement;
+- automatic property-sale schedule scoring; and
+- annual, quarterly, or monthly simulation timing.
 
-This structure is appropriate for a first deterministic engine, but makes
-alternative approaches invasive. Examples include different withdrawal orders,
-historical or user-entered spending models, more complete tax treatments,
-monthly timing, and Monte Carlo return simulations.
+These boundaries preserve the first deterministic engine while making policy
+alternatives less invasive. A whole-strategy change—such as Monte Carlo returns
+or materially different timeline semantics—would still require the explicit
+strategy interface and provenance work described below.
 
 ## Goals
 
@@ -58,9 +60,11 @@ loader. It resolves active accounts, starting balances, profiles, sales,
 events, income, transfers, spending, settings, tax rate, and cost bases before
 the deterministic calculation begins. Optimization candidates reuse the same
 frozen `ProjectionInput` container. The route-facing
-`calculate_net_worth_projection()` function is now a compatibility adapter;
-`calculate_projection_from_input()` runs the deterministic engine and all
-optimization candidates without a database session.
+`calculate_net_worth_projection()` function remains a compatibility adapter.
+`calculate_projection_from_input()` runs the in-memory strategy and passes its
+typed `ProjectionResult` to `format_projection_result()`. Optimization candidates
+run the private typed-result strategy directly, so API dictionaries do not enter
+simulation or schedule scoring.
 
 Accounts, projection events, income sources, recurring transfers, spending
 items, settings, mortgage/property profiles, property sales, and automatic
@@ -191,9 +195,11 @@ cost-basis reduction, liquidation expenses, and the resulting account cash-flow
 legs. These decisions have focused unit coverage independent of timeline
 orchestration.
 
-`_withdraw_from_assets()` still coordinates automatic property sales between
-non-retirement and retirement funding attempts. That transaction orchestration
-remains in the deterministic engine until the property-sale policy is extracted.
+`_withdraw_from_assets()` coordinates automatic property sales between
+non-retirement and retirement funding attempts. Transaction eligibility,
+individual sale application, and candidate schedule generation are delegated to
+`projection_property_sales.py`; whole-run coordination remains in the
+deterministic strategy.
 
 The baseline spending policy now lives in
 `backend/app/analytics/projection_spending.py`. It owns inflation growth,
@@ -233,6 +239,13 @@ legs. It also owns automatic-sale eligibility and ordered March candidate
 schedules. The deterministic strategy retains whole-projection schedule scoring
 and repeated candidate execution because those coordinate complete engine runs,
 not an individual sale transaction.
+
+Simulation output records and API response formatting now live in
+`backend/app/analytics/projection_results.py`. The engine and optimizer exchange
+immutable account, cash-flow, point, optimization, and top-level result records.
+Only the public compatibility boundary converts those records to the existing
+API dictionary shape, which keeps response naming and collection conversion out
+of timeline simulation while preserving the endpoint contract.
 
 ## Scenario semantics
 
@@ -287,7 +300,8 @@ to a strategy.
 ## Current implementation references
 
 - Plain input records: `backend/app/analytics/projection_contracts.py`
-- Input loader and transitional aggregate: `backend/app/analytics/projection_input.py`
+- Input loader and immutable aggregate: `backend/app/analytics/projection_input.py`
+- Typed simulation results and API formatter: `backend/app/analytics/projection_results.py`
 - Deterministic in-memory entry point: `calculate_projection_from_input()` in `backend/app/analytics/projections.py`
 - Route-facing persistence adapter: `calculate_net_worth_projection()` in `backend/app/analytics/projections.py`
 - Projection endpoint: `backend/app/api/routes/dashboard.py`
