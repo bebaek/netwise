@@ -8,7 +8,7 @@
 - [x] Slice 2: scenario-aware persisted projection inputs
 - [x] Slice 3: transactional duplication and data portability
 - [x] Slice 4: frontend scenario editing
-- [ ] Slice 5: scenario comparison
+- [x] Slice 5: scenario comparison
 - [ ] Slice 6: compatibility cleanup
 
 - Plan date: 2026-07-25
@@ -567,6 +567,8 @@ Completion signal: a complete scenario can be cloned and then edited independent
 Completion signal: users can manage and edit scenarios without data leakage or stale UI state.
 
 ### Slice 5: Comparison
+
+**Status:** Complete.
 
 - Add comparison request/response schemas and endpoint.
 - Compute summary metrics server-side.

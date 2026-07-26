@@ -181,6 +181,10 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
     account = unauthenticated_client.post(
         "/accounts", json=_account_payload(household_id, "Scenario Cash")
     ).json()
+    comparison_scenario = unauthenticated_client.post(
+        f"/households/{household_id}/projection-scenarios",
+        json={"name": "Comparison scenario"},
+    ).json()
 
     viewer = _create_user(db_session, "ScenarioViewer")
     _add_membership(db_session, household_id, viewer, "viewer")
@@ -209,6 +213,38 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
         unauthenticated_client.get(f"/projection-scenarios/{baseline['id']}").status_code
         == 200
     )
+    viewer_comparison = unauthenticated_client.post(
+        f"/dashboard/{household_id}/projection-comparison",
+        json={
+            "scenario_ids": [baseline["id"], comparison_scenario["id"]],
+            "start_year": 2026,
+            "end_year": 2027,
+            "interval": "annual",
+        },
+    )
+    assert viewer_comparison.status_code == 200
+    viewer_household = unauthenticated_client.post(
+        "/households", json={"name": "Viewer-owned comparison household"}
+    ).json()
+    viewer_household_baseline = unauthenticated_client.get(
+        f"/households/{viewer_household['id']}/projection-scenarios"
+    ).json()[0]
+    viewer_household_baseline = unauthenticated_client.patch(
+        f"/projection-scenarios/{viewer_household_baseline['id']}",
+        json={"name": "Private comparison plan"},
+    ).json()
+    cross_household_comparison = unauthenticated_client.post(
+        f"/dashboard/{household_id}/projection-comparison",
+        json={
+            "scenario_ids": [baseline["id"], viewer_household_baseline["id"]],
+            "start_year": 2026,
+            "end_year": 2027,
+            "interval": "annual",
+        },
+    )
+    assert cross_household_comparison.status_code == 400
+    assert cross_household_comparison.json()["detail"] == "Projection scenario not found"
+    assert viewer_household_baseline["name"] not in cross_household_comparison.text
     assert (
         unauthenticated_client.post(
             f"/households/{household_id}/projection-scenarios",
@@ -278,6 +314,18 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
     assert (
         unauthenticated_client.get(
             f"/households/{household_id}/projection-scenarios"
+        ).status_code
+        == 404
+    )
+    assert (
+        unauthenticated_client.post(
+            f"/dashboard/{household_id}/projection-comparison",
+            json={
+                "scenario_ids": [baseline["id"], comparison_scenario["id"]],
+                "start_year": 2026,
+                "end_year": 2027,
+                "interval": "annual",
+            },
         ).status_code
         == 404
     )

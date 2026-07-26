@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { openDemoWorkspace } from './helpers';
 
@@ -72,6 +73,37 @@ test('manages independent projection scenarios and preserves URL selection', asy
     page.locator('.assumption-card').filter({ hasText: 'Brokerage' }).first()
       .getByLabel('Expected annual yield'),
   ).toHaveValue('0.012300');
+
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Compare projection scenarios' })).toBeVisible();
+  await page.getByLabel(scenarioName, { exact: true }).check();
+  const comparisonForm = page.locator('.scenario-comparison-form');
+  const comparisonStartYear = Number(await comparisonForm.getByLabel('Start year').inputValue());
+  await comparisonForm.getByLabel('End year').fill(String(comparisonStartYear + 2));
+  const comparisonResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+      && response.url().includes('/projection-comparison')
+  ));
+  await comparisonForm.getByRole('button', { name: 'Run comparison' }).click();
+  expect((await comparisonResponsePromise).ok()).toBe(true);
+  const summaryCards = page.locator('.comparison-summary-card');
+  await expect(summaryCards).toHaveCount(3);
+  await expect(summaryCards.getByRole('heading', { name: 'Baseline', exact: true })).toBeVisible();
+  await expect(summaryCards.getByRole('heading', { name: scenarioName, exact: true })).toBeVisible();
+  await expect(summaryCards.getByRole('heading', { name: renamedName, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Net worth by scenario' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Liquid assets by scenario' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Annual net worth and liquid assets for each scenario' })).toBeVisible();
+  const comparisonAccessibility = await new AxeBuilder({ page })
+    .include('.scenario-comparison')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  const comparisonAccessibilitySummary = comparisonAccessibility.violations.map((violation) => ({
+    id: violation.id,
+    targets: violation.nodes.map((node) => node.target.join(' ')),
+  }));
+  expect(comparisonAccessibilitySummary).toEqual([]);
+  await page.getByRole('button', { name: 'Back to planning' }).click();
 
   page.once('dialog', async (dialog) => dialog.accept(renamedName));
   await page.getByRole('button', { name: 'Delete', exact: true }).click();

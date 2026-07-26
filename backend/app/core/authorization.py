@@ -112,6 +112,12 @@ async def _request_body_values(request: Request) -> dict[str, object]:
     return body if isinstance(body, dict) else {}
 
 
+def _is_read_operation(request: Request) -> bool:
+    return request.method in _READ_METHODS or request.url.path.rstrip("/").endswith(
+        "/projection-comparison"
+    )
+
+
 def _requires_admin_role(request: Request) -> bool:
     path = request.url.path
     return (
@@ -155,7 +161,7 @@ async def authorize_household_request(
 
     if _requires_admin_role(request):
         allowed_roles = _ADMIN_ROLES
-    elif request.method in _READ_METHODS:
+    elif _is_read_operation(request):
         allowed_roles = _ALL_ROLES
     else:
         allowed_roles = _WRITE_ROLES

@@ -1,4 +1,4 @@
-import { useEffect, type FormEventHandler } from 'react';
+import { useEffect, useState, type FormEventHandler } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Account, NetWorthProjection } from '../api';
 import { IncomeAndTaxSection } from '../components/planning/IncomeAndTaxSection';
@@ -9,6 +9,7 @@ import {
   PlannedPropertySalesSection,
 } from '../components/planning/RealEstatePlanningSections';
 import { ScenarioAssumptionsSection } from '../components/planning/ScenarioAssumptionsSection';
+import { ScenarioComparison } from '../components/planning/ScenarioComparison';
 import { ScenarioToolbar } from '../components/planning/ScenarioToolbar';
 import { SocialSecuritySection } from '../components/planning/SocialSecuritySection';
 import { usePlanningBudgetData, usePlanningPeopleData } from '../queries/planning';
@@ -41,6 +42,7 @@ export function PlanningPage({
   onInvalidateProjection: () => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [comparing, setComparing] = useState(false);
   const scenariosQuery = useProjectionScenarios(householdId);
   const scenarios = scenariosQuery.data ?? [];
   const requestedScenarioId = searchParams.get('scenario');
@@ -61,6 +63,7 @@ export function PlanningPage({
   const liquidationStrategies = planningRealEstateData.liquidationStrategies.data ?? [];
 
   function selectScenario(nextScenarioId: string, replace = false) {
+    setComparing(false);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set('scenario', nextScenarioId);
@@ -96,8 +99,17 @@ export function PlanningPage({
         selectedScenario={selectedScenario}
         canEdit={canEdit}
         onSelectScenario={selectScenario}
+        onCompare={() => setComparing(true)}
       />
 
+      {comparing ? (
+        <ScenarioComparison
+          householdId={householdId}
+          scenarios={scenarios}
+          currentScenarioId={scenarioId}
+          onClose={() => setComparing(false)}
+        />
+      ) : (
       <div key={selectedScenario.id} className="scenario-planning-content">
         <ScenarioAssumptionsSection
           householdId={householdId}
@@ -181,6 +193,7 @@ export function PlanningPage({
           accountNameById={accountNameById}
         />
       </div>
+      )}
     </>
   );
 }

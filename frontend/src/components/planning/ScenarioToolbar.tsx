@@ -10,12 +10,14 @@ export function ScenarioToolbar({
   selectedScenario,
   canEdit,
   onSelectScenario,
+  onCompare,
 }: {
   householdId: string;
   scenarios: ProjectionScenario[];
   selectedScenario: ProjectionScenario;
   canEdit: boolean;
   onSelectScenario: (scenarioId: string, replace?: boolean) => void;
+  onCompare: () => void;
 }) {
   const [editorMode, setEditorMode] = useState<EditorMode>(null);
   const [error, setError] = useState('');
@@ -140,7 +142,13 @@ export function ScenarioToolbar({
           >
             Delete
           </button>
-          <button type="button" className="secondary-button" disabled title="Scenario comparison arrives in the next milestone">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={scenarios.length < 2}
+            title={scenarios.length < 2 ? 'Create another scenario to compare' : undefined}
+            onClick={onCompare}
+          >
             Compare
           </button>
         </div>
