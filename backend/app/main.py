@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI
 
 from app.api.routes import (
     accounts,
+    api_tokens,
     auth,
     capabilities,
     dashboard,
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(capabilities.router)
     app.include_router(auth.router)
+    app.include_router(api_tokens.router)
     authenticated = [Depends(require_authenticated_user)]
     household_authorized = [Depends(authorize_household_request)]
     app.include_router(users.router, dependencies=authenticated)

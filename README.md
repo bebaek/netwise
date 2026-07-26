@@ -27,7 +27,7 @@ Netwise helps a household answer:
 
 | Capability | Status |
 | --- | --- |
-| Authentication and household authorization | Implemented |
+| Authentication, household authorization, and scoped agent API tokens | Implemented |
 | Accounts, balance snapshots, and net-worth history | Implemented |
 | Asset allocation and historical analytics | Implemented |
 | Deterministic projections with income, tax, spending, and withdrawal policies | Implemented |
@@ -215,6 +215,7 @@ The seed command creates a `Demo Household` with accounts, snapshots, real estat
 - [Projection Scenarios API](docs/projection-scenarios-api.md)
 - [Projection Scenarios Implementation Plan](docs/projection-scenarios-plan.md)
 - [Property Sale Tax Strategy](docs/property-sale-tax-strategy.md)
+- [Agent API Access](docs/agent-api.md)
 - [Self-Hosted Operations](docs/self-hosted-operations.md)
 - [Lessons from `fintrack`](docs/fintrack-lessons.md)
 

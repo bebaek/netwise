@@ -159,6 +159,11 @@ async def authorize_household_request(
             detail="Unable to authorize household access",
         )
 
+    api_token = getattr(request.state, "api_token", None)
+    if api_token is not None and api_token.household_id != household_id:
+        # Do not reveal whether the token's user can access another household.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
     if _requires_admin_role(request):
         allowed_roles = _ADMIN_ROLES
     elif _is_read_operation(request):

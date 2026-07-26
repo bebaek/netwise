@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -270,6 +270,7 @@ def create_household(
 
 @router.get("", response_model=list[HouseholdRead])
 def list_households(
+    request: Request,
     user_id: UUID | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_authenticated_user),
@@ -286,6 +287,9 @@ def list_households(
         .where(HouseholdMembership.user_id == current_user.id)
         .order_by(Household.created_at)
     )
+    api_token = getattr(request.state, "api_token", None)
+    if api_token is not None:
+        statement = statement.where(Household.id == api_token.household_id)
     return list(db.scalars(statement).all())
 
 

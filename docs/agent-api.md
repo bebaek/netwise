@@ -1,0 +1,106 @@
+# Agent API access
+
+Netwise supports household-bound personal API tokens for read-oriented AI agents and
+other local automation. Tokens use the existing REST API and OpenAPI schema; an
+agent does not need access to the browser session cookie or the user's password.
+
+## Security model
+
+- A token belongs to one user and exactly one household.
+- Only a SHA-256 digest is stored. The full token is returned once at creation.
+- Tokens expire after 1 to 365 days and can be revoked at any time.
+- `finance:read` permits read-only household finance endpoints.
+- `projections:run` additionally permits the projection-comparison POST endpoint.
+- Tokens cannot access user, household-member, import, export, authentication, or
+  token-management endpoints.
+- All other writes are rejected, regardless of the token's household role.
+
+API tokens should still be treated as secrets because finance reads contain sensitive
+information. Keep Netwise on a trusted network, pass the token through a secret store
+or environment variable, and do not put it in an agent prompt, repository, command
+history, or log output. Confirm the privacy policy of any hosted model before allowing
+it to process Netwise responses.
+
+## Create a token
+
+Token management requires a normal browser session. The endpoints are:
+
+```text
+GET    /api-tokens
+POST   /api-tokens
+DELETE /api-tokens/{token_id}
+```
+
+For a production Compose deployment reached through the frontend proxy, prefix these
+paths with `/api`. For local backend development, use them directly on port 8001.
+
+The creation request is:
+
+```json
+{
+  "name": "Local finance agent",
+  "household_id": "HOUSEHOLD_UUID",
+  "scopes": ["finance:read", "projections:run"],
+  "expires_in_days": 30
+}
+```
+
+The response contains a `token` beginning with `nwt_`. Save it immediately: later list
+responses contain only its non-secret prefix and metadata.
+
+For command-line setup, sign in to an HTTPS deployment and retain the session cookie:
+
+```bash
+curl --fail --silent --show-error \
+  --cookie-jar netwise-cookie.txt \
+  --header 'Content-Type: application/json' \
+  --data '{"email":"you@example.com","password":"YOUR_PASSWORD"}' \
+  https://netwise.example/api/auth/login
+
+curl --fail --silent --show-error \
+  --cookie netwise-cookie.txt \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name":"Local finance agent",
+    "household_id":"HOUSEHOLD_UUID",
+    "scopes":["finance:read","projections:run"],
+    "expires_in_days":30
+  }' \
+  https://netwise.example/api/api-tokens
+
+rm -f netwise-cookie.txt
+```
+
+Avoid placing a real password directly in a shared script. The example is intended to
+show the request flow, not prescribe credential storage.
+
+## Call the API
+
+Send the token as a bearer credential:
+
+```bash
+export NETWISE_TOKEN='nwt_REPLACE_WITH_THE_ONE_TIME_SECRET'
+
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer ${NETWISE_TOKEN}" \
+  https://netwise.example/api/households/HOUSEHOLD_UUID
+```
+
+Useful agent operations include:
+
+- `GET /households` — returns only the token-bound household.
+- `GET /accounts?household_id=HOUSEHOLD_UUID` — account metadata.
+- `GET /households/HOUSEHOLD_UUID/snapshots` — recent balances.
+- `GET /dashboard/HOUSEHOLD_UUID/net-worth` — current financial summary.
+- `GET /projection-scenarios?household_id=HOUSEHOLD_UUID` — available scenarios.
+- `POST /dashboard/HOUSEHOLD_UUID/projection-comparison` — deterministic scenario
+  comparison when the token has `projections:run`.
+
+The machine-readable API contract is available from `/openapi.json` in backend
+development or `/api/openapi.json` through the production proxy. Give that schema and
+the deployment base URL to an OpenAPI-capable agent, but provide the bearer token via
+the agent's secret configuration rather than conversational context.
+
+A dedicated MCP adapter can be layered over this API later. It should expose a small
+set of semantic tools and reuse these household and scope controls instead of holding
+a browser session.
