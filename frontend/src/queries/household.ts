@@ -24,7 +24,11 @@ export const householdQueryKeys = {
   all: (householdId: string) => ['households', householdId] as const,
   accounts: (householdId: string) => [...householdQueryKeys.all(householdId), 'accounts'] as const,
   members: (householdId: string) => [...householdQueryKeys.all(householdId), 'members'] as const,
-  events: (householdId: string) => [...householdQueryKeys.all(householdId), 'account-events'] as const,
+  events: (householdId: string, scenarioId: string) => [
+    ...householdQueryKeys.all(householdId),
+    'account-events',
+    scenarioId,
+  ] as const,
   snapshotsAll: (householdId: string) => [
     ...householdQueryKeys.all(householdId),
     'snapshots',
@@ -65,10 +69,10 @@ type UpdateAccountEventVariables = {
   payload: Parameters<typeof updateAccountEvent>[2];
 };
 
-export function useAccountEventMutations(householdId: string) {
+export function useAccountEventMutations(householdId: string, scenarioId: string) {
   const queryClient = useQueryClient();
   const refreshEvents = () => queryClient.invalidateQueries({
-    queryKey: householdQueryKeys.events(householdId),
+    queryKey: householdQueryKeys.events(householdId, scenarioId),
   });
 
   const create = useMutation({
@@ -135,11 +139,11 @@ export function useHouseholdMembers(householdId: string) {
   });
 }
 
-export function useHouseholdAccountEvents(householdId: string) {
+export function useHouseholdAccountEvents(householdId: string, scenarioId: string) {
   return useQuery({
-    queryKey: householdQueryKeys.events(householdId),
-    queryFn: ({ signal }) => listHouseholdAccountEvents(householdId, signal),
-    enabled: Boolean(householdId),
+    queryKey: householdQueryKeys.events(householdId, scenarioId),
+    queryFn: ({ signal }) => listHouseholdAccountEvents(householdId, scenarioId, signal),
+    enabled: Boolean(householdId && scenarioId),
   });
 }
 

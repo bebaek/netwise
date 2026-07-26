@@ -7,7 +7,7 @@
 - [x] Slice 1: scenario identity, baseline migration, CRUD, and authorization
 - [x] Slice 2: scenario-aware persisted projection inputs
 - [x] Slice 3: transactional duplication and data portability
-- [ ] Slice 4: frontend scenario editing
+- [x] Slice 4: frontend scenario editing
 - [ ] Slice 5: scenario comparison
 - [ ] Slice 6: compatibility cleanup
 
@@ -556,6 +556,8 @@ Completion signal: two scenarios can produce isolated backend projections.
 Completion signal: a complete scenario can be cloned and then edited independently.
 
 ### Slice 4: Frontend scenario editing
+
+**Status:** Complete.
 
 - Add selector and URL state.
 - Make query keys, forms, and mutations scenario-aware.

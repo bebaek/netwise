@@ -37,27 +37,9 @@ function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalyti
   const purchasePoint = analytics.purchase_date && analytics.purchase_price
     ? { as_of_date: analytics.purchase_date, value: analytics.purchase_price }
     : null;
-  const lastValuation = valuations[valuations.length - 1];
-  const expectedRate = analytics.expected_appreciation_rate == null
-    ? null
-    : Number(analytics.expected_appreciation_rate);
-  const expectedEnd = purchasePoint && lastValuation && expectedRate != null && expectedRate > -1
-    && lastValuation.as_of_date > purchasePoint.as_of_date
-    ? {
-        as_of_date: lastValuation.as_of_date,
-        value: String(
-          Number(purchasePoint.value)
-          * ((1 + expectedRate) ** ((dateMs(lastValuation.as_of_date) - dateMs(purchasePoint.as_of_date))
-            / (365.2425 * 24 * 60 * 60 * 1000))),
-        ),
-      }
-    : null;
   const observedPoints = [...(purchasePoint ? [purchasePoint] : []), ...valuations]
     .sort((left, right) => left.as_of_date.localeCompare(right.as_of_date));
-  const chartPoints = [
-    ...observedPoints,
-    ...(expectedEnd ? [expectedEnd] : []),
-  ];
+  const chartPoints = observedPoints;
   if (chartPoints.length < 2) return null;
 
   const dates = chartPoints.map((point) => dateMs(point.as_of_date));
@@ -84,9 +66,6 @@ function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalyti
   const valuationPolyline = observedPoints
     .map((point) => `${xForDate(point.as_of_date)},${yForValue(point.value)}`)
     .join(' ');
-  const expectedPolyline = purchasePoint && expectedEnd
-    ? `${xForDate(purchasePoint.as_of_date)},${yForValue(purchasePoint.value)} ${xForDate(expectedEnd.as_of_date)},${yForValue(expectedEnd.value)}`
-    : '';
 
   return (
     <div className="trend-chart property-appreciation-chart" aria-label={`${analytics.property_name} appreciation trend chart`}>
@@ -97,7 +76,6 @@ function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalyti
         <text x={leftPadding - 10} y={topPadding + 4} textAnchor="end" className="axis-label">{formatMoney(String(maxValue))}</text>
         <text x={leftPadding - 10} y={height - bottomPadding + 4} textAnchor="end" className="axis-label">{formatMoney(String(minValue))}</text>
         {observedPoints.length > 1 && <polyline points={valuationPolyline} className="trend-line history" />}
-        {expectedPolyline && <polyline points={expectedPolyline} className="trend-line expected" />}
         {purchasePoint && (
           <circle cx={xForDate(purchasePoint.as_of_date)} cy={yForValue(purchasePoint.value)} r={5} className="trend-dot purchase">
             <title>Purchase: {formatMoney(purchasePoint.value)} on {purchasePoint.as_of_date}</title>
@@ -113,7 +91,6 @@ function PropertyAppreciationChart({ analytics }: { analytics: RealEstateAnalyti
       <div className="chart-legend">
         <span><i className="legend-dot purchase" />Purchase price</span>
         <span><i className="legend-dot snapshot" />Recorded valuation</span>
-        {expectedPolyline && <span><i className="legend-dot expected" />Expected appreciation</span>}
       </div>
     </div>
   );
@@ -127,8 +104,6 @@ type AccountEditDraft = {
   category: string;
   liquidity_class: string;
   retirement_tax_treatment: RetirementTaxTreatment | '';
-  expected_annual_yield: string;
-  liquidation_expense_rate: string;
   cost_basis: string;
   currency: string;
   is_active: boolean;
@@ -171,8 +146,6 @@ export function AssetsPage({
       category: account.category,
       liquidity_class: account.liquidity_class,
       retirement_tax_treatment: account.retirement_tax_treatment ?? '',
-      expected_annual_yield: account.expected_annual_yield ?? '',
-      liquidation_expense_rate: account.liquidation_expense_rate ?? '',
       cost_basis: account.cost_basis ?? '',
       currency: account.currency,
       is_active: account.is_active,
@@ -193,8 +166,6 @@ export function AssetsPage({
           category: accountEditDraft.category.trim(),
           liquidity_class: accountEditDraft.liquidity_class.trim(),
           retirement_tax_treatment: accountEditDraft.retirement_tax_treatment || null,
-          expected_annual_yield: accountEditDraft.expected_annual_yield.trim() || null,
-          liquidation_expense_rate: accountEditDraft.liquidation_expense_rate.trim() || null,
           cost_basis: accountEditDraft.cost_basis.trim() || null,
           currency: accountEditDraft.currency.trim().toUpperCase(),
           is_active: accountEditDraft.is_active,
@@ -212,7 +183,6 @@ export function AssetsPage({
     const target = event.currentTarget;
     const form = new FormData(target);
     const retirementTaxTreatment = String(form.get('retirement_tax_treatment') ?? '').trim();
-    const expectedAnnualYield = String(form.get('expected_annual_yield') ?? '').trim();
     setAccountError('');
     try {
       await accountMutations.create.mutateAsync({
@@ -224,7 +194,6 @@ export function AssetsPage({
         retirement_tax_treatment: retirementTaxTreatment
           ? retirementTaxTreatment as RetirementTaxTreatment
           : undefined,
-        expected_annual_yield: expectedAnnualYield || undefined,
         currency: 'USD',
       });
       target.reset();
@@ -247,13 +216,10 @@ export function AssetsPage({
           purchase_price: optionalFormString(form, 'purchase_price') ?? null,
           adjusted_tax_basis: optionalFormString(form, 'adjusted_tax_basis') ?? null,
           down_payment: optionalFormString(form, 'down_payment') ?? null,
-          expected_appreciation_rate: optionalFormString(form, 'expected_appreciation_rate') ?? null,
           is_rental: form.get('is_rental') === 'on',
           rental_start_date: optionalFormString(form, 'rental_start_date') ?? null,
           monthly_market_rent: optionalFormString(form, 'monthly_market_rent') ?? null,
           other_monthly_income: optionalFormString(form, 'other_monthly_income') ?? null,
-          rent_growth_rate: optionalFormString(form, 'rent_growth_rate') ?? null,
-          vacancy_rate: optionalFormString(form, 'vacancy_rate') ?? null,
           management_fee_rate: optionalFormString(form, 'management_fee_rate') ?? null,
           property_tax_annual: optionalFormString(form, 'property_tax_annual') ?? null,
           insurance_annual: optionalFormString(form, 'insurance_annual') ?? null,
@@ -295,7 +261,6 @@ export function AssetsPage({
           purchase_price: optionalFormString(form, 'purchase_price'),
           adjusted_tax_basis: optionalFormString(form, 'adjusted_tax_basis'),
           down_payment: optionalFormString(form, 'down_payment'),
-          expected_appreciation_rate: optionalFormString(form, 'expected_appreciation_rate'),
           property_tax_annual: optionalFormString(form, 'property_tax_annual'),
           insurance_annual: optionalFormString(form, 'insurance_annual'),
           tax_and_insurance_annual: optionalFormString(form, 'tax_and_insurance_annual'),
@@ -305,8 +270,6 @@ export function AssetsPage({
           rental_start_date: optionalFormString(form, 'rental_start_date'),
           monthly_market_rent: optionalFormString(form, 'monthly_market_rent'),
           other_monthly_income: optionalFormString(form, 'other_monthly_income'),
-          rent_growth_rate: optionalFormString(form, 'rent_growth_rate'),
-          vacancy_rate: optionalFormString(form, 'vacancy_rate'),
           management_fee_rate: optionalFormString(form, 'management_fee_rate'),
           utilities_annual: optionalFormString(form, 'utilities_annual'),
           other_operating_expense_annual:
@@ -409,14 +372,11 @@ export function AssetsPage({
           <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" defaultValue={property.adjusted_tax_basis ?? ''} /></label>
           <p className="muted">Sale-tax estimates use adjusted basis when provided, otherwise purchase price. Include basis adjustments such as capital improvements and depreciation.</p>
           <label>Down payment<input name="down_payment" inputMode="decimal" defaultValue={property.down_payment ?? ''} /></label>
-          <label>Projected annual appreciation<input name="expected_appreciation_rate" inputMode="decimal" placeholder="0.00" defaultValue={property.expected_appreciation_rate ?? ''} /></label>
-          <p className="muted">Used only for future projections and the expected trend line. Enter 0 for a conservative flat-value assumption.</p>
+          <p className="muted">Projection appreciation, rent growth, and vacancy are managed per scenario on the Planning page.</p>
           <label className="checkbox-label"><input name="is_rental" type="checkbox" defaultChecked={property.is_rental} /> Rental property</label>
           <label>Rental start date<input name="rental_start_date" type="date" defaultValue={property.rental_start_date ?? ''} /></label>
           <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" defaultValue={property.monthly_market_rent ?? ''} />
           <input name="other_monthly_income" inputMode="decimal" placeholder="Other monthly income" defaultValue={property.other_monthly_income ?? ''} />
-          <input name="rent_growth_rate" inputMode="decimal" placeholder="Annual rent growth, e.g. 0.03" defaultValue={property.rent_growth_rate ?? ''} />
-          <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate, e.g. 0.05" defaultValue={property.vacancy_rate ?? ''} />
           <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate, e.g. 0.08" defaultValue={property.management_fee_rate ?? ''} />
           <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" defaultValue={property.tax_and_insurance_annual ?? ''} />
           <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" defaultValue={property.property_tax_annual ?? ''} />
@@ -522,7 +482,7 @@ export function AssetsPage({
             <th>Type</th>
             <th>Purchase price</th>
             <th>Adjusted basis</th>
-            <th>Projected appreciation</th>
+            <th>Projection assumptions</th>
           </tr>
         </thead>
         <tbody>
@@ -532,7 +492,7 @@ export function AssetsPage({
               <td>{property.property_type}</td>
               <td>{formatMoney(property.purchase_price)}</td>
               <td>{formatMoney(property.adjusted_tax_basis)}</td>
-              <td>{formatPercent(property.expected_appreciation_rate)}</td>
+              <td>Managed in Planning</td>
             </tr>
           ))}
         </tbody>
@@ -595,7 +555,7 @@ export function AssetsPage({
       <label>Adjusted tax basis<input name="adjusted_tax_basis" inputMode="decimal" /></label>
       <p className="muted">If adjusted basis is blank, sale-tax estimates use purchase price. Basis generally includes qualifying improvements and subtracts depreciation.</p>
       <label>Down payment<input name="down_payment" inputMode="decimal" /></label>
-      <label>Projected annual appreciation<input name="expected_appreciation_rate" inputMode="decimal" placeholder="0.00 (flat value)" defaultValue="0.00" /></label>
+      <p className="muted">Set appreciation, rent growth, and vacancy after creation in the selected Planning scenario.</p>
       <input name="tax_and_insurance_annual" inputMode="decimal" placeholder="Combined annual tax + insurance (overrides separate fields)" />
       <input name="property_tax_annual" inputMode="decimal" placeholder="Annual property tax (if entered separately)" />
       <input name="insurance_annual" inputMode="decimal" placeholder="Annual insurance (if entered separately)" />
@@ -608,8 +568,6 @@ export function AssetsPage({
       <input name="rental_start_date" type="date" placeholder="Rental start date" />
       <input name="monthly_market_rent" inputMode="decimal" placeholder="Monthly market rent" />
       <input name="other_monthly_income" inputMode="decimal" placeholder="Other monthly income" />
-      <input name="rent_growth_rate" inputMode="decimal" placeholder="Annual rent growth, e.g. 0.03" />
-      <input name="vacancy_rate" inputMode="decimal" placeholder="Vacancy rate, e.g. 0.05" />
       <input name="management_fee_rate" inputMode="decimal" placeholder="Management fee rate, e.g. 0.08" />
       <input name="utilities_annual" inputMode="decimal" placeholder="Annual owner-paid utilities" />
       <input name="other_operating_expense_annual" inputMode="decimal" placeholder="Other annual operating expenses" />
@@ -668,7 +626,7 @@ export function AssetsPage({
   <div className="section-header">
     <div>
       <h2>Accounts</h2>
-      <p className="muted">Edit account classifications and projection assumptions without changing balance history.</p>
+      <p className="muted">Edit shared account identity and classifications. Projection rates are managed per scenario on Planning.</p>
     </div>
   </div>
   {accountEditDraft && (
@@ -737,18 +695,7 @@ export function AssetsPage({
             <option value="after_tax">After-tax</option>
           </select>
         </label>
-        {accountEditDraft.category === 'real_estate' ? (
-          <p className="muted">Projected appreciation is managed in Property details.</p>
-        ) : (
-          <label>
-            Expected annual yield
-            <input inputMode="decimal" placeholder="0.05" value={accountEditDraft.expected_annual_yield} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, expected_annual_yield: event.target.value })} />
-          </label>
-        )}
-        <label>
-          Liquidation expense rate
-          <input inputMode="decimal" placeholder="0.01" value={accountEditDraft.liquidation_expense_rate} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, liquidation_expense_rate: event.target.value })} />
-        </label>
+        <p className="muted">Expected yield and liquidation expense are managed per scenario on the Planning page.</p>
         <label>
           Cost basis
           <input inputMode="decimal" placeholder="Taxable accounts only" value={accountEditDraft.cost_basis} onChange={(event) => setAccountEditDraft({ ...accountEditDraft, cost_basis: event.target.value })} />
@@ -779,7 +726,7 @@ export function AssetsPage({
           <th>Kind</th>
           <th>Category</th>
           <th>Retirement tax treatment</th>
-          <th>Yield</th>
+          <th>Projection assumptions</th>
           <th>Balance</th>
           <th>Actions</th>
         </tr>
@@ -791,7 +738,7 @@ export function AssetsPage({
             <td>{account.account_kind}</td>
             <td>{account.category}</td>
             <td>{account.retirement_tax_treatment ?? 'Not applicable'}</td>
-            <td>{account.category === 'real_estate' ? 'Property details' : account.expected_annual_yield ?? '—'}</td>
+            <td>Managed in Planning</td>
             <td>{formatMoney(latestBalanceByAccountId.get(account.id))}</td>
             <td><button type="button" className="secondary-button" onClick={() => startEditAccount(account)}>Edit</button></td>
           </tr>
@@ -819,7 +766,7 @@ export function AssetsPage({
         <option value="roth">Roth / tax-free</option>
         <option value="after_tax">After-tax</option>
       </select>
-      <input name="expected_annual_yield" inputMode="decimal" placeholder="Expected annual yield for non-property accounts, e.g. 0.05" />
+      <p className="muted">Configure expected yield and liquidation expense in the selected Planning scenario.</p>
       <button type="submit" disabled={accountMutations.isPending}>Add account</button>
   </form>
 </section>

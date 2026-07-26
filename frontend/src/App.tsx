@@ -1,5 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { FormEvent, Suspense, lazy, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  Suspense,
+  lazy,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
   Account,
@@ -118,6 +129,7 @@ function App({
   );
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
+  const invalidateProjection = useCallback(() => setProjection(null), []);
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -274,6 +286,7 @@ function App({
           spendingAccountId: optionalString(form, 'projection_spending_account_id'),
           taxAccountId: optionalString(form, 'projection_tax_account_id'),
           interval: requiredString(form, 'projection_interval') as 'annual' | 'quarterly' | 'monthly',
+          scenarioId: requiredString(form, 'scenario_id'),
         },
       );
       setProjection(result);
@@ -364,10 +377,11 @@ function App({
                   assetAccounts={assetAccounts}
                   propertyAccounts={propertyAccounts}
                   accountNameById={accountNameById}
+                  canEdit={currentHouseholdRole !== 'viewer'}
                   onGetProjection={handleGetProjection}
                   projectionRunning={projectionRunning}
                   projection={projection}
-                  onInvalidateProjection={() => setProjection(null)}
+                  onInvalidateProjection={invalidateProjection}
                 />
               </WorkspaceView>
             }

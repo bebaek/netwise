@@ -45,6 +45,7 @@ function formatRate(value: string): string {
 
 export function SocialSecuritySection({
   householdId,
+  scenarioId,
   householdPeople,
   incomeSources,
   estimates,
@@ -55,6 +56,7 @@ export function SocialSecuritySection({
   estimatesPending,
 }: {
   householdId: string;
+  scenarioId: string;
   householdPeople: HouseholdPerson[];
   incomeSources: IncomeSource[];
   estimates: SocialSecurityEstimate[];
@@ -67,7 +69,7 @@ export function SocialSecuritySection({
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'manual' | 'ballpark'>('ballpark');
   const [editId, setEditId] = useState('');
-  const mutations = usePlanningPeopleMutations(householdId);
+  const mutations = usePlanningPeopleMutations(householdId, scenarioId);
   const editingEstimate = estimates.find((estimate) => estimate.id === editId);
   const editingIncome = incomeSources.find(
     (source) => source.id === editingEstimate?.income_source_id,

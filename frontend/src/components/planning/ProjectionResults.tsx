@@ -8,6 +8,9 @@ function readableLabel(value: string): string {
 export function ProjectionResults({ projection }: { projection: NetWorthProjection | null }) {
   return projection?.points.length ? (
     <>
+      <div className="projection-note">
+        <strong>Scenario:</strong> {projection.scenario_name}
+      </div>
       {projection.warnings.map((warning) => (
         <div className="projection-note" key={warning}><strong>Projection warning:</strong> {warning}</div>
       ))}

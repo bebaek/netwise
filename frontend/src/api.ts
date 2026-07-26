@@ -385,6 +385,40 @@ export type ProjectionSettings = {
   updated_at: string;
 };
 
+export type ProjectionScenario = {
+  id: string;
+  household_id: string;
+  name: string;
+  description: string | null;
+  is_baseline: boolean;
+  created_from_scenario_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectionScenarioAccountAssumption = {
+  id: string;
+  scenario_id: string;
+  household_id: string;
+  account_id: string;
+  expected_annual_yield: string | null;
+  liquidation_expense_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectionScenarioPropertyAssumption = {
+  id: string;
+  scenario_id: string;
+  household_id: string;
+  property_account_id: string;
+  expected_appreciation_rate: string | null;
+  rent_growth_rate: string | null;
+  vacancy_rate: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AnnualTaxRecord = {
   id: string;
   household_id: string;
@@ -533,6 +567,93 @@ export function createHousehold(name: string, ownerUserId?: string): Promise<Hou
   });
 }
 
+export function listProjectionScenarios(
+  householdId: string,
+  signal?: AbortSignal,
+): Promise<ProjectionScenario[]> {
+  return request<ProjectionScenario[]>(`/households/${householdId}/projection-scenarios`, { signal });
+}
+
+export function createProjectionScenario(
+  householdId: string,
+  payload: { name: string; description?: string; source_scenario_id?: string },
+): Promise<ProjectionScenario> {
+  return request<ProjectionScenario>(`/households/${householdId}/projection-scenarios`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function duplicateProjectionScenario(
+  scenarioId: string,
+  payload: { name: string; description?: string },
+): Promise<ProjectionScenario> {
+  return request<ProjectionScenario>(`/projection-scenarios/${scenarioId}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateProjectionScenario(
+  scenarioId: string,
+  payload: { name?: string; description?: string | null },
+): Promise<ProjectionScenario> {
+  return request<ProjectionScenario>(`/projection-scenarios/${scenarioId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteProjectionScenario(scenarioId: string): Promise<void> {
+  return request<void>(`/projection-scenarios/${scenarioId}`, { method: 'DELETE' });
+}
+
+export function listProjectionScenarioAccountAssumptions(
+  scenarioId: string,
+  signal?: AbortSignal,
+): Promise<ProjectionScenarioAccountAssumption[]> {
+  return request<ProjectionScenarioAccountAssumption[]>(
+    `/projection-scenarios/${scenarioId}/account-assumptions`,
+    { signal },
+  );
+}
+
+export function updateProjectionScenarioAccountAssumption(
+  scenarioId: string,
+  accountId: string,
+  payload: { expected_annual_yield?: string | null; liquidation_expense_rate?: string | null },
+): Promise<ProjectionScenarioAccountAssumption> {
+  return request<ProjectionScenarioAccountAssumption>(
+    `/projection-scenarios/${scenarioId}/account-assumptions/${accountId}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  );
+}
+
+export function listProjectionScenarioPropertyAssumptions(
+  scenarioId: string,
+  signal?: AbortSignal,
+): Promise<ProjectionScenarioPropertyAssumption[]> {
+  return request<ProjectionScenarioPropertyAssumption[]>(
+    `/projection-scenarios/${scenarioId}/property-assumptions`,
+    { signal },
+  );
+}
+
+export function updateProjectionScenarioPropertyAssumption(
+  scenarioId: string,
+  propertyAccountId: string,
+  payload: {
+    expected_appreciation_rate?: string | null;
+    rent_growth_rate?: string | null;
+    vacancy_rate?: string | null;
+  },
+): Promise<ProjectionScenarioPropertyAssumption> {
+  return request<ProjectionScenarioPropertyAssumption>(
+    `/projection-scenarios/${scenarioId}/property-assumptions/${propertyAccountId}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  );
+}
+
 export function listHouseholdMembers(
   householdId: string,
   signal?: AbortSignal,
@@ -667,9 +788,13 @@ export function deleteSnapshot(accountId: string, snapshotId: string): Promise<v
 
 export function listHouseholdAccountEvents(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<AccountEvent[]> {
-  return request<AccountEvent[]>(`/households/${householdId}/events`, { signal });
+  return request<AccountEvent[]>(
+    `/households/${householdId}/events?scenario_id=${scenarioId}`,
+    { signal },
+  );
 }
 
 export function createAccountEvent(
@@ -681,6 +806,7 @@ export function createAccountEvent(
     event_type: string;
     description?: string;
     projection_behavior?: string;
+    scenario_id?: string;
   },
 ): Promise<AccountEvent> {
   return request<AccountEvent>(`/accounts/${accountId}/events`, {
@@ -700,6 +826,7 @@ export function updateAccountEvent(
     event_type?: string;
     description?: string | null;
     projection_behavior?: string;
+    scenario_id?: string;
   },
 ): Promise<AccountEvent> {
   return request<AccountEvent>(`/accounts/${accountId}/events/${eventId}`, {
@@ -807,9 +934,13 @@ export function updateRealEstateProperty(
 
 export function listRealEstateSales(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<RealEstateSale[]> {
-  return request<RealEstateSale[]>(`/real-estate/sales?household_id=${householdId}`, { signal });
+  return request<RealEstateSale[]>(
+    `/real-estate/sales?household_id=${householdId}&scenario_id=${scenarioId}`,
+    { signal },
+  );
 }
 
 export function createRealEstateSale(payload: {
@@ -819,8 +950,8 @@ export function createRealEstateSale(payload: {
   proceeds_account_id?: string;
   selling_expense_rate?: string;
   estimated_tax_rate?: string;
-}): Promise<RealEstateSale> {
-  return request<RealEstateSale>('/real-estate/sales', {
+}, scenarioId: string): Promise<RealEstateSale> {
+  return request<RealEstateSale>(`/real-estate/sales?scenario_id=${scenarioId}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -832,10 +963,11 @@ export function deleteRealEstateSale(saleId: string): Promise<void> {
 
 export function listRealEstateLiquidationStrategies(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<RealEstateLiquidationStrategy[]> {
   return request<RealEstateLiquidationStrategy[]>(
-    `/real-estate/liquidation-strategies?household_id=${householdId}`,
+    `/real-estate/liquidation-strategies?household_id=${householdId}&scenario_id=${scenarioId}`,
     { signal },
   );
 }
@@ -851,17 +983,22 @@ export function upsertRealEstateLiquidationStrategy(
     selling_expense_rate?: string;
     estimated_tax_rate: string;
   },
+  scenarioId: string,
 ): Promise<RealEstateLiquidationStrategy> {
   return request<RealEstateLiquidationStrategy>(
-    `/real-estate/liquidation-strategies/${propertyAccountId}`,
+    `/real-estate/liquidation-strategies/${propertyAccountId}?scenario_id=${scenarioId}`,
     { method: 'PUT', body: JSON.stringify(payload) },
   );
 }
 
-export function deleteRealEstateLiquidationStrategy(propertyAccountId: string): Promise<void> {
-  return request<void>(`/real-estate/liquidation-strategies/${propertyAccountId}`, {
-    method: 'DELETE',
-  });
+export function deleteRealEstateLiquidationStrategy(
+  propertyAccountId: string,
+  scenarioId: string,
+): Promise<void> {
+  return request<void>(
+    `/real-estate/liquidation-strategies/${propertyAccountId}?scenario_id=${scenarioId}`,
+    { method: 'DELETE' },
+  );
 }
 
 export function listMortgageProfiles(
@@ -889,9 +1026,13 @@ export function createMortgageProfile(payload: {
 
 export function listIncomeSources(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<IncomeSource[]> {
-  return request<IncomeSource[]>(`/income-sources?household_id=${householdId}`, { signal });
+  return request<IncomeSource[]>(
+    `/income-sources?household_id=${householdId}&scenario_id=${scenarioId}`,
+    { signal },
+  );
 }
 
 export function createIncomeSource(payload: {
@@ -905,8 +1046,8 @@ export function createIncomeSource(payload: {
   end_date?: string;
   growth_rate?: string;
   deposit_account_id?: string;
-}): Promise<IncomeSource> {
-  return request<IncomeSource>('/income-sources', {
+}, scenarioId: string): Promise<IncomeSource> {
+  return request<IncomeSource>(`/income-sources?scenario_id=${scenarioId}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -932,18 +1073,20 @@ export function createHouseholdPerson(payload: {
 
 export function listSocialSecurityEstimates(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<SocialSecurityEstimate[]> {
   return request<SocialSecurityEstimate[]>(
-    `/social-security-estimates?household_id=${householdId}`,
+    `/social-security-estimates?household_id=${householdId}&scenario_id=${scenarioId}`,
     { signal },
   );
 }
 
 export function createSocialSecurityEstimate(
   payload: SocialSecurityEstimateInput,
+  scenarioId: string,
 ): Promise<SocialSecurityEstimate> {
-  return request<SocialSecurityEstimate>('/social-security-estimates', {
+  return request<SocialSecurityEstimate>(`/social-security-estimates?scenario_id=${scenarioId}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -972,8 +1115,8 @@ export function createProjectionTransfer(payload: {
   start_date: string;
   end_date?: string;
   growth_rate?: string;
-}): Promise<ProjectionTransfer> {
-  return request<ProjectionTransfer>('/projection-transfers', {
+}, scenarioId: string): Promise<ProjectionTransfer> {
+  return request<ProjectionTransfer>(`/projection-transfers?scenario_id=${scenarioId}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -981,9 +1124,13 @@ export function createProjectionTransfer(payload: {
 
 export function listProjectionTransfers(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<ProjectionTransfer[]> {
-  return request<ProjectionTransfer[]>(`/projection-transfers?household_id=${householdId}`, { signal });
+  return request<ProjectionTransfer[]>(
+    `/projection-transfers?household_id=${householdId}&scenario_id=${scenarioId}`,
+    { signal },
+  );
 }
 
 export function deleteProjectionTransfer(projectionTransferId: string): Promise<void> {
@@ -997,8 +1144,8 @@ export function createSpendingItem(payload: {
   annual_amount: string;
   retirement_annual_amount?: string;
   growth_rate?: string;
-}): Promise<SpendingItem> {
-  return request<SpendingItem>('/spending-items', {
+}, scenarioId: string): Promise<SpendingItem> {
+  return request<SpendingItem>(`/spending-items?scenario_id=${scenarioId}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -1006,9 +1153,13 @@ export function createSpendingItem(payload: {
 
 export function listSpendingItems(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<SpendingItem[]> {
-  return request<SpendingItem[]>(`/spending-items?household_id=${householdId}`, { signal });
+  return request<SpendingItem[]>(
+    `/spending-items?household_id=${householdId}&scenario_id=${scenarioId}`,
+    { signal },
+  );
 }
 
 export function updateSpendingItem(
@@ -1033,10 +1184,14 @@ export function deleteSpendingItem(spendingItemId: string): Promise<void> {
 
 export async function getProjectionSettings(
   householdId: string,
+  scenarioId: string,
   signal?: AbortSignal,
 ): Promise<ProjectionSettings | null> {
   try {
-    return await request<ProjectionSettings>(`/projection-settings/${householdId}`, { signal });
+    return await request<ProjectionSettings>(
+      `/projection-settings/${householdId}?scenario_id=${scenarioId}`,
+      { signal },
+    );
   } catch (error) {
     if (String(error).includes('404')) return null;
     throw error;
@@ -1054,11 +1209,15 @@ export function upsertProjectionSettings(
     spending_account_id?: string;
     tax_account_id?: string;
   },
+  scenarioId: string,
 ): Promise<ProjectionSettings> {
-  return request<ProjectionSettings>(`/projection-settings/${householdId}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
+  return request<ProjectionSettings>(
+    `/projection-settings/${householdId}?scenario_id=${scenarioId}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function listAnnualTaxRecords(
@@ -1092,7 +1251,8 @@ export function getNetWorthProjection(
     spendingAccountId?: string;
     taxAccountId?: string;
     interval?: 'annual' | 'quarterly' | 'monthly';
-  } = {},
+    scenarioId: string;
+  },
 ): Promise<NetWorthProjection> {
   const params = new URLSearchParams({
     start_year: String(startYear),
@@ -1103,5 +1263,6 @@ export function getNetWorthProjection(
   if (options.spendingAccountId) params.set('spending_account_id', options.spendingAccountId);
   if (options.taxAccountId) params.set('tax_account_id', options.taxAccountId);
   if (options.interval) params.set('interval', options.interval);
+  params.set('scenario_id', options.scenarioId);
   return request<NetWorthProjection>(`/dashboard/${householdId}/projection?${params.toString()}`);
 }

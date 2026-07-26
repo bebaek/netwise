@@ -297,12 +297,15 @@ test('records representative frontend API request counts', async ({ page, isMobi
   ));
   expect(unrelatedPropertyCreatePath).toBeUndefined();
 
-  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(20);
+  expect(measurements.load_planning_route_data.total).toBeLessThanOrEqual(22);
   expect(Object.keys(measurements.load_planning_route_data.by_method_and_path).sort()).toEqual([
     'GET /api/annual-tax-records',
     'GET /api/household-people',
     expect.stringMatching(/^GET \/api\/households\/[^/]+\/events$/),
+    expect.stringMatching(/^GET \/api\/households\/[^/]+\/projection-scenarios$/),
     'GET /api/income-sources',
+    expect.stringMatching(/^GET \/api\/projection-scenarios\/[^/]+\/account-assumptions$/),
+    expect.stringMatching(/^GET \/api\/projection-scenarios\/[^/]+\/property-assumptions$/),
     expect.stringMatching(/^GET \/api\/projection-settings\/[^/]+$/),
     'GET /api/projection-transfers',
     'GET /api/real-estate/liquidation-strategies',
