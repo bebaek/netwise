@@ -16,7 +16,7 @@ export const APP_VIEWS: ViewDetails[] = [
   { id: 'update', label: 'Update', description: 'Capture balances and maintain snapshot history.' },
   { id: 'plan', label: 'Plan', description: 'Model projections, income, events, and property sales.' },
   { id: 'assets', label: 'Assets', description: 'Manage accounts, properties, mortgages, and assumptions.' },
-  { id: 'settings', label: 'Settings', description: 'Manage household access, imports, and exports.' },
+  { id: 'settings', label: 'Settings', description: 'Manage household access, agent tokens, imports, and exports.' },
 ];
 
 export function appViewPath(view: AppView): string {

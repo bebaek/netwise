@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type FormEventHandler } from 'react';
 import type { FintrackImportResult, Household } from '../api';
+import { ApiTokenSettings } from '../components/ApiTokenSettings';
 import { useHouseholdMembers } from '../queries/household';
 import {
   useHouseholdSettingsData,
@@ -216,6 +217,8 @@ export function HouseholdSettingsPage({
           </form>
         )}
       </section>
+
+      <ApiTokenSettings household={household} />
 
       {fintrackImportEnabled && ['owner', 'admin'].includes(currentRole) && (
         <section className="card">

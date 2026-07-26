@@ -23,7 +23,9 @@ it to process Netwise responses.
 
 ## Create a token
 
-Token management requires a normal browser session. The endpoints are:
+Token management requires a normal browser session. In the Netwise frontend, open
+**Settings**, select the intended household, and use **AI agent access** to create,
+review, or revoke tokens. The underlying endpoints are:
 
 ```text
 GET    /api-tokens

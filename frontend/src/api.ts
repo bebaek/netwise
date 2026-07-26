@@ -31,6 +31,24 @@ export type Capabilities = {
   fintrack_import_enabled: boolean;
 };
 
+export type ApiTokenScope = 'finance:read' | 'projections:run';
+
+export type ApiToken = {
+  id: string;
+  name: string;
+  household_id: string;
+  token_prefix: string;
+  scopes: ApiTokenScope[];
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+export type ApiTokenCreated = ApiToken & {
+  token: string;
+};
+
 export type HouseholdExport = {
   schema: string;
   exported_at: string;
@@ -563,6 +581,26 @@ export function listUsers(signal?: AbortSignal): Promise<User[]> {
 
 export function getCapabilities(signal?: AbortSignal): Promise<Capabilities> {
   return request<Capabilities>('/capabilities', { signal });
+}
+
+export function listApiTokens(signal?: AbortSignal): Promise<ApiToken[]> {
+  return request<ApiToken[]>('/api-tokens', { signal });
+}
+
+export function createApiToken(payload: {
+  name: string;
+  household_id: string;
+  scopes: ApiTokenScope[];
+  expires_in_days: number;
+}): Promise<ApiTokenCreated> {
+  return request<ApiTokenCreated>('/api-tokens', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function revokeApiToken(tokenId: string): Promise<void> {
+  return request<void>(`/api-tokens/${tokenId}`, { method: 'DELETE' });
 }
 
 export function createUser(payload: { display_name: string; email?: string }): Promise<User> {
