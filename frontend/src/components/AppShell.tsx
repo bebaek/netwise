@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router';
 import type { Household, User } from '../api';
 
 export type AppView = 'overview' | 'update' | 'plan' | 'assets' | 'settings';
