@@ -8,6 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 class ProjectionScenarioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=1000)
+    source_scenario_id: UUID | None = None
+
+
+class ProjectionScenarioDuplicate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
 
 
 class ProjectionScenarioUpdate(BaseModel):

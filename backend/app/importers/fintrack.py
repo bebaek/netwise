@@ -18,10 +18,13 @@ from app.db.models import (
     BalanceSnapshot,
     MortgageProfile,
     ProjectionBehavior,
+    ProjectionScenarioAccountAssumption,
+    ProjectionScenarioPropertyAssumption,
     RealEstateProperty,
     RetirementTaxTreatment,
     SnapshotSource,
 )
+from app.services.projection_scenarios import get_baseline_scenario
 
 CONDITION_SUFFIX = "-condition.toml"
 
@@ -359,6 +362,7 @@ def _get_or_create_account(
         elif account.retirement_tax_treatment is None:
             account.retirement_tax_treatment = _infer_retirement_tax_treatment(name, category)
         account.currency = currency
+        _sync_baseline_account_assumption(db, account)
         return account, False
 
     account = Account(
@@ -373,7 +377,31 @@ def _get_or_create_account(
     )
     db.add(account)
     db.flush()
+    _sync_baseline_account_assumption(db, account)
     return account, True
+
+
+def _sync_baseline_account_assumption(db: Session, account: Account) -> None:
+    baseline = get_baseline_scenario(db, account.household_id)
+    assumption = db.scalar(
+        select(ProjectionScenarioAccountAssumption).where(
+            ProjectionScenarioAccountAssumption.scenario_id == baseline.id,
+            ProjectionScenarioAccountAssumption.account_id == account.id,
+        )
+    )
+    if assumption is None:
+        db.add(
+            ProjectionScenarioAccountAssumption(
+                scenario_id=baseline.id,
+                household_id=account.household_id,
+                account_id=account.id,
+                expected_annual_yield=account.expected_annual_yield,
+                liquidation_expense_rate=account.liquidation_expense_rate,
+            )
+        )
+        return
+    assumption.expected_annual_yield = account.expected_annual_yield
+    assumption.liquidation_expense_rate = account.liquidation_expense_rate
 
 
 def _upsert_snapshots(
@@ -469,16 +497,45 @@ def _get_or_create_real_estate_profile(
     ).first()
     if existing is not None:
         existing.expected_appreciation_rate = _condition_yield(condition)
+        _sync_baseline_property_assumption(db, existing)
         return False
-    db.add(
-        RealEstateProperty(
-            household_id=household_id,
-            account_id=account.id,
-            property_type="residence",
-            expected_appreciation_rate=_condition_yield(condition),
+    property_record = RealEstateProperty(
+        household_id=household_id,
+        account_id=account.id,
+        property_type="residence",
+        expected_appreciation_rate=_condition_yield(condition),
+    )
+    db.add(property_record)
+    db.flush()
+    _sync_baseline_property_assumption(db, property_record)
+    return True
+
+
+def _sync_baseline_property_assumption(
+    db: Session, property_record: RealEstateProperty
+) -> None:
+    baseline = get_baseline_scenario(db, property_record.household_id)
+    assumption = db.scalar(
+        select(ProjectionScenarioPropertyAssumption).where(
+            ProjectionScenarioPropertyAssumption.scenario_id == baseline.id,
+            ProjectionScenarioPropertyAssumption.property_account_id == property_record.account_id,
         )
     )
-    return True
+    if assumption is None:
+        db.add(
+            ProjectionScenarioPropertyAssumption(
+                scenario_id=baseline.id,
+                household_id=property_record.household_id,
+                property_account_id=property_record.account_id,
+                expected_appreciation_rate=property_record.expected_appreciation_rate,
+                rent_growth_rate=property_record.rent_growth_rate,
+                vacancy_rate=property_record.vacancy_rate,
+            )
+        )
+        return
+    assumption.expected_appreciation_rate = property_record.expected_appreciation_rate
+    assumption.rent_growth_rate = property_record.rent_growth_rate
+    assumption.vacancy_rate = property_record.vacancy_rate
 
 
 def _get_or_create_mortgage_profile(

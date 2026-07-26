@@ -6,7 +6,7 @@
 
 - [x] Slice 1: scenario identity, baseline migration, CRUD, and authorization
 - [x] Slice 2: scenario-aware persisted projection inputs
-- [ ] Slice 3: transactional duplication and data portability
+- [x] Slice 3: transactional duplication and data portability
 - [ ] Slice 4: frontend scenario editing
 - [ ] Slice 5: scenario comparison
 - [ ] Slice 6: compatibility cleanup
@@ -545,6 +545,8 @@ Completion signal: every household has a baseline and scenario CRUD is safe, whi
 Completion signal: two scenarios can produce isolated backend projections.
 
 ### Slice 3: Transactional duplication
+
+**Status:** Complete.
 
 - Deep-copy scenario-owned records.
 - Remap Social Security income sources.

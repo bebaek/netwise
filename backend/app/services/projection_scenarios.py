@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -5,12 +6,21 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Account,
+    AccountEvent,
     Household,
+    IncomeSource,
     ProjectionScenario,
     ProjectionScenarioAccountAssumption,
     ProjectionScenarioPropertyAssumption,
+    ProjectionSettings,
+    ProjectionTransfer,
+    RealEstateLiquidationStrategy,
     RealEstateProperty,
+    RealEstateSale,
+    SocialSecurityEstimate,
+    SpendingItem,
 )
+from app.db.session import Base
 
 BASELINE_SCENARIO_NAME = "Baseline"
 MAX_SCENARIOS_PER_HOUSEHOLD = 20
@@ -236,15 +246,8 @@ def list_scenarios(db: Session, household_id: UUID) -> list[ProjectionScenario]:
     )
 
 
-def create_scenario(
-    db: Session,
-    household_id: UUID,
-    *,
-    name: str,
-    description: str | None = None,
-) -> ProjectionScenario:
+def _validate_scenario_creation(db: Session, household_id: UUID, name: str) -> str:
     normalized_name = normalize_scenario_name(name)
-    normalized_description = normalize_scenario_description(description)
     count = db.scalar(
         select(func.count(ProjectionScenario.id)).where(
             ProjectionScenario.household_id == household_id
@@ -263,16 +266,130 @@ def create_scenario(
         raise ProjectionScenarioNameConflictError(
             "A projection scenario with this name already exists"
         )
+    return normalized_name
 
+
+def _new_scenario(
+    db: Session,
+    household_id: UUID,
+    *,
+    name: str,
+    description: str | None,
+    created_from_scenario_id: UUID | None = None,
+) -> ProjectionScenario:
     scenario = ProjectionScenario(
         household_id=household_id,
-        name=normalized_name,
-        description=normalized_description,
+        name=name,
+        description=description,
         is_baseline=False,
+        created_from_scenario_id=created_from_scenario_id,
     )
     db.add(scenario)
     db.flush()
+    return scenario
+
+
+def create_scenario(
+    db: Session,
+    household_id: UUID,
+    *,
+    name: str,
+    description: str | None = None,
+) -> ProjectionScenario:
+    normalized_name = _validate_scenario_creation(db, household_id, name)
+    normalized_description = normalize_scenario_description(description)
+    scenario = _new_scenario(
+        db,
+        household_id,
+        name=normalized_name,
+        description=normalized_description,
+    )
     _initialize_scenario_assumptions(db, scenario)
+    return scenario
+
+
+def _copy_scenario_rows(
+    db: Session,
+    model: type[Base],
+    source: ProjectionScenario,
+    target: ProjectionScenario,
+    *,
+    overrides: Callable[[Base], dict[str, object]] | None = None,
+) -> dict[UUID, UUID]:
+    copied_ids: dict[UUID, UUID] = {}
+    rows = db.scalars(
+        select(model).where(getattr(model, "scenario_id") == source.id).order_by(model.id)
+    ).all()
+    for row in rows:
+        values = {
+            column.name: getattr(row, column.name)
+            for column in model.__table__.columns
+            if column.name not in {"id", "scenario_id", "created_at", "updated_at"}
+        }
+        values["scenario_id"] = target.id
+        if overrides is not None:
+            values.update(overrides(row))
+        copied = model(**values)
+        db.add(copied)
+        db.flush()
+        copied_ids[getattr(row, "id")] = getattr(copied, "id")
+    return copied_ids
+
+
+def _clone_scenario_records(
+    db: Session,
+    source: ProjectionScenario,
+    target: ProjectionScenario,
+) -> None:
+    _copy_scenario_rows(db, ProjectionSettings, source, target)
+    _copy_scenario_rows(db, SpendingItem, source, target)
+    income_source_ids = _copy_scenario_rows(db, IncomeSource, source, target)
+
+    def remap_social_security_income(row: Base) -> dict[str, object]:
+        income_source_id = getattr(row, "income_source_id")
+        cloned_income_source_id = income_source_ids.get(income_source_id)
+        if cloned_income_source_id is None:
+            raise ProjectionScenarioError(
+                "A Social Security estimate references an income source outside its scenario"
+            )
+        return {"income_source_id": cloned_income_source_id}
+
+    _copy_scenario_rows(
+        db,
+        SocialSecurityEstimate,
+        source,
+        target,
+        overrides=remap_social_security_income,
+    )
+    for model in (
+        ProjectionTransfer,
+        RealEstateSale,
+        RealEstateLiquidationStrategy,
+        AccountEvent,
+        ProjectionScenarioAccountAssumption,
+        ProjectionScenarioPropertyAssumption,
+    ):
+        _copy_scenario_rows(db, model, source, target)
+
+
+def duplicate_scenario(
+    db: Session,
+    source: ProjectionScenario,
+    *,
+    name: str,
+    description: str | None = None,
+) -> ProjectionScenario:
+    normalized_name = _validate_scenario_creation(db, source.household_id, name)
+    normalized_description = normalize_scenario_description(description)
+    with db.begin_nested():
+        scenario = _new_scenario(
+            db,
+            source.household_id,
+            name=normalized_name,
+            description=normalized_description,
+            created_from_scenario_id=source.id,
+        )
+        _clone_scenario_records(db, source, scenario)
     return scenario
 
 
@@ -307,5 +424,12 @@ def update_scenario(
 def delete_scenario(db: Session, scenario: ProjectionScenario) -> None:
     if scenario.is_baseline:
         raise BaselineScenarioDeletionError("The baseline projection scenario cannot be deleted")
+    descendants = db.scalars(
+        select(ProjectionScenario).where(
+            ProjectionScenario.created_from_scenario_id == scenario.id
+        )
+    ).all()
+    for descendant in descendants:
+        descendant.created_from_scenario_id = None
     db.delete(scenario)
     db.flush()

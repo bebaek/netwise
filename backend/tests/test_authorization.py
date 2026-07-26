@@ -217,6 +217,13 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
         == 403
     )
     assert (
+        unauthenticated_client.post(
+            f"/projection-scenarios/{baseline['id']}/duplicate",
+            json={"name": "Viewer duplicate"},
+        ).status_code
+        == 403
+    )
+    assert (
         unauthenticated_client.patch(
             f"/projection-scenarios/{baseline['id']}",
             json={"name": "Viewer rename"},
@@ -238,6 +245,11 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
         json={"name": "Member scenario"},
     )
     assert create_response.status_code == 201
+    duplicate_response = unauthenticated_client.post(
+        f"/projection-scenarios/{baseline['id']}/duplicate",
+        json={"name": "Member duplicate"},
+    )
+    assert duplicate_response.status_code == 201
     update_assumption = unauthenticated_client.put(
         f"/projection-scenarios/{baseline['id']}/account-assumptions/{account['id']}",
         json={"expected_annual_yield": "0.010000"},
@@ -249,6 +261,13 @@ def test_projection_scenario_authorization_boundaries(unauthenticated_client, db
     assert (
         unauthenticated_client.get(
             f"/projection-scenarios/{baseline['id']}/account-assumptions"
+        ).status_code
+        == 404
+    )
+    assert (
+        unauthenticated_client.post(
+            f"/projection-scenarios/{baseline['id']}/duplicate",
+            json={"name": "Outsider duplicate"},
         ).status_code
         == 404
     )

@@ -18,6 +18,7 @@ from app.schemas.projection_scenario import (
     ProjectionScenarioAccountAssumptionRead,
     ProjectionScenarioAccountAssumptionUpdate,
     ProjectionScenarioCreate,
+    ProjectionScenarioDuplicate,
     ProjectionScenarioPropertyAssumptionRead,
     ProjectionScenarioPropertyAssumptionUpdate,
     ProjectionScenarioRead,
@@ -27,10 +28,13 @@ from app.services.projection_scenarios import (
     BaselineScenarioDeletionError,
     ProjectionScenarioLimitError,
     ProjectionScenarioNameConflictError,
+    ProjectionScenarioNotFoundError,
     create_scenario,
     delete_scenario,
+    duplicate_scenario,
     ensure_account_assumptions_for_all_scenarios,
     ensure_property_assumptions_for_all_scenarios,
+    get_household_scenario,
     list_scenarios,
     update_scenario,
 )
@@ -85,9 +89,49 @@ def create_projection_scenario(
     if db.get(Household, household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
     try:
-        scenario = create_scenario(
+        if payload.source_scenario_id is None:
+            scenario = create_scenario(
+                db,
+                household_id,
+                name=payload.name,
+                description=payload.description,
+            )
+        else:
+            source = get_household_scenario(db, household_id, payload.source_scenario_id)
+            scenario = duplicate_scenario(
+                db,
+                source,
+                name=payload.name,
+                description=payload.description,
+            )
+    except ProjectionScenarioNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ProjectionScenarioNameConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ProjectionScenarioLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _commit_or_conflict(db)
+    db.refresh(scenario)
+    return scenario
+
+
+@router.post(
+    "/projection-scenarios/{scenario_id}/duplicate",
+    response_model=ProjectionScenarioRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def duplicate_projection_scenario(
+    scenario_id: UUID,
+    payload: ProjectionScenarioDuplicate,
+    db: Session = Depends(get_db),
+) -> ProjectionScenario:
+    source = _get_scenario_or_404(db, scenario_id)
+    try:
+        scenario = duplicate_scenario(
             db,
-            household_id,
+            source,
             name=payload.name,
             description=payload.description,
         )

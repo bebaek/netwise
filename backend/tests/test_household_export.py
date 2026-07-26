@@ -65,6 +65,15 @@ def test_household_export_includes_portable_household_data(client: TestClient, a
             "total_taxes_paid": "30000.00",
         },
     )
+    baseline = client.get(f"/households/{household_id}/projection-scenarios").json()[0]
+    client.put(
+        f"/projection-settings/{household_id}",
+        json={"annual_spending": "50000.00", "spending_mode": "manual"},
+    )
+    duplicate = client.post(
+        f"/projection-scenarios/{baseline['id']}/duplicate",
+        json={"name": "Exported alternative"},
+    ).json()
 
     response = client.get(f"/households/{household_id}/export")
 
@@ -77,6 +86,24 @@ def test_household_export_includes_portable_household_data(client: TestClient, a
     assert payload["members"][0]["user"]["email"] == "test@example.com"
     assert payload["accounts"][0]["name"] == "Brokerage"
     assert payload["accounts"][0]["expected_annual_yield"] == "0.060000"
+    assert [scenario["id"] for scenario in payload["projection_scenarios"]] == [
+        baseline["id"],
+        duplicate["id"],
+    ]
+    assert payload["projection_scenarios"][1]["created_from_scenario_id"] == baseline["id"]
+    assert {row["scenario_id"] for row in payload["projection_settings"]} == {
+        baseline["id"],
+        duplicate["id"],
+    }
+    assert {row["scenario_id"] for row in payload["income_sources"]} == {
+        baseline["id"],
+        duplicate["id"],
+    }
+    assert {row["scenario_id"] for row in payload["spending_items"]} == {
+        baseline["id"],
+        duplicate["id"],
+    }
+    assert len(payload["projection_scenario_account_assumptions"]) == 2
     assert payload["snapshots"][0]["balance"] == "1234.56"
     assert payload["account_events"][0]["description"] == "Test contribution"
     assert payload["income_sources"][0]["name"] == "Salary"
