@@ -101,6 +101,56 @@ development or `/api/openapi.json` through the production proxy. Give that schem
 the deployment base URL to an OpenAPI-capable agent, but provide the bearer token via
 the agent's secret configuration rather than conversational context.
 
-A dedicated MCP adapter can be layered over this API later. It should expose a small
-set of semantic tools and reuse these household and scope controls instead of holding
-a browser session.
+## Use the MCP adapter
+
+The backend includes a local stdio MCP server with these semantic tools:
+
+- `get_financial_summary`
+- `list_accounts`
+- `list_recent_balances`
+- `get_net_worth_history`
+- `list_projection_scenarios`
+- `compare_projection_scenarios`
+
+The adapter discovers the household from the bound token, so the model does not choose
+or supply a household ID. It only exposes reads and deterministic projection
+comparison; it does not expose Netwise mutation endpoints.
+
+Run it from a checkout:
+
+```bash
+cd /path/to/netwise/backend
+NETWISE_API_URL=https://netwise.example/api \
+NETWISE_API_TOKEN='nwt_REPLACE_WITH_THE_ONE_TIME_SECRET' \
+uv run --extra agent python -m app.agent.mcp_server
+```
+
+A typical stdio MCP client configuration is:
+
+```json
+{
+  "mcpServers": {
+    "netwise": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/netwise/backend",
+        "run",
+        "--extra",
+        "agent",
+        "python",
+        "-m",
+        "app.agent.mcp_server"
+      ],
+      "env": {
+        "NETWISE_API_URL": "https://netwise.example/api",
+        "NETWISE_API_TOKEN": "nwt_REPLACE_WITH_THE_ONE_TIME_SECRET"
+      }
+    }
+  }
+}
+```
+
+MCP client configuration formats differ, so adapt the outer structure for the chosen
+client. Restrict permissions on configuration files containing the token. The optional
+`NETWISE_API_TIMEOUT_SECONDS` setting defaults to 30 seconds.
