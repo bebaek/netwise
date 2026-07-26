@@ -2,14 +2,14 @@
 
 ## Status
 
-**In progress.**
+**Complete.**
 
 - [x] Slice 1: scenario identity, baseline migration, CRUD, and authorization
 - [x] Slice 2: scenario-aware persisted projection inputs
 - [x] Slice 3: transactional duplication and data portability
 - [x] Slice 4: frontend scenario editing
 - [x] Slice 5: scenario comparison
-- [ ] Slice 6: compatibility cleanup
+- [x] Slice 6: compatibility cleanup
 
 - Plan date: 2026-07-25
 - Initial milestone: named, independently editable deterministic scenarios with comparison
@@ -88,7 +88,7 @@ Every household has exactly one baseline scenario.
 - Existing planning assumptions migrate into the baseline.
 - The baseline can be renamed but cannot be deleted.
 - Other scenarios may be duplicated or deleted.
-- The API resolves a missing `scenario_id` to the baseline during a compatibility period.
+- The API permanently resolves a missing `scenario_id` to the baseline as a convenience for older and baseline-only clients; supported interactive clients still send explicit IDs.
 
 ### No persisted projection runs in the first milestone
 
@@ -313,7 +313,7 @@ PUT /projection-settings/{household_id}?scenario_id={scenario_id}
 
 Apply the same selection to income sources, Social Security estimates, spending items, projection transfers, property sales, liquidation strategies, and projection-capable account events.
 
-For one compatibility release, an omitted scenario resolves to the household baseline. New frontend code always sends an explicit scenario ID.
+Omitting `scenario_id` permanently resolves to the household baseline on endpoints where that parameter is optional. This is a stable convenience for older and baseline-only API clients, not a return to household-wide planning records. New frontend code always sends an explicit scenario ID, and responses expose the resolved ID.
 
 ### Scenario assumption APIs
 
@@ -578,6 +578,8 @@ Completion signal: users can manage and edit scenarios without data leakage or s
 Completion signal: users can compare two to four scenarios over the same time range.
 
 ### Slice 6: Compatibility cleanup
+
+**Status:** Complete.
 
 - Confirm all supported clients send explicit scenario IDs.
 - Decide whether omitted IDs remain a permanent baseline convenience or become an API error.

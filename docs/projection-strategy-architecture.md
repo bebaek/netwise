@@ -249,22 +249,16 @@ of timeline simulation while preserving the endpoint contract.
 
 ## Scenario semantics
 
-`AccountEvent` already has a nullable `scenario_id`, but the current projection
-endpoint does not accept one and the projection query does not filter by one.
-A future scenario design must make the selection explicit:
+`ProjectionScenario` is the ownership boundary for independently editable future-planning inputs. The selected scenario is resolved before simulation into the immutable projection input. Current balances, historical snapshots, mortgages, annual tax records, and physical account/property identity remain shared.
 
-- `scenario_id = NULL` means a baseline event and is included for every run.
-- For a scenario run, include baseline events plus events with that scenario's
-  ID.
-- Do not include events belonging to other scenarios.
-- A baseline run includes only baseline events unless product requirements
-  explicitly define another behavior.
+Account-event inclusion follows `projection_behavior` and `scenario_id` together:
 
-Introduce a `ProjectionScenario` entity before exposing scenario selection. It
-should at least hold household ownership, name, selected strategy key, strategy
-assumptions, and timestamps. Household-wide defaults may remain useful, but
-scenario overrides must be resolved into the immutable input/assumptions passed
-to a strategy.
+- `historical_only` events have no scenario and never enter projections.
+- `historical_and_projection` events have no scenario and enter every scenario.
+- `projection_only` events require a scenario and enter only that scenario.
+- Events owned by a different scenario never enter the selected projection.
+
+The bundled frontend always selects a scenario explicitly. API endpoints with an optional `scenario_id` permanently resolve omission to the household baseline for compatibility; see [Projection Scenarios API](projection-scenarios-api.md). Scenario comparison requires two to four explicit IDs and executes the same deterministic engine for each fully resolved input.
 
 ## Migration plan
 

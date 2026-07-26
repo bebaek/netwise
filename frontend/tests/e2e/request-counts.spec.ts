@@ -15,6 +15,7 @@ function recordApiRequests(page: Page) {
 
   return {
     reset: () => requests.splice(0),
+    snapshot: () => [...requests],
     summarize: (): RequestSummary => {
       const byMethodAndPath = requests.reduce<Record<string, number>>((counts, request) => {
         const key = `${request.method()} ${new URL(request.url()).pathname}`;
@@ -112,6 +113,27 @@ test('records representative frontend API request counts', async ({ page, isMobi
   await expect(page.getByRole('heading', { name: 'Projection events', exact: true })).toBeVisible();
   await page.waitForLoadState('networkidle');
   measurements.load_planning_route_data = recorder.summarize();
+  const planningLoadRequests = recorder.snapshot();
+
+  const scenarioSelector = page.getByLabel('Current projection scenario');
+  if (await scenarioSelector.locator('option').count() < 2) {
+    await page.getByRole('button', { name: 'New scenario', exact: true }).click();
+    const createScenarioForm = page.getByRole('heading', { name: 'New scenario', exact: true })
+      .locator('..');
+    await createScenarioForm.getByLabel('Name').fill('Request Count Comparison');
+    await createScenarioForm.getByRole('button', { name: 'Save scenario' }).click();
+    await expect(scenarioSelector.locator('option')).toHaveCount(2);
+  }
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  const comparisonForm = page.locator('.scenario-comparison-form');
+  const comparisonStartYear = Number(await comparisonForm.getByLabel('Start year').inputValue());
+  await comparisonForm.getByLabel('End year').fill(String(comparisonStartYear + 1));
+  recorder.reset();
+  await comparisonForm.getByRole('button', { name: 'Run comparison' }).click();
+  await expect(page.locator('.comparison-summary-card')).toHaveCount(2);
+  await page.waitForLoadState('networkidle');
+  measurements.run_scenario_comparison = recorder.summarize();
+  await page.getByRole('button', { name: 'Back to planning' }).click();
 
   const saleForm = page.getByRole('heading', { name: 'Plan property sale', exact: true })
     .locator('..')
@@ -312,6 +334,29 @@ test('records representative frontend API request counts', async ({ page, isMobi
     'GET /api/real-estate/sales',
     'GET /api/social-security-estimates',
     'GET /api/spending-items',
+  ]);
+  const querySelectedPlanningPaths = new Set([
+    '/api/income-sources',
+    '/api/projection-transfers',
+    '/api/real-estate/liquidation-strategies',
+    '/api/real-estate/sales',
+    '/api/social-security-estimates',
+    '/api/spending-items',
+  ]);
+  const scenarioAwarePlanningRequests = planningLoadRequests.filter((request) => {
+    const url = new URL(request.url());
+    return querySelectedPlanningPaths.has(url.pathname)
+      || /^\/api\/projection-settings\/[^/]+$/.test(url.pathname)
+      || /^\/api\/households\/[^/]+\/events$/.test(url.pathname);
+  });
+  expect(scenarioAwarePlanningRequests.length).toBeGreaterThan(0);
+  for (const request of scenarioAwarePlanningRequests) {
+    expect(new URL(request.url()).searchParams.get('scenario_id')).toMatch(/^[0-9a-f-]{36}$/);
+  }
+
+  expect(measurements.run_scenario_comparison.total).toBe(1);
+  expect(Object.keys(measurements.run_scenario_comparison.by_method_and_path)).toEqual([
+    expect.stringMatching(/^POST \/api\/dashboard\/[^/]+\/projection-comparison$/),
   ]);
 
   expect(measurements.create_real_estate_sale.total).toBeLessThanOrEqual(2);

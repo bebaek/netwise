@@ -10,7 +10,7 @@ This document records reproducible API request counts for representative fronten
 - Counted traffic: requests whose URL path starts with `/api/`
 - Initial-load boundary: an authenticated page reload through a fully loaded Overview page
 - Scenario boundary: immediately before the user action through Playwright's network-idle state
-- Baseline application commit: `1fb66d9`
+- Baseline application commit: `70dbbca` (projection scenario comparison milestone)
 
 React Strict Mode intentionally re-runs mount behavior in the development build, so many initial-load requests appear twice. The scenario comparisons use the same environment before and after the change.
 
@@ -28,7 +28,8 @@ Current request budgets added after the original baseline:
 | Scenario | Current requests | Request set |
 | --- | ---: | --- |
 | Create an account | 5 | Mutation, accounts, net worth, historical trend, and breakdown history |
-| Enter Planning and load route data | 20 | Ten route collections; each doubled by development Strict Mode |
+| Enter Planning and load route data | 21 observed, 22 maximum | Shared planning data, scenario list, and selected-scenario collections; development Strict Mode may issue a second mount request |
+| Run a two-scenario comparison | 1 | One comparison request; the response contains both complete projections and summaries |
 | Create an account event | 2 | Event mutation and household account-events refresh |
 | Enter Assets and load property data | 6 | Properties, analytics, and mortgages; each doubled by development Strict Mode |
 | Create a property without a valuation | 8 | Two mutations plus targeted account, financial-summary, property, and analytics refreshes |
@@ -55,7 +56,8 @@ The Playwright measurement test enforces these stable request boundaries:
 - Toggling interpolation makes exactly one API request, to historical trend.
 - Saving a household snapshot makes no more than five API requests and does not reload planning, real-estate, membership, mortgage, income, or tax collections.
 - Account creation makes no more than five API requests and does not reload unrelated route domains.
-- Entering Planning requests only its ten route-owned collections.
+- Entering Planning requests only its shared and selected-scenario route collections, with a maximum of 22 requests in the Strict Mode measurement environment.
+- Running a scenario comparison makes exactly one request; changing chart or table presentation does not trigger more projection calls.
 - Account-event creation makes two requests: the mutation and one batched event refresh.
 - Planned property-sale creation makes two requests: the mutation and one sales refresh.
 - Spending-item creation makes two requests: the mutation and one spending-items refresh.
