@@ -39,9 +39,17 @@ class NetwiseApiClient:
         *,
         params: Mapping[str, object] | None = None,
         json: Mapping[str, object] | None = None,
+        tool_name: str | None = None,
     ) -> Any:
+        headers = {"X-Netwise-Agent-Tool": tool_name} if tool_name else None
         try:
-            response = self._client.request(method, path.lstrip("/"), params=params, json=json)
+            response = self._client.request(
+                method,
+                path.lstrip("/"),
+                params=params,
+                json=json,
+                headers=headers,
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             try:
@@ -57,9 +65,9 @@ class NetwiseApiClient:
         except ValueError as exc:
             raise NetwiseApiError("Netwise returned an invalid JSON response") from exc
 
-    def get_household(self) -> dict[str, Any]:
+    def get_household(self, tool_name: str | None = None) -> dict[str, Any]:
         if self._household is None:
-            households = self._request("GET", "/households")
+            households = self._request("GET", "/households", tool_name=tool_name)
             if not isinstance(households, list) or len(households) != 1:
                 raise NetwiseApiError(
                     "The API token must resolve to exactly one household"
@@ -70,33 +78,53 @@ class NetwiseApiClient:
             self._household = household
         return self._household
 
-    @property
-    def household_id(self) -> str:
-        return self.get_household()["id"]
+    def household_id_for(self, tool_name: str) -> str:
+        return self.get_household(tool_name)["id"]
 
     def get_financial_summary(self) -> dict[str, Any]:
-        return self._request("GET", f"/dashboard/{self.household_id}/net-worth")
+        tool_name = "get_financial_summary"
+        household_id = self.household_id_for(tool_name)
+        return self._request(
+            "GET",
+            f"/dashboard/{household_id}/net-worth",
+            tool_name=tool_name,
+        )
 
     def list_accounts(self) -> list[dict[str, Any]]:
-        return self._request("GET", "/accounts", params={"household_id": self.household_id})
+        tool_name = "list_accounts"
+        return self._request(
+            "GET",
+            "/accounts",
+            params={"household_id": self.household_id_for(tool_name)},
+            tool_name=tool_name,
+        )
 
     def list_recent_balances(self, limit: int = 20) -> list[dict[str, Any]]:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
+        tool_name = "list_recent_balances"
         return self._request(
             "GET",
-            f"/households/{self.household_id}/snapshots",
+            f"/households/{self.household_id_for(tool_name)}/snapshots",
             params={"limit": limit},
+            tool_name=tool_name,
         )
 
     def get_net_worth_history(self) -> dict[str, Any]:
-        return self._request("GET", f"/dashboard/{self.household_id}/net-worth/history")
+        tool_name = "get_net_worth_history"
+        return self._request(
+            "GET",
+            f"/dashboard/{self.household_id_for(tool_name)}/net-worth/history",
+            tool_name=tool_name,
+        )
 
     def list_projection_scenarios(self) -> list[dict[str, Any]]:
+        tool_name = "list_projection_scenarios"
         return self._request(
             "GET",
             "/projection-scenarios",
-            params={"household_id": self.household_id},
+            params={"household_id": self.household_id_for(tool_name)},
+            tool_name=tool_name,
         )
 
     def compare_projection_scenarios(
@@ -111,13 +139,15 @@ class NetwiseApiClient:
             raise ValueError("Projection scenario IDs must be unique")
         if start_year > end_year:
             raise ValueError("start_year must not be after end_year")
+        tool_name = "compare_projection_scenarios"
         return self._request(
             "POST",
-            f"/dashboard/{self.household_id}/projection-comparison",
+            f"/dashboard/{self.household_id_for(tool_name)}/projection-comparison",
             json={
                 "scenario_ids": scenario_ids,
                 "start_year": start_year,
                 "end_year": end_year,
                 "interval": "annual",
             },
+            tool_name=tool_name,
         )

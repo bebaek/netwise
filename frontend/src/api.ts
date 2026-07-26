@@ -49,6 +49,20 @@ export type ApiTokenCreated = ApiToken & {
   token: string;
 };
 
+export type ApiTokenAuditEvent = {
+  id: string;
+  api_token_id: string | null;
+  household_id: string;
+  token_name: string;
+  token_prefix: string;
+  method: string;
+  path: string;
+  tool_name: string | null;
+  status_code: number;
+  duration_ms: number;
+  created_at: string;
+};
+
 export type HouseholdExport = {
   schema: string;
   exported_at: string;
@@ -601,6 +615,18 @@ export function createApiToken(payload: {
 
 export function revokeApiToken(tokenId: string): Promise<void> {
   return request<void>(`/api-tokens/${tokenId}`, { method: 'DELETE' });
+}
+
+export function listApiTokenAuditEvents(
+  householdId: string,
+  signal?: AbortSignal,
+  limit = 25,
+): Promise<ApiTokenAuditEvent[]> {
+  const params = new URLSearchParams({
+    household_id: householdId,
+    limit: String(limit),
+  });
+  return request<ApiTokenAuditEvent[]>(`/api-tokens/audit-events?${params}`, { signal });
 }
 
 export function createUser(payload: { display_name: string; email?: string }): Promise<User> {

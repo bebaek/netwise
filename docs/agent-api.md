@@ -14,6 +14,8 @@ agent does not need access to the browser session cookie or the user's password.
 - Tokens cannot access user, household-member, import, export, authentication, or
   token-management endpoints.
 - All other writes are rejected, regardless of the token's household role.
+- Authenticated token requests are audited with the token identity, endpoint, optional
+  MCP tool name, result status, and duration. Request and response bodies are not logged.
 
 API tokens should still be treated as secrets because finance reads contain sensitive
 information. Keep Netwise on a trusted network, pass the token through a secret store
@@ -29,6 +31,7 @@ review, or revoke tokens. The underlying endpoints are:
 
 ```text
 GET    /api-tokens
+GET    /api-tokens/audit-events?household_id={household_id}
 POST   /api-tokens
 DELETE /api-tokens/{token_id}
 ```
@@ -155,4 +158,6 @@ A typical stdio MCP client configuration is:
 
 MCP client configuration formats differ, so adapt the outer structure for the chosen
 client. Restrict permissions on configuration files containing the token. The optional
-`NETWISE_API_TIMEOUT_SECONDS` setting defaults to 30 seconds.
+`NETWISE_API_TIMEOUT_SECONDS` setting defaults to 30 seconds. Netwise's MCP adapter
+also labels requests with the tool name so **Settings → AI agent access → Recent agent
+activity** can distinguish semantic tool calls from direct API requests.

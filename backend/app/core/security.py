@@ -174,6 +174,13 @@ def require_authenticated_user(
 ) -> User:
     api_token = _api_token_from_request(request, db)
     if api_token is not None:
+        request.state.api_token_audit_context = {
+            "api_token_id": api_token.id,
+            "user_id": api_token.user_id,
+            "household_id": api_token.household_id,
+            "token_name": api_token.name,
+            "token_prefix": api_token.token_prefix,
+        }
         _authorize_api_token_request(request, api_token)
         request.state.api_token = api_token
         api_token.last_used_at = datetime.now(UTC)

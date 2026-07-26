@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.db.models import ApiToken, Household, HouseholdMembership
+from app.db.models import ApiToken, ApiTokenAuditEvent, Household, HouseholdMembership
 
 
 def _register(client) -> None:
@@ -120,3 +120,51 @@ def test_revoked_and_expired_api_tokens_are_rejected(unauthenticated_client, db_
     token.expires_at = datetime.now(UTC) - timedelta(minutes=1)
     db_session.commit()
     assert unauthenticated_client.get(f"/households/{household.id}", headers=headers).status_code == 401
+
+
+def test_api_token_requests_are_audited_without_financial_payloads(
+    unauthenticated_client, db_session
+):
+    _register(unauthenticated_client)
+    household = db_session.scalar(select(Household))
+    created = _create_token(unauthenticated_client, household.id)
+    unauthenticated_client.cookies.clear()
+    headers = {
+        "Authorization": f"Bearer {created['token']}",
+        "X-Netwise-Agent-Tool": "get_financial_summary",
+    }
+
+    read_response = unauthenticated_client.get(
+        f"/households/{household.id}", headers=headers
+    )
+    denied_response = unauthenticated_client.post(
+        "/households",
+        json={"name": "Must not appear in the audit log"},
+        headers={**headers, "X-Netwise-Agent-Tool": "attempted_write"},
+    )
+    assert read_response.status_code == 200
+    assert denied_response.status_code == 403
+
+    login = unauthenticated_client.post(
+        "/auth/login",
+        json={
+            "email": "agent@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    assert login.status_code == 200
+    audit_response = unauthenticated_client.get(
+        "/api-tokens/audit-events",
+        params={"household_id": str(household.id), "limit": 10},
+    )
+
+    assert audit_response.status_code == 200
+    events = audit_response.json()
+    assert [(event["path"], event["status_code"], event["tool_name"]) for event in events] == [
+        ("/households", 403, "attempted_write"),
+        ("/households/{household_id}", 200, "get_financial_summary"),
+    ]
+    assert all(event["token_prefix"] == created["token_prefix"] for event in events)
+    assert all(created["token"] not in str(event) for event in events)
+    assert all("Must not appear" not in str(event) for event in events)
+    assert db_session.scalar(select(ApiTokenAuditEvent.id)) is not None

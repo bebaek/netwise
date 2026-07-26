@@ -30,3 +30,19 @@ class ApiTokenRead(BaseModel):
 
 class ApiTokenCreated(ApiTokenRead):
     token: str
+
+
+class ApiTokenAuditEventRead(BaseModel):
+    id: UUID
+    api_token_id: UUID | None
+    household_id: UUID
+    token_name: str
+    token_prefix: str
+    method: str
+    path: str
+    tool_name: str | None
+    status_code: int
+    duration_ms: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

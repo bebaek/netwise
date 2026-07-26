@@ -5,7 +5,11 @@ import {
   type FormEvent,
 } from 'react';
 import type { ApiToken, ApiTokenCreated, ApiTokenScope, Household } from '../api';
-import { useApiTokenMutations, useApiTokens } from '../queries/apiTokens';
+import {
+  useApiTokenAuditEvents,
+  useApiTokenMutations,
+  useApiTokens,
+} from '../queries/apiTokens';
 
 function formatTimestamp(value: string | null): string {
   if (!value) return 'Never';
@@ -22,6 +26,7 @@ function tokenStatus(token: ApiToken): 'active' | 'expired' | 'revoked' {
 
 export function ApiTokenSettings({ household }: { household: Household }) {
   const tokensQuery = useApiTokens();
+  const auditQuery = useApiTokenAuditEvents(household.id);
   const mutations = useApiTokenMutations();
   const [error, setError] = useState('');
   const [createdToken, setCreatedToken] = useState<ApiTokenCreated | null>(null);
@@ -30,6 +35,7 @@ export function ApiTokenSettings({ household }: { household: Household }) {
   const tokens = (tokensQuery.data ?? []).filter(
     (token) => token.household_id === household.id,
   );
+  const auditEvents = auditQuery.data ?? [];
 
   useEffect(() => {
     setCreatedToken(null);
@@ -101,6 +107,9 @@ export function ApiTokenSettings({ household }: { household: Household }) {
       {error && <div className="error" role="alert">{error}</div>}
       {tokensQuery.error && (
         <div className="error" role="alert">{String(tokensQuery.error)}</div>
+      )}
+      {auditQuery.error && (
+        <div className="error" role="alert">{String(auditQuery.error)}</div>
       )}
 
       <form className="api-token-form" onSubmit={onCreateToken}>
@@ -211,6 +220,53 @@ export function ApiTokenSettings({ household }: { household: Household }) {
                     Revoke
                   </button>
                 ) : <span />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="section-header api-token-list-heading">
+        <div>
+          <h3>Recent agent activity</h3>
+          <p className="muted">
+            Requests record the tool or endpoint, result, and timing—not balances,
+            request bodies, or response data.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={auditQuery.isFetching}
+          onClick={() => void auditQuery.refetch()}
+        >
+          {auditQuery.isFetching ? 'Refreshing…' : 'Refresh activity'}
+        </button>
+      </div>
+      {auditQuery.isPending ? (
+        <div role="status">Loading agent activity…</div>
+      ) : auditEvents.length === 0 ? (
+        <p className="muted">No API-token requests have been recorded for this household.</p>
+      ) : (
+        <div className="audit-event-list">
+          {auditEvents.map((event) => {
+            const successful = event.status_code >= 200 && event.status_code < 400;
+            return (
+              <div className="audit-event-row" key={event.id}>
+                <div>
+                  <strong>{event.tool_name ?? event.path}</strong>
+                  {event.tool_name && <div><code>{event.path}</code></div>}
+                  <div className="muted">
+                    {event.token_name} · <code>{event.token_prefix}…</code>
+                  </div>
+                </div>
+                <div className="muted audit-event-time">
+                  {formatTimestamp(event.created_at)}
+                </div>
+                <span className={`pill ${successful ? 'token-status-active' : 'token-status-revoked'}`}>
+                  {event.method} {event.status_code}
+                </span>
+                <span className="muted">{event.duration_ms} ms</span>
               </div>
             );
           })}

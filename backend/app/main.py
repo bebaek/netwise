@@ -14,12 +14,16 @@ from app.api.routes import (
     real_estate,
     users,
 )
+from app.core.audit import audit_api_token_request
 from app.core.authorization import authorize_household_request
 from app.core.security import require_authenticated_user
+from app.db.session import SessionLocal
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Netwise API")
+    app.state.audit_session_factory = SessionLocal
+    app.middleware("http")(audit_api_token_request)
 
     app.include_router(health.router)
     app.include_router(capabilities.router)

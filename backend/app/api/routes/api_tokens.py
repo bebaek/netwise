@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,9 +11,14 @@ from app.core.security import (
     create_api_token_secret,
     get_optional_current_user,
 )
-from app.db.models import ApiToken, User
+from app.db.models import ApiToken, ApiTokenAuditEvent, User
 from app.db.session import get_db
-from app.schemas.api_token import ApiTokenCreate, ApiTokenCreated, ApiTokenRead
+from app.schemas.api_token import (
+    ApiTokenAuditEventRead,
+    ApiTokenCreate,
+    ApiTokenCreated,
+    ApiTokenRead,
+)
 
 router = APIRouter(prefix="/api-tokens", tags=["api-tokens"])
 
@@ -80,6 +85,28 @@ def create_api_token(
     db.refresh(api_token)
     token_data = ApiTokenRead.model_validate(api_token).model_dump()
     return ApiTokenCreated(**token_data, token=secret)
+
+
+@router.get("/audit-events", response_model=list[ApiTokenAuditEventRead])
+def list_api_token_audit_events(
+    household_id: UUID,
+    token_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_session_user),
+) -> list[ApiTokenAuditEvent]:
+    statement = (
+        select(ApiTokenAuditEvent)
+        .where(
+            ApiTokenAuditEvent.user_id == user.id,
+            ApiTokenAuditEvent.household_id == household_id,
+        )
+        .order_by(ApiTokenAuditEvent.created_at.desc())
+        .limit(limit)
+    )
+    if token_id is not None:
+        statement = statement.where(ApiTokenAuditEvent.api_token_id == token_id)
+    return list(db.scalars(statement).all())
 
 
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)

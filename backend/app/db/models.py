@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     Numeric,
     String,
@@ -155,6 +156,39 @@ class ApiToken(Base):
         Index("ix_api_tokens_user_id", "user_id"),
         Index("ix_api_tokens_household_id", "household_id"),
         Index("ix_api_tokens_expires_at", "expires_at"),
+    )
+
+
+class ApiTokenAuditEvent(Base):
+    __tablename__ = "api_token_audit_events"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    api_token_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("api_tokens.id", ondelete="SET NULL")
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    token_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(500), nullable=False)
+    tool_name: Mapped[str | None] = mapped_column(String(100))
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    __table_args__ = (
+        Index("ix_api_token_audit_events_token_id", "api_token_id"),
+        Index("ix_api_token_audit_events_user_created", "user_id", "created_at"),
+        Index(
+            "ix_api_token_audit_events_household_created",
+            "household_id",
+            "created_at",
+        ),
     )
 
 

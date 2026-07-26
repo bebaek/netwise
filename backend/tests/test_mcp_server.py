@@ -31,10 +31,13 @@ def test_agent_client_uses_bound_household_and_bearer_token():
         requests.append(request)
         assert request.headers["Authorization"] == "Bearer secret-token"
         if request.url.path == "/api/households":
+            assert request.headers["X-Netwise-Agent-Tool"] == "get_financial_summary"
             return _json_response([{"id": HOUSEHOLD_ID, "name": "Home"}])
         if request.url.path == f"/api/dashboard/{HOUSEHOLD_ID}/net-worth":
+            assert request.headers["X-Netwise-Agent-Tool"] == "get_financial_summary"
             return _json_response({"net_worth": "123.45"})
         if request.url.path == "/api/accounts":
+            assert request.headers["X-Netwise-Agent-Tool"] == "list_accounts"
             assert request.url.params["household_id"] == HOUSEHOLD_ID
             return _json_response([{"id": "account-1", "name": "Checking"}])
         raise AssertionError(f"Unexpected request: {request.url}")
@@ -58,9 +61,11 @@ def test_agent_client_lists_balances_and_compares_scenarios():
         if request.url.path == "/households":
             return _json_response([{"id": HOUSEHOLD_ID, "name": "Home"}])
         if request.url.path == f"/households/{HOUSEHOLD_ID}/snapshots":
+            assert request.headers["X-Netwise-Agent-Tool"] == "list_recent_balances"
             assert request.url.params["limit"] == "5"
             return _json_response([{"balance": "100.00"}])
         if request.url.path == f"/dashboard/{HOUSEHOLD_ID}/projection-comparison":
+            assert request.headers["X-Netwise-Agent-Tool"] == "compare_projection_scenarios"
             assert request.method == "POST"
             assert json.loads(request.content) == {
                 "scenario_ids": ["baseline", "retire-early"],

@@ -17,6 +17,25 @@ test('creates and revokes a household agent API token', async ({ page }) => {
   const secret = await page.getByLabel('New API token').inputValue();
   expect(secret).toMatch(/^nwt_/);
 
+  const householdId = await page.getByLabel('Selected household').inputValue();
+  const agentResponse = await page.request.get(`/api/households/${householdId}`, {
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'X-Netwise-Agent-Tool': 'get_financial_summary',
+    },
+  });
+  expect(agentResponse.status()).toBe(200);
+  await page.getByRole('button', { name: 'Refresh activity', exact: true }).click();
+  const activityRow = page.locator('.audit-event-row').filter({
+    hasText: tokenName,
+  }).filter({
+    hasText: 'get_financial_summary',
+  });
+  await expect(activityRow).toContainText('/households/{household_id}');
+  await expect(activityRow).toContainText('GET 200');
+  await expect(activityRow).toContainText(tokenName);
+  await expect(activityRow).not.toContainText(secret);
+
   const tokenRow = page.locator('.api-token-row').filter({ hasText: tokenName });
   await expect(tokenRow).toContainText('active');
   await expect(tokenRow).toContainText('finance read · projections run');
