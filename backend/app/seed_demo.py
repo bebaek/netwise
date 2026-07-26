@@ -22,6 +22,8 @@ from app.db.models import (
     IncomeSource,
     MortgageProfile,
     ProjectionBehavior,
+    ProjectionScenario,
+    ProjectionScenarioAccountAssumption,
     RealEstateProperty,
     SnapshotSource,
     User,
@@ -31,6 +33,7 @@ from app.services.projection_scenarios import (
     ensure_account_assumptions_for_all_scenarios,
     ensure_baseline_scenario,
     ensure_property_assumptions_for_all_scenarios,
+    duplicate_scenario,
 )
 
 DEMO_HOUSEHOLD_NAME = "Demo Household"
@@ -49,6 +52,7 @@ class DemoSeedSummary:
     mortgages_created: int = 0
     income_sources_created: int = 0
     tax_records_created: int = 0
+    scenarios_created: int = 0
     reset: bool = False
 
 
@@ -140,9 +144,48 @@ def seed_demo_data(db: Session, *, reset: bool = False) -> DemoSeedSummary:
     _seed_income_sources(db, summary, household.id, baseline.id)
     _seed_tax_records(db, summary, household.id)
     _seed_events(db, summary, household.id, baseline.id, accounts)
+    _ensure_conservative_scenario(db, summary, baseline, accounts)
 
     db.commit()
     return summary
+
+
+def _ensure_conservative_scenario(
+    db: Session,
+    summary: DemoSeedSummary,
+    baseline: ProjectionScenario,
+    accounts: dict[str, Account],
+) -> ProjectionScenario:
+    existing = db.scalar(
+        select(ProjectionScenario).where(
+            ProjectionScenario.household_id == baseline.household_id,
+            ProjectionScenario.name == "Conservative returns",
+        )
+    )
+    if existing is not None:
+        return existing
+
+    scenario = duplicate_scenario(
+        db,
+        baseline,
+        name="Conservative returns",
+        description="Lower expected investment returns than the baseline",
+    )
+    conservative_yields = {
+        accounts["checking"].id: Decimal("0.005000"),
+        accounts["brokerage"].id: Decimal("0.040000"),
+        accounts["retirement"].id: Decimal("0.045000"),
+    }
+    assumptions = db.scalars(
+        select(ProjectionScenarioAccountAssumption).where(
+            ProjectionScenarioAccountAssumption.scenario_id == scenario.id,
+            ProjectionScenarioAccountAssumption.account_id.in_(conservative_yields),
+        )
+    ).all()
+    for assumption in assumptions:
+        assumption.expected_annual_yield = conservative_yields[assumption.account_id]
+    summary.scenarios_created += 1
+    return scenario
 
 
 def _delete_demo_households(db: Session) -> None:

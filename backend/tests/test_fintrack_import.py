@@ -9,6 +9,26 @@ def write_text(path: Path, content: str) -> None:
 
 def test_fintrack_import_creates_accounts_snapshots_events_and_profiles(client, tmp_path):
     household = client.post("/households", json={"name": "Import Home"}).json()
+    baseline = client.get(
+        f"/households/{household['id']}/projection-scenarios"
+    ).json()[0]
+    existing_brokerage = client.post(
+        "/accounts",
+        json={
+            "household_id": household["id"],
+            "name": "Brokerage",
+            "account_kind": "asset",
+            "category": "taxable_investment",
+            "liquidity_class": "marketable",
+            "expected_annual_yield": "0.090000",
+            "currency": "USD",
+        },
+    )
+    assert existing_brokerage.status_code == 201
+    alternative = client.post(
+        f"/households/{household['id']}/projection-scenarios",
+        json={"name": "Existing alternative"},
+    ).json()
 
     write_text(tmp_path / "brokerage-condition.toml", "yield = 0.06\n")
     write_text(
@@ -30,7 +50,8 @@ def test_fintrack_import_creates_accounts_snapshots_events_and_profiles(client, 
 
     assert response.status_code == 201
     result = response.json()
-    assert result["accounts_created"] == 3
+    assert result["accounts_created"] == 2
+    assert result["accounts_existing"] == 1
     assert result["snapshots_created"] == 3
     assert result["events_created"] == 1
     assert result["real_estate_profiles_created"] == 1
@@ -58,6 +79,34 @@ def test_fintrack_import_creates_accounts_snapshots_events_and_profiles(client, 
     mortgages = client.get(f"/mortgages?household_id={household['id']}").json()
     assert len(mortgages) == 1
     assert mortgages[0]["original_principal"] == "250000.00"
+
+    baseline_account_assumptions = client.get(
+        f"/projection-scenarios/{baseline['id']}/account-assumptions"
+    ).json()
+    alternative_account_assumptions = client.get(
+        f"/projection-scenarios/{alternative['id']}/account-assumptions"
+    ).json()
+    assert len(baseline_account_assumptions) == 3
+    assert len(alternative_account_assumptions) == 1
+    brokerage_assumption = next(
+        assumption
+        for assumption in baseline_account_assumptions
+        if assumption["account_id"] == brokerage["id"]
+    )
+    assert brokerage_assumption["expected_annual_yield"] == "0.060000"
+    assert alternative_account_assumptions[0]["account_id"] == brokerage["id"]
+    assert alternative_account_assumptions[0]["expected_annual_yield"] == "0.090000"
+    assert len(
+        client.get(
+            f"/projection-scenarios/{baseline['id']}/property-assumptions"
+        ).json()
+    ) == 1
+    assert (
+        client.get(
+            f"/projection-scenarios/{alternative['id']}/property-assumptions"
+        ).json()
+        == []
+    )
 
 
 def test_fintrack_import_is_idempotent_and_supports_dry_run(client, tmp_path):

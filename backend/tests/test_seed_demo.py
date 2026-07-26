@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -11,6 +12,8 @@ from app.db.models import (
     Household,
     IncomeSource,
     MortgageProfile,
+    ProjectionScenario,
+    ProjectionScenarioAccountAssumption,
     RealEstateProperty,
 )
 from app.seed_demo import DEMO_HOUSEHOLD_NAME, seed_demo_data
@@ -29,14 +32,29 @@ def test_seed_demo_data_creates_realistic_household(db_session: Session) -> None
     assert summary.mortgages_created == 1
     assert summary.income_sources_created == 2
     assert summary.tax_records_created == 2
+    assert summary.scenarios_created == 1
 
     assert db_session.scalar(select(func.count()).select_from(Account)) == 6
     assert db_session.scalar(select(func.count()).select_from(BalanceSnapshot)) == 30
-    assert db_session.scalar(select(func.count()).select_from(AccountEvent)) == 4
+    assert db_session.scalar(select(func.count()).select_from(AccountEvent)) == 8
     assert db_session.scalar(select(func.count()).select_from(RealEstateProperty)) == 1
     assert db_session.scalar(select(func.count()).select_from(MortgageProfile)) == 1
-    assert db_session.scalar(select(func.count()).select_from(IncomeSource)) == 2
+    assert db_session.scalar(select(func.count()).select_from(IncomeSource)) == 4
     assert db_session.scalar(select(func.count()).select_from(AnnualTaxRecord)) == 2
+    scenarios = db_session.scalars(
+        select(ProjectionScenario).order_by(ProjectionScenario.is_baseline.desc())
+    ).all()
+    assert [scenario.name for scenario in scenarios] == ["Baseline", "Conservative returns"]
+    assert scenarios[1].created_from_scenario_id == scenarios[0].id
+    conservative_yields = set(
+        db_session.scalars(
+            select(ProjectionScenarioAccountAssumption.expected_annual_yield).where(
+                ProjectionScenarioAccountAssumption.scenario_id == scenarios[1].id
+            )
+        ).all()
+    )
+    assert Decimal("0.040000") in conservative_yields
+    assert Decimal("0.045000") in conservative_yields
 
 
 def test_seed_demo_data_is_idempotent_by_default(db_session: Session) -> None:
@@ -51,11 +69,13 @@ def test_seed_demo_data_is_idempotent_by_default(db_session: Session) -> None:
     assert second_summary.mortgages_created == 0
     assert second_summary.income_sources_created == 0
     assert second_summary.tax_records_created == 0
+    assert second_summary.scenarios_created == 0
 
     assert db_session.scalar(select(func.count()).select_from(Household)) == 1
     assert db_session.scalar(select(func.count()).select_from(Account)) == 6
     assert db_session.scalar(select(func.count()).select_from(BalanceSnapshot)) == 30
-    assert db_session.scalar(select(func.count()).select_from(AccountEvent)) == 4
+    assert db_session.scalar(select(func.count()).select_from(AccountEvent)) == 8
+    assert db_session.scalar(select(func.count()).select_from(ProjectionScenario)) == 2
 
 
 def test_seed_demo_data_reset_recreates_household(db_session: Session) -> None:

@@ -17,11 +17,19 @@ from app.db.models import (
     BalanceSnapshot,
     Household,
     HouseholdMembership,
+    HouseholdPerson,
     IncomeSource,
     MembershipRole,
     MortgageProfile,
+    ProjectionScenario,
+    ProjectionScenarioAccountAssumption,
+    ProjectionScenarioPropertyAssumption,
+    ProjectionSettings,
     ProjectionTransfer,
+    RealEstateLiquidationStrategy,
     RealEstateProperty,
+    RealEstateSale,
+    SocialSecurityEstimate,
     SpendingItem,
     User,
 )
@@ -156,6 +164,7 @@ _MORTGAGE_FIELDS = (
 _INCOME_SOURCE_FIELDS = (
     "id",
     "household_id",
+    "scenario_id",
     "name",
     "income_type",
     "amount",
@@ -164,12 +173,14 @@ _INCOME_SOURCE_FIELDS = (
     "start_date",
     "end_date",
     "growth_rate",
+    "deposit_account_id",
     "created_at",
     "updated_at",
 )
 _PROJECTION_TRANSFER_FIELDS = (
     "id",
     "household_id",
+    "scenario_id",
     "name",
     "from_account_id",
     "to_account_id",
@@ -183,6 +194,7 @@ _PROJECTION_TRANSFER_FIELDS = (
 _SPENDING_ITEM_FIELDS = (
     "id",
     "household_id",
+    "scenario_id",
     "name",
     "category",
     "annual_amount",
@@ -202,6 +214,24 @@ _ANNUAL_TAX_RECORD_FIELDS = (
     "created_at",
     "updated_at",
 )
+
+
+_SCENARIO_FIELDS = tuple(column.name for column in ProjectionScenario.__table__.columns)
+_ACCOUNT_ASSUMPTION_FIELDS = tuple(
+    column.name for column in ProjectionScenarioAccountAssumption.__table__.columns
+)
+_PROPERTY_ASSUMPTION_FIELDS = tuple(
+    column.name for column in ProjectionScenarioPropertyAssumption.__table__.columns
+)
+_PROJECTION_SETTINGS_FIELDS = tuple(column.name for column in ProjectionSettings.__table__.columns)
+_SOCIAL_SECURITY_FIELDS = tuple(
+    column.name for column in SocialSecurityEstimate.__table__.columns
+)
+_REAL_ESTATE_SALE_FIELDS = tuple(column.name for column in RealEstateSale.__table__.columns)
+_LIQUIDATION_STRATEGY_FIELDS = tuple(
+    column.name for column in RealEstateLiquidationStrategy.__table__.columns
+)
+_HOUSEHOLD_PERSON_FIELDS = tuple(column.name for column in HouseholdPerson.__table__.columns)
 
 
 @router.post("", response_model=HouseholdRead, status_code=status.HTTP_201_CREATED)
@@ -471,6 +501,39 @@ def export_household(
             for membership in memberships
         ],
         "accounts": [_model_export(account, _ACCOUNT_FIELDS) for account in accounts],
+        "projection_scenarios": [
+            _model_export(scenario, _SCENARIO_FIELDS)
+            for scenario in db.scalars(
+                select(ProjectionScenario)
+                .where(ProjectionScenario.household_id == household_id)
+                .order_by(
+                    ProjectionScenario.is_baseline.desc(),
+                    ProjectionScenario.created_at,
+                )
+            ).all()
+        ],
+        "projection_scenario_account_assumptions": [
+            _model_export(assumption, _ACCOUNT_ASSUMPTION_FIELDS)
+            for assumption in db.scalars(
+                select(ProjectionScenarioAccountAssumption)
+                .where(ProjectionScenarioAccountAssumption.household_id == household_id)
+                .order_by(
+                    ProjectionScenarioAccountAssumption.scenario_id,
+                    ProjectionScenarioAccountAssumption.account_id,
+                )
+            ).all()
+        ],
+        "projection_scenario_property_assumptions": [
+            _model_export(assumption, _PROPERTY_ASSUMPTION_FIELDS)
+            for assumption in db.scalars(
+                select(ProjectionScenarioPropertyAssumption)
+                .where(ProjectionScenarioPropertyAssumption.household_id == household_id)
+                .order_by(
+                    ProjectionScenarioPropertyAssumption.scenario_id,
+                    ProjectionScenarioPropertyAssumption.property_account_id,
+                )
+            ).all()
+        ],
         "snapshots": [
             _model_export(snapshot, _SNAPSHOT_FIELDS)
             for snapshot in db.scalars(
@@ -503,12 +566,28 @@ def export_household(
                 .order_by(MortgageProfile.created_at)
             ).all()
         ],
+        "household_people": [
+            _model_export(person, _HOUSEHOLD_PERSON_FIELDS)
+            for person in db.scalars(
+                select(HouseholdPerson)
+                .where(HouseholdPerson.household_id == household_id)
+                .order_by(HouseholdPerson.created_at)
+            ).all()
+        ],
+        "projection_settings": [
+            _model_export(settings, _PROJECTION_SETTINGS_FIELDS)
+            for settings in db.scalars(
+                select(ProjectionSettings)
+                .where(ProjectionSettings.household_id == household_id)
+                .order_by(ProjectionSettings.scenario_id)
+            ).all()
+        ],
         "income_sources": [
             _model_export(income_source, _INCOME_SOURCE_FIELDS)
             for income_source in db.scalars(
                 select(IncomeSource)
                 .where(IncomeSource.household_id == household_id)
-                .order_by(IncomeSource.name)
+                .order_by(IncomeSource.scenario_id, IncomeSource.name)
             ).all()
         ],
         "projection_transfers": [
@@ -516,7 +595,11 @@ def export_household(
             for projection_transfer in db.scalars(
                 select(ProjectionTransfer)
                 .where(ProjectionTransfer.household_id == household_id)
-                .order_by(ProjectionTransfer.name, ProjectionTransfer.created_at)
+                .order_by(
+                    ProjectionTransfer.scenario_id,
+                    ProjectionTransfer.name,
+                    ProjectionTransfer.created_at,
+                )
             ).all()
         ],
         "spending_items": [
@@ -524,7 +607,34 @@ def export_household(
             for spending_item in db.scalars(
                 select(SpendingItem)
                 .where(SpendingItem.household_id == household_id)
-                .order_by(SpendingItem.category, SpendingItem.name)
+                .order_by(SpendingItem.scenario_id, SpendingItem.category, SpendingItem.name)
+            ).all()
+        ],
+        "social_security_estimates": [
+            _model_export(estimate, _SOCIAL_SECURITY_FIELDS)
+            for estimate in db.scalars(
+                select(SocialSecurityEstimate)
+                .where(SocialSecurityEstimate.household_id == household_id)
+                .order_by(SocialSecurityEstimate.scenario_id, SocialSecurityEstimate.person_id)
+            ).all()
+        ],
+        "real_estate_sales": [
+            _model_export(sale, _REAL_ESTATE_SALE_FIELDS)
+            for sale in db.scalars(
+                select(RealEstateSale)
+                .where(RealEstateSale.household_id == household_id)
+                .order_by(RealEstateSale.scenario_id, RealEstateSale.sale_date)
+            ).all()
+        ],
+        "real_estate_liquidation_strategies": [
+            _model_export(strategy, _LIQUIDATION_STRATEGY_FIELDS)
+            for strategy in db.scalars(
+                select(RealEstateLiquidationStrategy)
+                .where(RealEstateLiquidationStrategy.household_id == household_id)
+                .order_by(
+                    RealEstateLiquidationStrategy.scenario_id,
+                    RealEstateLiquidationStrategy.priority,
+                )
             ).all()
         ],
         "annual_tax_records": [
