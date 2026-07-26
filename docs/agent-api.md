@@ -108,7 +108,18 @@ the agent's secret configuration rather than conversational context.
 
 ## Use the MCP adapter
 
-The backend includes a local stdio MCP server with these semantic tools:
+The backend includes a local stdio MCP server. Prefer these compact semantic tools
+when the model does not need raw records:
+
+- `summarize_financial_position` — totals, account coverage, and category allocation
+  without account names.
+- `explain_net_worth_change` — category-level drivers between two requested dates.
+- `summarize_projection_comparison` — key scenario outcomes without yearly points or
+  account-level projection details.
+- `check_financial_data_freshness` — stale or missing snapshots; this tool includes
+  affected account names so the user knows what to update.
+
+Lower-level read tools remain available when details are necessary:
 
 - `get_financial_summary`
 - `list_accounts`
@@ -119,7 +130,9 @@ The backend includes a local stdio MCP server with these semantic tools:
 
 The adapter discovers the household from the bound token, so the model does not choose
 or supply a household ID. It only exposes reads and deterministic projection
-comparison; it does not expose Netwise mutation endpoints.
+comparison; it does not expose Netwise mutation endpoints. The semantic summaries
+reduce the financial data returned to the model, but the adapter still receives the
+underlying API response locally to calculate them.
 
 Run it from a checkout:
 

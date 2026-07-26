@@ -10,7 +10,9 @@ def build_server(client: NetwiseApiClient) -> FastMCP:
         "Netwise",
         instructions=(
             "Read household financial data and run deterministic scenario comparisons. "
-            "Treat all returned data as sensitive. These tools do not modify Netwise."
+            "Prefer compact summarize/explain/freshness tools unless raw records are "
+            "necessary. Treat all returned data as sensitive. These tools do not modify "
+            "Netwise."
         ),
     )
 
@@ -18,6 +20,24 @@ def build_server(client: NetwiseApiClient) -> FastMCP:
     def get_financial_summary() -> dict:
         """Get current assets, liabilities, and net worth for the token-bound household."""
         return client.get_financial_summary()
+
+    @server.tool()
+    def summarize_financial_position() -> dict:
+        """Return compact totals and category allocation without individual account names."""
+        return client.summarize_financial_position()
+
+    @server.tool()
+    def explain_net_worth_change(start_date: str, end_date: str) -> dict:
+        """Explain category-level net-worth changes between two ISO dates."""
+        return client.explain_net_worth_change(start_date, end_date)
+
+    @server.tool()
+    def check_financial_data_freshness(
+        as_of_date: str | None = None,
+        stale_after_days: int = 45,
+    ) -> dict:
+        """Find active accounts with missing or stale snapshots as of an ISO date."""
+        return client.check_financial_data_freshness(as_of_date, stale_after_days)
 
     @server.tool()
     def list_accounts() -> list[dict]:
@@ -38,6 +58,15 @@ def build_server(client: NetwiseApiClient) -> FastMCP:
     def list_projection_scenarios() -> list[dict]:
         """List available deterministic projection scenarios and their IDs."""
         return client.list_projection_scenarios()
+
+    @server.tool()
+    def summarize_projection_comparison(
+        scenario_ids: list[str],
+        start_year: int,
+        end_year: int,
+    ) -> dict:
+        """Compare key outcomes for two to four scenarios without returning yearly details."""
+        return client.summarize_projection_comparison(scenario_ids, start_year, end_year)
 
     @server.tool()
     def compare_projection_scenarios(
