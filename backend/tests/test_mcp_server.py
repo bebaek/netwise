@@ -100,6 +100,133 @@ def test_agent_client_validates_balance_limit(limit):
         client.close()
 
 
+def test_record_account_balance_requires_exact_confirmation_before_write():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["X-Netwise-Agent-Tool"] == "record_account_balance"
+        if request.url.path == "/households":
+            return _json_response([{"id": HOUSEHOLD_ID, "name": "Home"}])
+        if request.url.path == "/accounts":
+            return _json_response(
+                [
+                    {
+                        "id": "account-1",
+                        "name": "Checking",
+                        "currency": "USD",
+                        "is_active": True,
+                    }
+                ]
+            )
+        if request.url.path == f"/households/{HOUSEHOLD_ID}/snapshots":
+            assert request.url.params["account_id"] == "account-1"
+            return _json_response([])
+        if request.url.path == f"/households/{HOUSEHOLD_ID}/snapshot-batch":
+            assert request.method == "POST"
+            assert json.loads(request.content) == {
+                "as_of_date": "2026-07-25",
+                "currency": "USD",
+                "source": "manual",
+                "confidence_level": "confirmed_by_user",
+                "snapshots": [{"account_id": "account-1", "balance": "1234.50"}],
+            }
+            return _json_response({"created_count": 1, "updated_count": 0}, 201)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = NetwiseApiClient(
+        "https://netwise.example",
+        "secret-token",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        preview = client.record_account_balance("checking", "1234.5", "2026-07-25")
+        assert preview == {
+            "status": "confirmation_required",
+            "action": "create",
+            "account_name": "Checking",
+            "as_of_date": "2026-07-25",
+            "balance": "1234.50",
+            "currency": "USD",
+            "existing_balance": None,
+            "required_confirmation": "CONFIRM CREATE Checking 2026-07-25 1234.50 USD",
+            "instruction": (
+                "Show this preview to the user and ask them to reply with the exact confirmation "
+                "text. Do not call this tool again until the user supplies it verbatim in a "
+                "subsequent message."
+            ),
+        }
+        assert not any(request.method == "POST" for request in requests)
+
+        still_pending = client.record_account_balance(
+            "Checking", "1234.50", "2026-07-25", "yes"
+        )
+        assert still_pending["status"] == "confirmation_required"
+        assert not any(request.method == "POST" for request in requests)
+
+        saved = client.record_account_balance(
+            "Checking",
+            "1234.50",
+            "2026-07-25",
+            preview["required_confirmation"],
+        )
+    finally:
+        client.close()
+
+    assert saved == {
+        "status": "saved",
+        "action": "create",
+        "account_name": "Checking",
+        "as_of_date": "2026-07-25",
+        "balance": "1234.50",
+        "currency": "USD",
+        "created_count": 1,
+        "updated_count": 0,
+    }
+    assert sum(request.method == "POST" for request in requests) == 1
+
+
+def test_record_account_balance_confirmation_changes_when_replacing_snapshot():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/households":
+            return _json_response([{"id": HOUSEHOLD_ID, "name": "Home"}])
+        if request.url.path == "/accounts":
+            return _json_response(
+                [{"id": "account-1", "name": "Checking", "currency": "USD"}]
+            )
+        if request.url.path == f"/households/{HOUSEHOLD_ID}/snapshots":
+            return _json_response(
+                [{"as_of_date": "2026-07-25", "balance": "1000.00"}]
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = NetwiseApiClient(
+        "https://netwise.example",
+        "secret-token",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        preview = client.record_account_balance("Checking", "1234.50", "2026-07-25")
+    finally:
+        client.close()
+
+    assert preview["action"] == "update"
+    assert preview["existing_balance"] == "1000.00"
+    assert preview["required_confirmation"] == (
+        "CONFIRM UPDATE Checking 2026-07-25 1234.50 USD REPLACING 1000.00"
+    )
+
+
+@pytest.mark.parametrize("balance", ["1.001", "NaN", "10000000000000000"])
+def test_record_account_balance_rejects_invalid_money_before_api_call(balance):
+    client = NetwiseApiClient("https://netwise.example", "secret-token")
+    try:
+        with pytest.raises(ValueError, match="balance"):
+            client.record_account_balance("Checking", balance, "2026-07-25")
+    finally:
+        client.close()
+
+
 def test_agent_client_reports_safe_api_errors():
     def handler(request: httpx.Request) -> httpx.Response:
         return _json_response({"detail": "API token scope does not permit this action"}, 403)
@@ -346,7 +473,7 @@ def test_financial_data_freshness_reports_stale_and_missing_accounts():
     ]
 
 
-def test_mcp_server_registers_read_only_semantic_tools():
+def test_mcp_server_registers_semantic_and_confirmed_write_tools():
     client = NetwiseApiClient("https://netwise.example", "secret-token")
     try:
         server = build_server(client)
@@ -363,6 +490,7 @@ def test_mcp_server_registers_read_only_semantic_tools():
         "list_accounts",
         "list_projection_scenarios",
         "list_recent_balances",
+        "record_account_balance",
         "summarize_financial_position",
         "summarize_projection_comparison",
     }

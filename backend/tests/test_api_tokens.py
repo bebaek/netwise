@@ -72,12 +72,82 @@ def test_api_token_is_read_only_and_cannot_access_identity_or_admin_routes(
     assert write_response.status_code == 403
     assert write_response.json()["detail"] == "API token scope does not permit this action"
 
+    snapshot_response = unauthenticated_client.post(
+        f"/households/{household.id}/snapshot-batch",
+        json={
+            "as_of_date": "2026-07-26",
+            "snapshots": [{"account_id": str(household.id), "balance": "1.00"}],
+        },
+        headers=headers,
+    )
+    assert snapshot_response.status_code == 403
+
     users_response = unauthenticated_client.get("/users", headers=headers)
     assert users_response.status_code == 403
     members_response = unauthenticated_client.get(
         f"/households/{household.id}/members", headers=headers
     )
     assert members_response.status_code == 403
+
+
+def test_finance_write_scope_only_allows_balance_snapshot_batch(
+    unauthenticated_client, db_session
+):
+    _register(unauthenticated_client)
+    household = db_session.scalar(select(Household))
+    account_response = unauthenticated_client.post(
+        "/accounts",
+        json={
+            "household_id": str(household.id),
+            "name": "Agent checking",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "liquid",
+            "currency": "USD",
+        },
+    )
+    assert account_response.status_code == 201
+    account = account_response.json()
+    created = _create_token(
+        unauthenticated_client,
+        household.id,
+        ["finance:read", "finance:write"],
+    )
+    unauthenticated_client.cookies.clear()
+    headers = {
+        "Authorization": f"Bearer {created['token']}",
+        "X-Netwise-Agent-Tool": "record_account_balance",
+    }
+
+    snapshot_response = unauthenticated_client.post(
+        f"/households/{household.id}/snapshot-batch",
+        json={
+            "as_of_date": "2026-07-26",
+            "source": "manual",
+            "confidence_level": "confirmed_by_user",
+            "snapshots": [{"account_id": account["id"], "balance": "1234.56"}],
+        },
+        headers=headers,
+    )
+    assert snapshot_response.status_code == 201
+    assert snapshot_response.json()["created_count"] == 1
+
+    account_write_response = unauthenticated_client.post(
+        "/accounts",
+        json={
+            "household_id": str(household.id),
+            "name": "Not allowed",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "liquid",
+            "currency": "USD",
+        },
+        headers=headers,
+    )
+    assert account_write_response.status_code == 403
+    assert account_write_response.json()["detail"] == (
+        "API token scope does not permit this action"
+    )
 
 
 def test_api_token_is_limited_to_its_household(unauthenticated_client, db_session):

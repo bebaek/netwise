@@ -158,7 +158,14 @@ def _authorize_api_token_request(request: Request, api_token: ApiToken) -> None:
 
     is_read = request.method in {"GET", "HEAD", "OPTIONS"}
     is_projection_run = request.method == "POST" and path.endswith("/projection-comparison")
-    required_scope = "finance:read" if is_read else "projections:run" if is_projection_run else None
+    is_snapshot_write = request.method == "POST" and path.endswith("/snapshot-batch")
+    required_scope = None
+    if is_read:
+        required_scope = "finance:read"
+    elif is_projection_run:
+        required_scope = "projections:run"
+    elif is_snapshot_write:
+        required_scope = "finance:write"
     if required_scope is None or required_scope not in api_token.scopes:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

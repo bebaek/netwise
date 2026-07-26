@@ -1,6 +1,6 @@
 # Agent API access
 
-Netwise supports household-bound personal API tokens for read-oriented AI agents and
+Netwise supports household-bound personal API tokens for privacy-conscious AI agents and
 other local automation. Tokens use the existing REST API and OpenAPI schema; an
 agent does not need access to the browser session cookie or the user's password.
 
@@ -10,10 +10,14 @@ agent does not need access to the browser session cookie or the user's password.
 - Only a SHA-256 digest is stored. The full token is returned once at creation.
 - Tokens expire after 1 to 365 days and can be revoked at any time.
 - `finance:read` permits read-only household finance endpoints.
+- `finance:write` permits only the account balance snapshot-batch endpoint. Use it with
+  `finance:read` when the MCP adapter must resolve account names and inspect existing snapshots.
 - `projections:run` additionally permits the projection-comparison POST endpoint.
 - Tokens cannot access user, household-member, import, export, authentication, or
   token-management endpoints.
-- All other writes are rejected, regardless of the token's household role.
+- All other writes are rejected, regardless of the token's household role. The MCP balance
+  tool requires an exact preview confirmation, but the client agent is responsible for waiting
+  for that text in a subsequent user message rather than generating it itself.
 - Authenticated token requests are audited with the token identity, endpoint, optional
   MCP tool name, result status, and duration. Request and response bodies are not logged.
 
@@ -45,7 +49,7 @@ The creation request is:
 {
   "name": "Local finance agent",
   "household_id": "HOUSEHOLD_UUID",
-  "scopes": ["finance:read", "projections:run"],
+  "scopes": ["finance:read", "finance:write", "projections:run"],
   "expires_in_days": 30
 }
 ```
@@ -68,7 +72,7 @@ curl --fail --silent --show-error \
   --data '{
     "name":"Local finance agent",
     "household_id":"HOUSEHOLD_UUID",
-    "scopes":["finance:read","projections:run"],
+    "scopes":["finance:read","finance:write","projections:run"],
     "expires_in_days":30
   }' \
   https://netwise.example/api/api-tokens
@@ -98,6 +102,8 @@ Useful agent operations include:
 - `GET /households/HOUSEHOLD_UUID/snapshots` — recent balances.
 - `GET /dashboard/HOUSEHOLD_UUID/net-worth` — current financial summary.
 - `GET /projection-scenarios?household_id=HOUSEHOLD_UUID` — available scenarios.
+- `POST /households/HOUSEHOLD_UUID/snapshot-batch` — records account balances when the
+  token has `finance:write`.
 - `POST /dashboard/HOUSEHOLD_UUID/projection-comparison` — deterministic scenario
   comparison when the token has `projections:run`.
 
@@ -118,6 +124,9 @@ when the model does not need raw records:
   account-level projection details.
 - `check_financial_data_freshness` — stale or missing snapshots; this tool includes
   affected account names so the user knows what to update.
+- `record_account_balance` — previews one create/update, returns exact confirmation text,
+  and writes only when the user supplies that text verbatim in a subsequent message. It requires
+  both `finance:read` and `finance:write`.
 
 Lower-level read tools remain available when details are necessary:
 

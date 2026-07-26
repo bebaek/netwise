@@ -51,6 +51,7 @@ export function ApiTokenSettings({ household }: { household: Household }) {
     const target = event.currentTarget;
     const form = new FormData(target);
     const scopes: ApiTokenScope[] = ['finance:read'];
+    if (form.get('finance_write') === 'on') scopes.push('finance:write');
     if (form.get('projections_run') === 'on') scopes.push('projections:run');
     setError('');
     setCreatedToken(null);
@@ -138,13 +139,18 @@ export function ApiTokenSettings({ household }: { household: Household }) {
             Read household finances
           </label>
           <label className="inline-toggle">
+            <input name="finance_write" type="checkbox" />
+            Record confirmed account balance snapshots
+          </label>
+          <label className="inline-toggle">
             <input name="projections_run" type="checkbox" />
             Run deterministic scenario comparisons
           </label>
         </fieldset>
         <p className="muted api-token-form-note">
           The token will be restricted to <strong>{household.name}</strong>. It cannot
-          manage users, import or export data, or change financial records.
+          manage users, import or export data, or change records other than confirmed
+          account balance snapshots when that permission is selected.
         </p>
         <button type="submit" disabled={mutations.isPending}>
           {mutations.createToken.isPending ? 'Creating token…' : 'Create API token'}

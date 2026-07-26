@@ -8,6 +8,7 @@ test('creates and revokes a household agent API token', async ({ page }) => {
   const tokenName = `Playwright agent ${Date.now()}`;
   await page.getByLabel('Token name').fill(tokenName);
   await page.getByLabel('Expires after').fill('14');
+  await page.getByLabel('Record confirmed account balance snapshots').check();
   await page.getByLabel('Run deterministic scenario comparisons').check();
   await page.getByRole('button', { name: 'Create API token', exact: true }).click();
 
@@ -38,7 +39,7 @@ test('creates and revokes a household agent API token', async ({ page }) => {
 
   const tokenRow = page.locator('.api-token-row').filter({ hasText: tokenName });
   await expect(tokenRow).toContainText('active');
-  await expect(tokenRow).toContainText('finance read · projections run');
+  await expect(tokenRow).toContainText('finance read · finance write · projections run');
   await expect(tokenRow).not.toContainText(secret);
 
   await page.getByRole('button', { name: 'I saved it', exact: true }).click();

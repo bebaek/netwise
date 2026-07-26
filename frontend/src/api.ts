@@ -31,7 +31,7 @@ export type Capabilities = {
   fintrack_import_enabled: boolean;
 };
 
-export type ApiTokenScope = 'finance:read' | 'projections:run';
+export type ApiTokenScope = 'finance:read' | 'finance:write' | 'projections:run';
 
 export type ApiToken = {
   id: string;

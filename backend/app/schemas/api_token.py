@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ApiTokenScope = Literal["finance:read", "projections:run"]
+ApiTokenScope = Literal["finance:read", "finance:write", "projections:run"]
 
 
 class ApiTokenCreate(BaseModel):

@@ -11,8 +11,8 @@ def build_server(client: NetwiseApiClient) -> FastMCP:
         instructions=(
             "Read household financial data and run deterministic scenario comparisons. "
             "Prefer compact summarize/explain/freshness tools unless raw records are "
-            "necessary. Treat all returned data as sensitive. These tools do not modify "
-            "Netwise."
+            "necessary. Treat all returned data as sensitive. The only write tool records one "
+            "account balance and requires exact user confirmation from a subsequent message."
         ),
     )
 
@@ -43,6 +43,18 @@ def build_server(client: NetwiseApiClient) -> FastMCP:
     def list_accounts() -> list[dict]:
         """List financial accounts and their planning metadata."""
         return client.list_accounts()
+
+    @server.tool()
+    def record_account_balance(
+        account_name: str,
+        balance: str,
+        as_of_date: str,
+        confirmation: str | None = None,
+    ) -> dict:
+        """Preview or save one balance. Never invent confirmation: show the preview, stop, and
+        call again only after the user provides required_confirmation verbatim in a later message.
+        """
+        return client.record_account_balance(account_name, balance, as_of_date, confirmation)
 
     @server.tool()
     def list_recent_balances(limit: int = 20) -> list[dict]:

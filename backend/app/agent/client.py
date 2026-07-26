@@ -368,6 +368,131 @@ class NetwiseApiClient:
             tool_name=tool_name,
         )
 
+    def record_account_balance(
+        self,
+        account_name: str,
+        balance: str,
+        as_of_date: str,
+        confirmation: str | None = None,
+    ) -> dict[str, Any]:
+        """Preview or save one balance after verbatim user confirmation."""
+        tool_name = "record_account_balance"
+        normalized_name = account_name.strip()
+        if not normalized_name:
+            raise ValueError("account_name is required")
+        snapshot_date = _iso_date(as_of_date, "as_of_date")
+        if snapshot_date > date.today():
+            raise ValueError("as_of_date must not be in the future")
+
+        balance_value = _decimal(balance)
+        if not balance_value.is_finite():
+            raise ValueError("balance must be a finite monetary value")
+        if balance_value.as_tuple().exponent < -2:
+            raise ValueError("balance must have at most two decimal places")
+        if abs(balance_value) >= Decimal("10000000000000000"):
+            raise ValueError("balance is too large")
+        normalized_balance = _money(balance_value)
+
+        accounts = self.list_accounts(tool_name)
+        if not isinstance(accounts, list):
+            raise NetwiseApiError("Netwise returned invalid account data")
+        matches = [
+            account
+            for account in accounts
+            if isinstance(account, dict)
+            and str(account.get("name", "")).strip().casefold() == normalized_name.casefold()
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                "account_name must identify exactly one account; use list_accounts to choose it"
+            )
+        account = matches[0]
+        if not account.get("is_active", True):
+            raise ValueError("Cannot record a balance for an inactive account")
+        account_id = account.get("id")
+        if not isinstance(account_id, str):
+            raise NetwiseApiError("Netwise returned invalid account data")
+        canonical_name = str(account.get("name", normalized_name))
+        currency = str(account.get("currency", "USD")).upper()
+        household_id = self.household_id_for(tool_name)
+
+        snapshots = self._request(
+            "GET",
+            f"/households/{household_id}/snapshots",
+            params={"account_id": account_id, "limit": 200},
+            tool_name=tool_name,
+        )
+        if not isinstance(snapshots, list):
+            raise NetwiseApiError("Netwise returned invalid snapshot data")
+        existing = next(
+            (
+                snapshot
+                for snapshot in snapshots
+                if isinstance(snapshot, dict) and snapshot.get("as_of_date") == as_of_date
+            ),
+            None,
+        )
+        existing_balance = (
+            _money(_decimal(existing["balance"]))
+            if isinstance(existing, dict) and existing.get("balance") is not None
+            else None
+        )
+        action = "update" if existing is not None else "create"
+        confirmation_parts = [
+            "CONFIRM",
+            action.upper(),
+            canonical_name,
+            as_of_date,
+            normalized_balance,
+            currency,
+        ]
+        if existing_balance is not None:
+            confirmation_parts.extend(["REPLACING", existing_balance])
+        required_confirmation = " ".join(confirmation_parts)
+
+        preview = {
+            "status": "confirmation_required",
+            "action": action,
+            "account_name": canonical_name,
+            "as_of_date": as_of_date,
+            "balance": normalized_balance,
+            "currency": currency,
+            "existing_balance": existing_balance,
+            "required_confirmation": required_confirmation,
+            "instruction": (
+                "Show this preview to the user and ask them to reply with the exact confirmation "
+                "text. Do not call this tool again until the user supplies it verbatim in a "
+                "subsequent message."
+            ),
+        }
+        if confirmation != required_confirmation:
+            return preview
+
+        saved = self._request(
+            "POST",
+            f"/households/{household_id}/snapshot-batch",
+            json={
+                "as_of_date": as_of_date,
+                "currency": currency,
+                "source": "manual",
+                "confidence_level": "confirmed_by_user",
+                "snapshots": [{"account_id": account_id, "balance": normalized_balance}],
+            },
+            tool_name=tool_name,
+        )
+        if not isinstance(saved, dict):
+            raise NetwiseApiError("Netwise returned invalid snapshot data")
+        return {
+            "status": "saved",
+            "action": action,
+            "account_name": canonical_name,
+            "as_of_date": as_of_date,
+            "balance": normalized_balance,
+            "currency": currency,
+            "created_count": saved.get("created_count"),
+            "updated_count": saved.get("updated_count"),
+        }
+
     def list_recent_balances(self, limit: int = 20) -> list[dict[str, Any]]:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
