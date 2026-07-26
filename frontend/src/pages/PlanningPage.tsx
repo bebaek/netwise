@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEventHandler } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import type { Account, NetWorthProjection } from '../api';
 import { IncomeAndTaxSection } from '../components/planning/IncomeAndTaxSection';
 import { PlanningEventsSection } from '../components/planning/PlanningEventsSection';
