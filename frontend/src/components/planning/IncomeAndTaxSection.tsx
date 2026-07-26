@@ -17,6 +17,7 @@ function requiredFormString(form: FormData, key: string): string {
 
 export function IncomeAndTaxSection({
   householdId,
+  scenarioId,
   defaultDate,
   assetAccounts,
   accountNameById,
@@ -28,6 +29,7 @@ export function IncomeAndTaxSection({
   taxQueryPending,
 }: {
   householdId: string;
+  scenarioId: string;
   defaultDate: string;
   assetAccounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
@@ -40,8 +42,8 @@ export function IncomeAndTaxSection({
 }) {
   const [incomeError, setIncomeError] = useState('');
   const [taxRecordError, setTaxRecordError] = useState('');
-  const peopleMutations = usePlanningPeopleMutations(householdId);
-  const budgetMutations = usePlanningBudgetMutations(householdId);
+  const peopleMutations = usePlanningPeopleMutations(householdId, scenarioId);
+  const budgetMutations = usePlanningBudgetMutations(householdId, scenarioId);
 
   async function onCreateIncomeSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

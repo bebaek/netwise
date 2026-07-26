@@ -18,6 +18,7 @@ function formatRate(value: string): string {
 
 type SharedProps = {
   householdId: string;
+  scenarioId: string;
   assetAccounts: Account[];
   propertyAccounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
@@ -25,6 +26,7 @@ type SharedProps = {
 
 export function AutomaticPropertySalesSection({
   householdId,
+  scenarioId,
   assetAccounts,
   propertyAccounts,
   accountNameById,
@@ -37,7 +39,7 @@ export function AutomaticPropertySalesSection({
   queryPending: boolean;
 }) {
   const [error, setError] = useState('');
-  const mutations = usePlanningRealEstateMutations(householdId);
+  const mutations = usePlanningRealEstateMutations(householdId, scenarioId);
 
   async function onUpsert(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,6 +155,7 @@ export function AutomaticPropertySalesSection({
 
 export function PlannedPropertySalesSection({
   householdId,
+  scenarioId,
   assetAccounts,
   propertyAccounts,
   accountNameById,
@@ -165,7 +168,7 @@ export function PlannedPropertySalesSection({
   queryPending: boolean;
 }) {
   const [error, setError] = useState('');
-  const mutations = usePlanningRealEstateMutations(householdId);
+  const mutations = usePlanningRealEstateMutations(householdId, scenarioId);
 
   async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

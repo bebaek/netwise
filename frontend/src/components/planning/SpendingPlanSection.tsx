@@ -36,6 +36,7 @@ function formatRate(value: string): string {
 
 export function SpendingPlanSection({
   householdId,
+  scenarioId,
   spendingItems,
   queryError,
   queryPending,
@@ -47,6 +48,7 @@ export function SpendingPlanSection({
   onInvalidateProjection,
 }: {
   householdId: string;
+  scenarioId: string;
   spendingItems: SpendingItem[];
   queryError: unknown;
   queryPending: boolean;
@@ -59,7 +61,7 @@ export function SpendingPlanSection({
 }) {
   const [error, setError] = useState('');
   const [editId, setEditId] = useState('');
-  const mutations = usePlanningBudgetMutations(householdId);
+  const mutations = usePlanningBudgetMutations(householdId, scenarioId);
 
   async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

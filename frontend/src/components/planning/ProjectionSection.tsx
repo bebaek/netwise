@@ -25,6 +25,7 @@ function requiredFormString(form: FormData, key: string): string {
 
 export function ProjectionSection({
   householdId,
+  scenarioId,
   defaultDate,
   assetAccounts,
   accountNameById,
@@ -39,6 +40,7 @@ export function ProjectionSection({
   onInvalidateProjection,
 }: {
   householdId: string;
+  scenarioId: string;
   defaultDate: string;
   assetAccounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
@@ -53,8 +55,8 @@ export function ProjectionSection({
   onInvalidateProjection: () => void;
 }) {
   const [projectionConfigError, setProjectionConfigError] = useState('');
-  const planningProjectionData = usePlanningProjectionData(householdId);
-  const planningProjectionMutations = usePlanningProjectionMutations(householdId);
+  const planningProjectionData = usePlanningProjectionData(householdId, scenarioId);
+  const planningProjectionMutations = usePlanningProjectionMutations(householdId, scenarioId);
   const projectionSettings = planningProjectionData.projectionSettings.data ?? null;
   const projectionTransfers = planningProjectionData.projectionTransfers.data ?? [];
   const workingSpendingTotal = spendingItems.reduce(
@@ -171,6 +173,7 @@ export function ProjectionSection({
       )}
 <SpendingPlanSection
   householdId={householdId}
+  scenarioId={scenarioId}
   spendingItems={spendingItems}
   queryError={spendingQueryError}
   queryPending={spendingQueryPending}
@@ -193,6 +196,7 @@ export function ProjectionSection({
       className="projection-form"
       aria-busy={planningProjectionMutations.saveSettings.isPending}
     >
+      <input type="hidden" name="scenario_id" value={scenarioId} />
       <div>
         <h3>Projection assumptions</h3>
         <p className="muted">Saved defaults used when a projection run does not provide overrides.</p>
@@ -277,6 +281,7 @@ export function ProjectionSection({
       className="projection-form"
       aria-busy={projectionRunning}
     >
+      <input type="hidden" name="scenario_id" value={scenarioId} />
       <div>
         <h3>Run projection</h3>
         <p className="muted">Optional overrides apply only to this run.</p>

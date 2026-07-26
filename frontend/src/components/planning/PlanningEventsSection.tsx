@@ -45,19 +45,21 @@ function projectionBehaviorLabel(value: string): string {
 
 export function PlanningEventsSection({
   householdId,
+  scenarioId,
   defaultDate,
   accounts,
   accountNameById,
 }: {
   householdId: string;
+  scenarioId: string;
   defaultDate: string;
   accounts: Account[];
   accountNameById: ReadonlyMap<string, string>;
 }) {
   const [draft, setDraft] = useState<AccountEventDraft | null>(null);
   const [error, setError] = useState('');
-  const eventsQuery = useHouseholdAccountEvents(householdId);
-  const mutations = useAccountEventMutations(householdId);
+  const eventsQuery = useHouseholdAccountEvents(householdId, scenarioId);
+  const mutations = useAccountEventMutations(householdId, scenarioId);
   const events = eventsQuery.data ?? [];
 
   function startNewDraft() {
@@ -98,6 +100,7 @@ export function PlanningEventsSection({
       event_type: draft.event_type,
       description: draft.description || null,
       projection_behavior: draft.projection_behavior,
+      scenario_id: draft.projection_behavior === 'projection_only' ? scenarioId : undefined,
     };
     try {
       if (draft.id && draft.original_account_id) {
@@ -116,6 +119,7 @@ export function PlanningEventsSection({
             event_type: payload.event_type,
             description: draft.description || undefined,
             projection_behavior: payload.projection_behavior,
+            scenario_id: payload.scenario_id,
           },
         });
       }
