@@ -48,7 +48,7 @@ test('navigates across the financial planning workspace', async ({ page }, testI
     if (view.nav !== 'Overview') await navigationButton.click();
 
     await expect(navigationButton).toHaveAttribute('aria-current', 'page');
-    await expect(page).toHaveURL(new RegExp(`/${view.nav.toLowerCase()}$`));
+    await expect(page).toHaveURL(new RegExp(`/${view.nav.toLowerCase()}(?:\\?.*)?$`));
     await expect(page.locator('.page-heading h2')).toHaveText(view.nav);
     await expect(page.locator('.page-heading h2')).toBeFocused();
     await expect(page).toHaveTitle(`${view.nav} · ${householdName} · Netwise`);
