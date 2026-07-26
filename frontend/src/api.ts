@@ -495,6 +495,23 @@ export type NetWorthProjection = {
   } | null;
 };
 
+export type ProjectionComparisonScenario = NetWorthProjection & {
+  ending_net_worth: string;
+  lowest_net_worth: string;
+  lowest_liquid_assets_total: string;
+  cumulative_projected_income: string;
+  cumulative_projected_taxes: string;
+  cumulative_projected_spending: string;
+};
+
+export type ProjectionComparison = {
+  household_id: string;
+  start_year: number;
+  end_year: number;
+  interval: 'annual';
+  scenarios: ProjectionComparisonScenario[];
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1238,6 +1255,23 @@ export function createAnnualTaxRecord(payload: {
   return request<AnnualTaxRecord>('/annual-tax-records', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function compareNetWorthProjections(
+  householdId: string,
+  payload: {
+    scenario_ids: string[];
+    start_year: number;
+    end_year: number;
+    interval: 'annual';
+  },
+  signal?: AbortSignal,
+): Promise<ProjectionComparison> {
+  return request<ProjectionComparison>(`/dashboard/${householdId}/projection-comparison`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    signal,
   });
 }
 

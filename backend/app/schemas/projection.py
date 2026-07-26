@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProjectionAccountRead(BaseModel):
@@ -78,3 +79,34 @@ class NetWorthProjectionRead(BaseModel):
     warnings: list[str]
     points: list[ProjectionPointRead]
     property_sale_optimization: PropertySaleOptimizationRead | None = None
+
+
+class ProjectionComparisonRequest(BaseModel):
+    scenario_ids: list[UUID] = Field(min_length=2, max_length=4)
+    start_year: int
+    end_year: int
+    interval: Literal["annual"] = "annual"
+
+    @field_validator("scenario_ids")
+    @classmethod
+    def scenario_ids_are_unique(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("scenario_ids must be unique")
+        return value
+
+
+class ProjectionComparisonScenarioRead(NetWorthProjectionRead):
+    ending_net_worth: Decimal
+    lowest_net_worth: Decimal
+    lowest_liquid_assets_total: Decimal
+    cumulative_projected_income: Decimal
+    cumulative_projected_taxes: Decimal
+    cumulative_projected_spending: Decimal
+
+
+class ProjectionComparisonRead(BaseModel):
+    household_id: UUID
+    start_year: int
+    end_year: int
+    interval: Literal["annual"]
+    scenarios: list[ProjectionComparisonScenarioRead]

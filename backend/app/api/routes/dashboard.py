@@ -10,6 +10,7 @@ from app.analytics.net_worth import (
     calculate_net_worth_breakdown_history,
     calculate_net_worth_history,
 )
+from app.analytics.projection_comparison import compare_projection_scenarios
 from app.analytics.projections import calculate_net_worth_projection
 from app.db.models import Household
 from app.db.session import get_db
@@ -19,7 +20,11 @@ from app.schemas.dashboard import (
     NetWorthHistoryRead,
     NetWorthRead,
 )
-from app.schemas.projection import NetWorthProjectionRead
+from app.schemas.projection import (
+    NetWorthProjectionRead,
+    ProjectionComparisonRead,
+    ProjectionComparisonRequest,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -60,6 +65,30 @@ def get_historical_trend(
             household_id,
             interpolate=interpolate,
             interval=interval,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{household_id}/projection-comparison",
+    response_model=ProjectionComparisonRead,
+)
+def compare_net_worth_projections(
+    household_id: UUID,
+    payload: ProjectionComparisonRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    if db.get(Household, household_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+    try:
+        return compare_projection_scenarios(
+            db,
+            household_id,
+            scenario_ids=payload.scenario_ids,
+            start_year=payload.start_year,
+            end_year=payload.end_year,
+            interval=payload.interval,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  compareNetWorthProjections,
   createAnnualTaxRecord,
   createHouseholdPerson,
   createIncomeSource,
@@ -63,6 +64,16 @@ export const planningQueryKeys = {
     ...planningQueryKeys.scenario(householdId, scenarioId),
     'projection-settings',
   ] as const,
+  comparison: (
+    householdId: string,
+    scenarioIds: string[],
+    startYear: number,
+    endYear: number,
+  ) => [
+    ...planningQueryKeys.all(householdId),
+    'comparison',
+    { scenarioIds, startYear, endYear, interval: 'annual' },
+  ] as const,
 };
 
 type UpdateSpendingItemVariables = {
@@ -74,6 +85,35 @@ type UpdateSocialSecurityEstimateVariables = {
   estimateId: string;
   payload: Parameters<typeof updateSocialSecurityEstimate>[1];
 };
+
+type ProjectionComparisonRequest = {
+  scenarioIds: string[];
+  startYear: number;
+  endYear: number;
+};
+
+export function useProjectionComparison(
+  householdId: string,
+  comparisonRequest: ProjectionComparisonRequest | null,
+) {
+  const scenarioIds = comparisonRequest?.scenarioIds ?? [];
+  const startYear = comparisonRequest?.startYear ?? 0;
+  const endYear = comparisonRequest?.endYear ?? 0;
+  return useQuery({
+    queryKey: planningQueryKeys.comparison(householdId, scenarioIds, startYear, endYear),
+    queryFn: ({ signal }) => compareNetWorthProjections(
+      householdId,
+      {
+        scenario_ids: scenarioIds,
+        start_year: startYear,
+        end_year: endYear,
+        interval: 'annual',
+      },
+      signal,
+    ),
+    enabled: Boolean(householdId && comparisonRequest),
+  });
+}
 
 export function usePlanningProjectionData(householdId: string, scenarioId: string) {
   const projectionTransfers = useQuery({
