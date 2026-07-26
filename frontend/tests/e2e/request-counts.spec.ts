@@ -394,8 +394,10 @@ test('records representative frontend API request counts', async ({ page, isMobi
     expect.stringMatching(/^POST \/api\/accounts\/[^/]+\/events$/),
   ]);
 
-  expect(measurements.load_household_settings_route_data.total).toBeLessThanOrEqual(4);
+  expect(measurements.load_household_settings_route_data.total).toBeLessThanOrEqual(8);
   expect(Object.keys(measurements.load_household_settings_route_data.by_method_and_path).sort()).toEqual([
+    'GET /api/api-tokens',
+    'GET /api/api-tokens/audit-events',
     'GET /api/capabilities',
     'GET /api/users',
   ]);
