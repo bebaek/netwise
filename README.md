@@ -31,6 +31,7 @@ Netwise helps a household answer:
 | Accounts, balance snapshots, and net-worth history | Implemented |
 | Asset allocation and historical analytics | Implemented |
 | Deterministic projections with income, tax, spending, and withdrawal policies | Implemented |
+| Named projection scenarios with independent assumptions and two-to-four-scenario comparison | Implemented |
 | Real-estate, mortgage, and property-sale planning | Implemented |
 | FinTrack import and household JSON export | Implemented; local admin tools are disabled by default |
 | Development and production Docker Compose deployments | Implemented |
@@ -211,6 +212,7 @@ The seed command creates a `Demo Household` with accounts, snapshots, real estat
 - [Product Design](docs/product-design.md)
 - [Technical Design](docs/technical-design.md)
 - [Projection Strategy Architecture](docs/projection-strategy-architecture.md)
+- [Projection Scenarios API](docs/projection-scenarios-api.md)
 - [Projection Scenarios Implementation Plan](docs/projection-scenarios-plan.md)
 - [Property Sale Tax Strategy](docs/property-sale-tax-strategy.md)
 - [Self-Hosted Operations](docs/self-hosted-operations.md)

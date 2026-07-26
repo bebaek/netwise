@@ -132,6 +132,7 @@ def resolve_scenario(
     household_id: UUID,
     scenario_id: UUID | None,
 ) -> ProjectionScenario:
+    """Resolve an explicit selection or the permanent omitted-ID baseline convenience."""
     if scenario_id is None:
         return get_baseline_scenario(db, household_id)
     return get_household_scenario(db, household_id, scenario_id)

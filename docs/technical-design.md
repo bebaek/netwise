@@ -185,7 +185,7 @@ created_at
 updated_at
 ```
 
-`projection_behavior` controls whether the event is historical-only, projection-only, or both. `scenario_id` is nullable for baseline events and set for scenario-specific events.
+`projection_behavior` controls whether the event is historical-only, projection-only, or both. Historical-only and shared historical-and-projection events have `scenario_id = NULL`; projection-only events require a scenario ID and affect only that scenario. See [Projection Scenarios API](projection-scenarios-api.md) for the complete selection contract.
 
 ### AnnualTaxRecord
 

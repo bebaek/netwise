@@ -34,6 +34,34 @@ def _create_household_and_account(client: TestClient) -> tuple[dict, dict]:
     return household, account
 
 
+def test_omitted_scenario_id_permanently_resolves_to_baseline(client: TestClient):
+    household, _ = _create_household_and_account(client)
+    household_id = household["id"]
+    baseline = client.get(f"/households/{household_id}/projection-scenarios").json()[0]
+
+    settings_response = client.put(
+        f"/projection-settings/{household_id}",
+        json={"annual_spending": "1200.00", "spending_mode": "manual"},
+    )
+    assert settings_response.status_code == 200
+    assert settings_response.json()["scenario_id"] == baseline["id"]
+
+    omitted_settings = client.get(f"/projection-settings/{household_id}")
+    explicit_settings = client.get(
+        f"/projection-settings/{household_id}?scenario_id={baseline['id']}"
+    )
+    assert omitted_settings.status_code == explicit_settings.status_code == 200
+    assert omitted_settings.json() == explicit_settings.json()
+
+    projection_path = (
+        f"/dashboard/{household_id}/projection?start_year=2026&end_year=2027&interval=annual"
+    )
+    omitted_projection = client.get(projection_path)
+    explicit_projection = client.get(f"{projection_path}&scenario_id={baseline['id']}")
+    assert omitted_projection.status_code == explicit_projection.status_code == 200
+    assert omitted_projection.json() == explicit_projection.json()
+    assert omitted_projection.json()["scenario_id"] == baseline["id"]
+
 def test_scenario_planning_records_and_events_are_isolated(client: TestClient, db_session):
     household, account = _create_household_and_account(client)
     household_id = household["id"]
