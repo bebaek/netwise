@@ -116,19 +116,31 @@ the agent's secret configuration rather than conversational context.
 
 The backend includes a local stdio MCP server and an authenticated multitenant Streamable HTTP
 endpoint hosted by FastAPI. See
-[Multitenant HTTP MCP Architecture](multitenant-mcp-architecture.md). Prefer these compact
-semantic tools when the model does not need raw records:
+[Multitenant HTTP MCP Architecture](multitenant-mcp-architecture.md). The authenticated HTTP
+endpoint exposes these compact semantic tools:
 
 - `summarize_financial_position` — totals, account coverage, and category allocation
   without account names.
 - `explain_net_worth_change` — category-level drivers between two requested dates.
-- `summarize_projection_comparison` — key scenario outcomes without yearly points or
-  account-level projection details.
+- `list_projection_scenarios` — scenario names and IDs for discovery within the
+  token-bound household.
+- `summarize_projection_assumptions` — selectable settings, income, spending,
+  account-return, property, transfer, and tax sections for a scenario selected by name or ID.
+- `get_property_projection_parameters` — detailed property, rental, mortgage, sale, and
+  automatic-liquidation inputs for one named property and scenario.
+- `check_projection_readiness` — scenario-specific errors and warnings for missing balances,
+  settings, tax history, and property inputs.
+- `summarize_projection_comparison` — key outcomes for two to four scenarios selected by name
+  or ID, without yearly points or account-level projection details.
 - `check_financial_data_freshness` — stale or missing snapshots; this tool includes
   affected account names so the user knows what to update.
 - `record_account_balance` — previews one create/update, returns exact confirmation text,
   and writes only when the user supplies that text verbatim in a subsequent message. It requires
   both `finance:read` and `finance:write`.
+
+The projection-planning reads and comparison require both `finance:read` and
+`projections:run`. Scenario selectors accept either an exact UUID or an unambiguous,
+case-insensitive name; omitting the selector from a single-scenario tool uses the baseline.
 
 Lower-level read tools remain available over the stdio adapter when details are necessary:
 

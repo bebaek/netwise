@@ -7,8 +7,24 @@ import pytest
 from sqlalchemy import select
 
 from app.core.security import AgentPrincipal
-from app.db.models import Account, BalanceSnapshot, Household
-from app.services.agent_tools import record_account_balance, summarize_projection_comparison
+from app.db.models import (
+    Account,
+    BalanceSnapshot,
+    Household,
+    MortgageProfile,
+    ProjectionScenario,
+    ProjectionScenarioPropertyAssumption,
+    ProjectionSettings,
+    RealEstateProperty,
+)
+from app.services.agent_tools import record_account_balance
+from app.services.projection_agent_tools import (
+    check_projection_readiness,
+    get_property_projection_parameters,
+    list_projection_scenarios,
+    summarize_projection_assumptions,
+    summarize_projection_comparison,
+)
 
 
 def _agent_principal(household: Household, *scopes: str) -> AgentPrincipal:
@@ -38,10 +54,12 @@ def test_projection_summary_uses_principal_household_and_omits_yearly_details(
     db_session, monkeypatch
 ):
     household = Household(name="Projection household")
-    db_session.add(household)
+    baseline = ProjectionScenario(household=household, name="Baseline", is_baseline=True)
+    alternative = ProjectionScenario(household=household, name="Retire Early", is_baseline=False)
+    db_session.add_all([household, baseline, alternative])
     db_session.commit()
     principal = _agent_principal(household, "finance:read", "projections:run")
-    scenario_ids = [uuid4(), uuid4()]
+    scenario_ids = [baseline.id, alternative.id]
     captured: dict[str, object] = {}
 
     def fake_compare(
@@ -87,7 +105,9 @@ def test_projection_summary_uses_principal_household_and_omits_yearly_details(
             ],
         }
 
-    monkeypatch.setattr("app.services.agent_tools.compare_projection_scenarios", fake_compare)
+    monkeypatch.setattr(
+        "app.services.projection_agent_tools.compare_projection_scenarios", fake_compare
+    )
 
     result = summarize_projection_comparison(
         db_session,
@@ -125,6 +145,168 @@ def test_projection_summary_uses_principal_household_and_omits_yearly_details(
             }
         ],
     }
+
+
+def test_projection_discovery_and_comparison_accept_scenario_names(db_session, monkeypatch):
+    household = Household(name="Scenario discovery household")
+    baseline = ProjectionScenario(household=household, name="Baseline", is_baseline=True)
+    alternative = ProjectionScenario(household=household, name="Retire Early", is_baseline=False)
+    db_session.add_all([household, baseline, alternative])
+    db_session.commit()
+    principal = _agent_principal(household, "finance:read", "projections:run")
+    captured: dict[str, object] = {}
+
+    def fake_compare(db, household_id, **kwargs):
+        captured.update(kwargs)
+        return {
+            "household_id": household_id,
+            "start_year": kwargs["start_year"],
+            "end_year": kwargs["end_year"],
+            "scenarios": [],
+        }
+
+    monkeypatch.setattr(
+        "app.services.projection_agent_tools.compare_projection_scenarios", fake_compare
+    )
+
+    discovered = list_projection_scenarios(db_session, principal)
+    compared = summarize_projection_comparison(
+        db_session,
+        principal,
+        None,
+        2026,
+        2030,
+        scenarios=["baseline", "Retire Early"],
+    )
+
+    assert [item["name"] for item in discovered["scenarios"]] == ["Baseline", "Retire Early"]
+    assert captured["scenario_ids"] == [baseline.id, alternative.id]
+    assert compared["scenarios"] == []
+
+
+def test_projection_assumptions_property_parameters_and_readiness(db_session):
+    household = Household(name="Property projection household")
+    baseline = ProjectionScenario(household=household, name="Baseline", is_baseline=True)
+    property_account = Account(
+        household=household,
+        name="Lake House",
+        account_kind="asset",
+        category="real_estate",
+        liquidity_class="illiquid",
+        currency="USD",
+        is_active=True,
+    )
+    mortgage_account = Account(
+        household=household,
+        name="Lake House Mortgage",
+        account_kind="liability",
+        category="mortgage",
+        liquidity_class="illiquid",
+        currency="USD",
+        is_active=True,
+    )
+    db_session.add_all([household, baseline, property_account, mortgage_account])
+    db_session.flush()
+    property_record = RealEstateProperty(
+        household_id=household.id,
+        account=property_account,
+        property_type="residence",
+        purchase_date=date(2020, 1, 1),
+        purchase_price=Decimal("400000.00"),
+        adjusted_tax_basis=Decimal("410000.00"),
+        expected_appreciation_rate=Decimal("0.030000"),
+        property_tax_annual=Decimal("8000.00"),
+        insurance_annual=Decimal("2400.00"),
+        maintenance_rate=Decimal("0.010000"),
+        is_rental=False,
+    )
+    mortgage = MortgageProfile(
+        household_id=household.id,
+        liability_account_id=mortgage_account.id,
+        property_account_id=property_account.id,
+        original_principal=Decimal("300000.00"),
+        interest_rate=Decimal("0.040000"),
+        term_months=360,
+        start_date=date(2020, 1, 1),
+        monthly_payment=Decimal("1432.25"),
+        rate_type="fixed",
+    )
+    assumption = ProjectionScenarioPropertyAssumption(
+        scenario_id=baseline.id,
+        household_id=household.id,
+        property_account_id=property_account.id,
+        expected_appreciation_rate=Decimal("0.025000"),
+        rent_growth_rate=None,
+        vacancy_rate=None,
+    )
+    settings = ProjectionSettings(
+        household_id=household.id,
+        scenario_id=baseline.id,
+        annual_spending=Decimal("60000.00"),
+        spending_mode="manual",
+        spending_inflation_rate=Decimal("0.025000"),
+    )
+    property_snapshot = BalanceSnapshot(
+        household_id=household.id,
+        account=property_account,
+        as_of_date=date(2026, 1, 1),
+        balance=Decimal("500000.00"),
+        currency="USD",
+        source="manual",
+    )
+    mortgage_snapshot = BalanceSnapshot(
+        household_id=household.id,
+        account=mortgage_account,
+        as_of_date=date(2026, 1, 1),
+        balance=Decimal("250000.00"),
+        currency="USD",
+        source="manual",
+    )
+    db_session.add_all(
+        [
+            property_record,
+            mortgage,
+            assumption,
+            settings,
+            property_snapshot,
+            mortgage_snapshot,
+        ]
+    )
+    db_session.commit()
+    principal = _agent_principal(household, "finance:read", "projections:run")
+
+    assumptions = summarize_projection_assumptions(
+        db_session,
+        principal,
+        "baseline",
+        ["settings", "properties"],
+    )
+    parameters = get_property_projection_parameters(
+        db_session,
+        principal,
+        "lake house",
+        "Baseline",
+    )
+    readiness = check_projection_readiness(db_session, principal, str(baseline.id))
+
+    assert assumptions["settings"]["annual_spending"] == "60000.00"
+    assert assumptions["properties"] == [
+        {
+            "property_name": "Lake House",
+            "property_type": "residence",
+            "is_rental": False,
+            "expected_appreciation_rate": "0.025000",
+            "rent_growth_rate": None,
+            "vacancy_rate": None,
+        }
+    ]
+    assert parameters["property"]["latest_value"] == "500000.00"
+    assert parameters["property"]["expected_appreciation_rate"] == "0.025000"
+    assert parameters["mortgage"]["latest_balance"] == "250000.00"
+    assert parameters["mortgage"]["interest_rate"] == "0.040000"
+    assert readiness["ready"] is True
+    assert readiness["issue_counts"] == {"errors": 0, "warnings": 1}
+    assert readiness["issues"][0]["code"] == "missing_tax_history"
 
 
 def test_record_account_balance_previews_then_saves_exact_confirmation(db_session):

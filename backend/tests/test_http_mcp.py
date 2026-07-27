@@ -122,6 +122,39 @@ def test_streamable_http_mcp_enforces_projection_tool_scope(unauthenticated_clie
     assert "API token scope does not permit this action" in str(called["result"]["content"])
 
 
+def test_streamable_http_mcp_projection_discovery_uses_bound_household(
+    unauthenticated_client, db_session
+):
+    household, token = _register_and_create_token(
+        unauthenticated_client,
+        db_session,
+        ["finance:read", "projections:run"],
+    )
+    unauthenticated_client.cookies.clear()
+
+    listed = _mcp_request(unauthenticated_client, token, 1, "tools/list", {})
+    called = _mcp_request(
+        unauthenticated_client,
+        token,
+        2,
+        "tools/call",
+        {"name": "list_projection_scenarios", "arguments": {}},
+    )
+
+    comparison_schema = next(
+        tool["inputSchema"]
+        for tool in listed["result"]["tools"]
+        if tool["name"] == "summarize_projection_comparison"
+    )
+    assert "scenarios" in comparison_schema["properties"]
+    assert called["result"]["isError"] is False
+    content = called["result"]["structuredContent"]
+    assert content["household_id"] == str(household.id)
+    assert content["count"] == 1
+    assert content["scenarios"][0]["name"] == "Baseline"
+    assert content["scenarios"][0]["is_baseline"] is True
+
+
 def test_streamable_http_mcp_balance_write_requires_exact_confirmation(
     unauthenticated_client, db_session
 ):
@@ -296,6 +329,10 @@ def test_streamable_http_mcp_lists_and_calls_household_scoped_summary(
         "summarize_financial_position",
         "explain_net_worth_change",
         "check_financial_data_freshness",
+        "list_projection_scenarios",
+        "summarize_projection_assumptions",
+        "get_property_projection_parameters",
+        "check_projection_readiness",
         "summarize_projection_comparison",
         "record_account_balance",
     ]

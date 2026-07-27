@@ -16,6 +16,12 @@ from app.services.agent_tools import (
     explain_net_worth_change,
     record_account_balance,
     summarize_financial_position,
+)
+from app.services.projection_agent_tools import (
+    check_projection_readiness,
+    get_property_projection_parameters,
+    list_projection_scenarios,
+    summarize_projection_assumptions,
     summarize_projection_comparison,
 )
 
@@ -123,13 +129,64 @@ def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
                 stale_after_days,
             )
 
+    @server.tool(name="list_projection_scenarios")
+    def list_projection_scenarios_tool() -> dict[str, object]:
+        """List projection scenarios available to the token-bound household."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "list_projection_scenarios"
+        with session_factory() as db:
+            return list_projection_scenarios(db, context.principal)
+
+    @server.tool(name="summarize_projection_assumptions")
+    def summarize_projection_assumptions_tool(
+        scenario: str | None = None,
+        sections: list[str] | None = None,
+    ) -> dict[str, object]:
+        """Summarize scenario assumptions. Scenario may be a name or ID; omit it for baseline."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "summarize_projection_assumptions"
+        with session_factory() as db:
+            return summarize_projection_assumptions(
+                db,
+                context.principal,
+                scenario,
+                sections,
+            )
+
+    @server.tool(name="get_property_projection_parameters")
+    def get_property_projection_parameters_tool(
+        property_name: str,
+        scenario: str | None = None,
+    ) -> dict[str, object]:
+        """Return detailed property, rental, mortgage, and sale parameters for one scenario."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "get_property_projection_parameters"
+        with session_factory() as db:
+            return get_property_projection_parameters(
+                db,
+                context.principal,
+                property_name,
+                scenario,
+            )
+
+    @server.tool(name="check_projection_readiness")
+    def check_projection_readiness_tool(
+        scenario: str | None = None,
+    ) -> dict[str, object]:
+        """Check a named, ID-selected, or baseline scenario for missing projection inputs."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "check_projection_readiness"
+        with session_factory() as db:
+            return check_projection_readiness(db, context.principal, scenario)
+
     @server.tool(name="summarize_projection_comparison")
     def summarize_projection_comparison_tool(
-        scenario_ids: list[str],
         start_year: int,
         end_year: int,
+        scenarios: list[str] | None = None,
+        scenario_ids: list[str] | None = None,
     ) -> dict[str, object]:
-        """Compare key outcomes for two to four scenarios without yearly details."""
+        """Compare two to four scenarios selected by name or ID without yearly details."""
         context = current_mcp_request_context()
         context.state["api_token_audit_tool_name"] = "summarize_projection_comparison"
         with session_factory() as db:
@@ -139,6 +196,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
                 scenario_ids,
                 start_year,
                 end_year,
+                scenarios,
             )
 
     @server.tool(name="record_account_balance")

@@ -1,13 +1,10 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from uuid import UUID
-
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analytics.net_worth import calculate_net_worth, calculate_net_worth_breakdown_history
-from app.analytics.projection_comparison import compare_projection_scenarios
 from app.core.security import AgentPrincipal, require_agent_scopes
 from app.db.models import Account, BalanceSnapshot, Household
 from app.services.balance_snapshots import BalanceSnapshotValue, save_snapshot_batch
@@ -331,55 +328,4 @@ def record_account_balance(
         "currency": account.currency.upper(),
         "created_count": saved["created_count"],
         "updated_count": saved["updated_count"],
-    }
-
-
-def summarize_projection_comparison(
-    db: Session,
-    principal: AgentPrincipal,
-    scenario_ids: list[str],
-    start_year: int,
-    end_year: int,
-) -> dict[str, object]:
-    require_agent_scopes(principal, "finance:read", "projections:run")
-    _require_household(db, principal)
-    if not 2 <= len(scenario_ids) <= 4:
-        raise ValueError("Choose between two and four projection scenarios")
-    if len(set(scenario_ids)) != len(scenario_ids):
-        raise ValueError("Projection scenario IDs must be unique")
-    if start_year > end_year:
-        raise ValueError("start_year must not be after end_year")
-    try:
-        parsed_scenario_ids = [UUID(value) for value in scenario_ids]
-    except ValueError as exc:
-        raise ValueError("Projection scenario IDs must be valid UUIDs") from exc
-
-    comparison = compare_projection_scenarios(
-        db,
-        principal.household_id,
-        scenario_ids=parsed_scenario_ids,
-        start_year=start_year,
-        end_year=end_year,
-        interval="annual",
-    )
-    return {
-        "household_id": str(principal.household_id),
-        "start_year": comparison["start_year"],
-        "end_year": comparison["end_year"],
-        "scenarios": [
-            {
-                "scenario_id": str(scenario["scenario_id"]),
-                "scenario_name": scenario["scenario_name"],
-                "ending_net_worth": _money(scenario["ending_net_worth"]),
-                "lowest_net_worth": _money(scenario["lowest_net_worth"]),
-                "lowest_liquid_assets_total": _money(scenario["lowest_liquid_assets_total"]),
-                "cumulative_projected_income": _money(scenario["cumulative_projected_income"]),
-                "cumulative_projected_taxes": _money(scenario["cumulative_projected_taxes"]),
-                "cumulative_projected_spending": _money(scenario["cumulative_projected_spending"]),
-                "retirement_date": _date_string(scenario["retirement_date"]),
-                "first_unfunded_date": _date_string(scenario["first_unfunded_date"]),
-                "warnings": list(scenario["warnings"]),
-            }
-            for scenario in comparison["scenarios"]
-        ],
     }
