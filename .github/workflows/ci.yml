@@ -108,18 +108,54 @@ jobs:
         run: uv run --no-sync alembic upgrade head
 
   production-images:
-    name: Production Compose build
+    name: Build and publish production images
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    needs: [backend, frontend, migration, e2e]
+    permissions:
+      contents: read
+      packages: write
     env:
       NETWISE_POSTGRES_PASSWORD: netwise-ci-placeholder
+      REGISTRY: ghcr.io
+      IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/netwise
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate production Compose configuration
         run: docker compose --file compose.production.yml --profile tools config --quiet
-      - name: Build production images
-        run: docker compose --file compose.production.yml build backend frontend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish backend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-backend:main
+          cache-from: type=gha,scope=netwise-backend
+          cache-to: type=gha,mode=max,scope=netwise-backend
+      - name: Build and publish frontend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile.production
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-frontend:main
+          cache-from: type=gha,scope=netwise-frontend
+          cache-to: type=gha,mode=max,scope=netwise-frontend
 
   e2e:
     name: Desktop Chromium smoke test
