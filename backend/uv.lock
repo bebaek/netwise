@@ -602,6 +602,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "mcp" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
@@ -613,12 +614,10 @@ dependencies = [
 [package.optional-dependencies]
 agent = [
     { name = "httpx" },
-    { name = "mcp" },
 ]
 dev = [
     { name = "httpx" },
     { name = "httpx2" },
-    { name = "mcp" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -630,8 +629,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'agent'", specifier = ">=0.28.0,<1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0,<1" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "mcp", marker = "extra == 'agent'", specifier = ">=1.27.0,<2" },
-    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.27.0,<2" },
+    { name = "mcp", specifier = ">=1.27.0,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2.1" },
     { name = "pydantic", specifier = ">=2.8.0" },

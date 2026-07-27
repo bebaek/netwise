@@ -43,12 +43,12 @@ def auth_user(db_session: Session) -> User:
 
 @pytest.fixture
 def client(db_session: Session, auth_user: User) -> Generator[TestClient, None, None]:
-    app = create_app()
-    app.state.audit_session_factory = sessionmaker(
+    testing_session_factory = sessionmaker(
         bind=db_session.get_bind(),
         autoflush=False,
         autocommit=False,
     )
+    app = create_app(testing_session_factory)
 
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
@@ -66,12 +66,12 @@ def client(db_session: Session, auth_user: User) -> Generator[TestClient, None, 
 
 @pytest.fixture
 def unauthenticated_client(db_session: Session) -> Generator[TestClient, None, None]:
-    app = create_app()
-    app.state.audit_session_factory = sessionmaker(
+    testing_session_factory = sessionmaker(
         bind=db_session.get_bind(),
         autoflush=False,
         autocommit=False,
     )
+    app = create_app(testing_session_factory)
 
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
