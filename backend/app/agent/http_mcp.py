@@ -11,7 +11,12 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.security import AgentPrincipal, require_api_token_principal
-from app.services.agent_tools import summarize_financial_position
+from app.services.agent_tools import (
+    check_financial_data_freshness,
+    explain_net_worth_change,
+    summarize_financial_position,
+    summarize_projection_comparison,
+)
 
 SessionFactory = Callable[[], Session]
 
@@ -91,5 +96,47 @@ def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
         context.state["api_token_audit_tool_name"] = "summarize_financial_position"
         with session_factory() as db:
             return summarize_financial_position(db, context.principal)
+
+    @server.tool(name="explain_net_worth_change")
+    def explain_net_worth_change_tool(start_date: str, end_date: str) -> dict[str, object]:
+        """Explain category-level net-worth changes between two ISO dates."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "explain_net_worth_change"
+        with session_factory() as db:
+            return explain_net_worth_change(db, context.principal, start_date, end_date)
+
+    @server.tool(name="check_financial_data_freshness")
+    def check_financial_data_freshness_tool(
+        as_of_date: str | None = None,
+        stale_after_days: int = 45,
+    ) -> dict[str, object]:
+        """Find active accounts with missing or stale snapshots as of an ISO date."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "check_financial_data_freshness"
+        with session_factory() as db:
+            return check_financial_data_freshness(
+                db,
+                context.principal,
+                as_of_date,
+                stale_after_days,
+            )
+
+    @server.tool(name="summarize_projection_comparison")
+    def summarize_projection_comparison_tool(
+        scenario_ids: list[str],
+        start_year: int,
+        end_year: int,
+    ) -> dict[str, object]:
+        """Compare key outcomes for two to four scenarios without yearly details."""
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "summarize_projection_comparison"
+        with session_factory() as db:
+            return summarize_projection_comparison(
+                db,
+                context.principal,
+                scenario_ids,
+                start_year,
+                end_year,
+            )
 
     return server

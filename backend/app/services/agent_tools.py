@@ -1,21 +1,46 @@
+from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analytics.net_worth import calculate_net_worth
+from app.analytics.net_worth import calculate_net_worth, calculate_net_worth_breakdown_history
+from app.analytics.projection_comparison import compare_projection_scenarios
 from app.core.security import AgentPrincipal, require_agent_scopes
-from app.db.models import Household
+from app.db.models import Account, BalanceSnapshot, Household
 
 
 def _money(value: object) -> str:
     return format(Decimal(str(value)).quantize(Decimal("0.01")), "f")
 
 
-def summarize_financial_position(db: Session, principal: AgentPrincipal) -> dict[str, object]:
-    require_agent_scopes(principal, "finance:read")
+def _iso_date(value: str | None, field_name: str) -> date:
+    if not value:
+        raise ValueError(f"{field_name} is required")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD)") from exc
+
+
+def _date_string(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def _require_household(db: Session, principal: AgentPrincipal) -> None:
     if db.get(Household, principal.household_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
+
+
+def summarize_financial_position(db: Session, principal: AgentPrincipal) -> dict[str, object]:
+    require_agent_scopes(principal, "finance:read")
+    _require_household(db, principal)
 
     summary = calculate_net_worth(db, principal.household_id)
     accounts = summary["accounts"]
@@ -47,5 +72,200 @@ def summarize_financial_position(db: Session, principal: AgentPrincipal) -> dict
                 "balance": _money(balance),
             }
             for (account_kind, category), balance in sorted(category_totals.items())
+        ],
+    }
+
+
+def explain_net_worth_change(
+    db: Session,
+    principal: AgentPrincipal,
+    start_date: str,
+    end_date: str,
+) -> dict[str, object]:
+    require_agent_scopes(principal, "finance:read")
+    _require_household(db, principal)
+    requested_start = _iso_date(start_date, "start_date")
+    requested_end = _iso_date(end_date, "end_date")
+    if requested_start > requested_end:
+        raise ValueError("start_date must not be after end_date")
+
+    history = calculate_net_worth_breakdown_history(db, principal.household_id)
+    dated_points = sorted(
+        ((point["as_of_date"], point) for point in history["points"]),
+        key=lambda item: item[0],
+    )
+    start_point = next(
+        (point for point_date, point in reversed(dated_points) if point_date <= requested_start),
+        None,
+    )
+    end_point = next(
+        (point for point_date, point in reversed(dated_points) if point_date <= requested_end),
+        None,
+    )
+    if start_point is None or end_point is None:
+        raise ValueError("No balance history is available on or before one of the requested dates")
+
+    category_changes: list[dict[str, object]] = []
+    for account_kind, field, effect_multiplier in (
+        ("asset", "asset_categories", Decimal("1")),
+        ("liability", "liability_categories", Decimal("-1")),
+    ):
+        start_categories = {
+            str(row["category"]): Decimal(str(row["balance"])) for row in start_point[field]
+        }
+        end_categories = {
+            str(row["category"]): Decimal(str(row["balance"])) for row in end_point[field]
+        }
+        for category in sorted(start_categories.keys() | end_categories.keys()):
+            balance_change = end_categories.get(category, Decimal("0")) - start_categories.get(
+                category, Decimal("0")
+            )
+            if balance_change == 0:
+                continue
+            category_changes.append(
+                {
+                    "account_kind": account_kind,
+                    "category": category,
+                    "balance_change": _money(balance_change),
+                    "net_worth_effect": _money(balance_change * effect_multiplier),
+                }
+            )
+    category_changes.sort(
+        key=lambda item: abs(Decimal(str(item["net_worth_effect"]))),
+        reverse=True,
+    )
+
+    start_net_worth = Decimal(str(start_point["net_worth"]))
+    end_net_worth = Decimal(str(end_point["net_worth"]))
+    return {
+        "requested_period": {"start_date": start_date, "end_date": end_date},
+        "actual_period": {
+            "start_date": _date_string(start_point["as_of_date"]),
+            "end_date": _date_string(end_point["as_of_date"]),
+        },
+        "starting_net_worth": _money(start_net_worth),
+        "ending_net_worth": _money(end_net_worth),
+        "net_worth_change": _money(end_net_worth - start_net_worth),
+        "assets_change": _money(
+            Decimal(str(end_point["assets_total"])) - Decimal(str(start_point["assets_total"]))
+        ),
+        "liabilities_change": _money(
+            Decimal(str(end_point["liabilities_total"]))
+            - Decimal(str(start_point["liabilities_total"]))
+        ),
+        "category_changes": category_changes,
+    }
+
+
+def check_financial_data_freshness(
+    db: Session,
+    principal: AgentPrincipal,
+    as_of_date: str | None = None,
+    stale_after_days: int = 45,
+) -> dict[str, object]:
+    require_agent_scopes(principal, "finance:read")
+    _require_household(db, principal)
+    if not 1 <= stale_after_days <= 3650:
+        raise ValueError("stale_after_days must be between 1 and 3650")
+    effective_date = _iso_date(as_of_date, "as_of_date") if as_of_date else date.today()
+    accounts = list(
+        db.scalars(
+            select(Account)
+            .where(
+                Account.household_id == principal.household_id,
+                Account.is_active.is_(True),
+            )
+            .order_by(Account.name)
+        ).all()
+    )
+
+    missing_accounts: list[dict[str, object]] = []
+    stale_accounts: list[dict[str, object]] = []
+    current_count = 0
+    for account in accounts:
+        latest_date = db.scalar(
+            select(BalanceSnapshot.as_of_date)
+            .where(BalanceSnapshot.account_id == account.id)
+            .order_by(BalanceSnapshot.as_of_date.desc(), BalanceSnapshot.created_at.desc())
+            .limit(1)
+        )
+        account_summary = {"account_id": str(account.id), "account_name": account.name}
+        if latest_date is None:
+            missing_accounts.append(account_summary)
+            continue
+        age_days = (effective_date - latest_date).days
+        if age_days > stale_after_days:
+            stale_accounts.append(
+                {
+                    **account_summary,
+                    "latest_snapshot_date": latest_date.isoformat(),
+                    "age_days": age_days,
+                }
+            )
+        else:
+            current_count += 1
+
+    stale_accounts.sort(key=lambda item: int(item["age_days"]), reverse=True)
+    return {
+        "as_of_date": effective_date.isoformat(),
+        "stale_after_days": stale_after_days,
+        "account_counts": {
+            "active": len(accounts),
+            "current": current_count,
+            "stale": len(stale_accounts),
+            "missing": len(missing_accounts),
+        },
+        "stale_accounts": stale_accounts,
+        "missing_accounts": missing_accounts,
+    }
+
+
+def summarize_projection_comparison(
+    db: Session,
+    principal: AgentPrincipal,
+    scenario_ids: list[str],
+    start_year: int,
+    end_year: int,
+) -> dict[str, object]:
+    require_agent_scopes(principal, "finance:read", "projections:run")
+    _require_household(db, principal)
+    if not 2 <= len(scenario_ids) <= 4:
+        raise ValueError("Choose between two and four projection scenarios")
+    if len(set(scenario_ids)) != len(scenario_ids):
+        raise ValueError("Projection scenario IDs must be unique")
+    if start_year > end_year:
+        raise ValueError("start_year must not be after end_year")
+    try:
+        parsed_scenario_ids = [UUID(value) for value in scenario_ids]
+    except ValueError as exc:
+        raise ValueError("Projection scenario IDs must be valid UUIDs") from exc
+
+    comparison = compare_projection_scenarios(
+        db,
+        principal.household_id,
+        scenario_ids=parsed_scenario_ids,
+        start_year=start_year,
+        end_year=end_year,
+        interval="annual",
+    )
+    return {
+        "household_id": str(principal.household_id),
+        "start_year": comparison["start_year"],
+        "end_year": comparison["end_year"],
+        "scenarios": [
+            {
+                "scenario_id": str(scenario["scenario_id"]),
+                "scenario_name": scenario["scenario_name"],
+                "ending_net_worth": _money(scenario["ending_net_worth"]),
+                "lowest_net_worth": _money(scenario["lowest_net_worth"]),
+                "lowest_liquid_assets_total": _money(scenario["lowest_liquid_assets_total"]),
+                "cumulative_projected_income": _money(scenario["cumulative_projected_income"]),
+                "cumulative_projected_taxes": _money(scenario["cumulative_projected_taxes"]),
+                "cumulative_projected_spending": _money(scenario["cumulative_projected_spending"]),
+                "retirement_date": _date_string(scenario["retirement_date"]),
+                "first_unfunded_date": _date_string(scenario["first_unfunded_date"]),
+                "warnings": list(scenario["warnings"]),
+            }
+            for scenario in comparison["scenarios"]
         ],
     }
