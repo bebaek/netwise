@@ -114,8 +114,8 @@ the agent's secret configuration rather than conversational context.
 
 ## Use the MCP adapter
 
-The backend currently includes a local stdio MCP server. A multitenant Streamable HTTP endpoint
-hosted by the FastAPI backend is the proposed deployment architecture; see
+The backend includes a local stdio MCP server and an authenticated multitenant Streamable HTTP
+endpoint hosted by FastAPI. See
 [Multitenant HTTP MCP Architecture](multitenant-mcp-architecture.md). Prefer these compact
 semantic tools when the model does not need raw records:
 
@@ -130,7 +130,7 @@ semantic tools when the model does not need raw records:
   and writes only when the user supplies that text verbatim in a subsequent message. It requires
   both `finance:read` and `finance:write`.
 
-Lower-level read tools remain available when details are necessary:
+Lower-level read tools remain available over the stdio adapter when details are necessary:
 
 - `get_financial_summary`
 - `list_accounts`
@@ -139,11 +139,12 @@ Lower-level read tools remain available when details are necessary:
 - `list_projection_scenarios`
 - `compare_projection_scenarios`
 
-The adapter discovers the household from the bound token, so the model does not choose
-or supply a household ID. It exposes read tools, deterministic projection comparison, and the
-single confirmed balance-snapshot mutation described above; it does not expose other Netwise
-mutation endpoints. The semantic summaries reduce the financial data returned to the model, but
-the adapter still receives the underlying API response locally to calculate them.
+The adapters discover the household from the bound token, so the model does not choose
+or supply a household ID. They expose read tools, deterministic projection comparison, and the
+single confirmed balance-snapshot mutation described above; they do not expose other Netwise
+mutation endpoints. The HTTP tools call shared household-scoped application services directly.
+The stdio adapter receives REST responses locally and reduces them before returning semantic
+summaries to the model.
 
 Run it from a checkout:
 
@@ -186,17 +187,17 @@ client. Restrict permissions on configuration files containing the token. The op
 also labels requests with the tool name so **Settings → AI agent access → Recent agent
 activity** can distinguish semantic tool calls from direct API requests.
 
-## Proposed multitenant HTTP deployment
+## Multitenant HTTP deployment
 
-The target deployed MCP transport is an authenticated `/mcp` endpoint in the Netwise FastAPI
-process, normally exposed as `/api/mcp` by the production proxy. Each MCP client sends its own
+The deployed MCP transport is an authenticated `/mcp` endpoint in the Netwise FastAPI process,
+normally exposed as `/api/mcp/` by the production proxy. Each MCP client sends its own
 household-bound Netwise API token as a bearer credential. Authentication derives the household
 and scopes for every tool invocation; no process-global MCP client or household context is
 permitted.
 
-REST routes and MCP tools will call shared household-scoped application services rather than the
-HTTP MCP implementation making loopback REST requests. Tool authorization is scope-based at
-execution time, and tool identity is added to audit context by the server. The local stdio adapter
-remains supported. The full decision, security invariants, alternatives, migration sequence, and
+REST routes and MCP tools call shared household-scoped application services rather than the HTTP
+MCP implementation making loopback REST requests. Tool authorization is scope-based at execution
+time, and tool identity is added to audit context by the server. The local stdio adapter remains
+supported. The full decision, security invariants, alternatives, migration sequence, and
 verification requirements are in
 [Multitenant HTTP MCP Architecture](multitenant-mcp-architecture.md).

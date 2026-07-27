@@ -27,7 +27,7 @@ Netwise helps a household answer:
 
 | Capability | Status |
 | --- | --- |
-| Authentication, household authorization, scoped agent API tokens, and stdio MCP adapter with confirmed balance writes | Implemented |
+| Authentication, household authorization, scoped agent API tokens, stdio MCP, and multitenant HTTP MCP with confirmed balance writes | Implemented |
 | Accounts, balance snapshots, and net-worth history | Implemented |
 | Asset allocation and historical analytics | Implemented |
 | Deterministic projections with income, tax, spending, and withdrawal policies | Implemented |

@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -10,6 +10,7 @@ from app.analytics.net_worth import calculate_net_worth, calculate_net_worth_bre
 from app.analytics.projection_comparison import compare_projection_scenarios
 from app.core.security import AgentPrincipal, require_agent_scopes
 from app.db.models import Account, BalanceSnapshot, Household
+from app.services.balance_snapshots import BalanceSnapshotValue, save_snapshot_batch
 
 
 def _money(value: object) -> str:
@@ -217,6 +218,119 @@ def check_financial_data_freshness(
         },
         "stale_accounts": stale_accounts,
         "missing_accounts": missing_accounts,
+    }
+
+
+def record_account_balance(
+    db: Session,
+    principal: AgentPrincipal,
+    account_name: str,
+    balance: str,
+    as_of_date: str,
+    confirmation: str | None = None,
+) -> dict[str, object]:
+    require_agent_scopes(principal, "finance:read", "finance:write")
+    _require_household(db, principal)
+    normalized_name = account_name.strip()
+    if not normalized_name:
+        raise ValueError("account_name is required")
+    snapshot_date = _iso_date(as_of_date, "as_of_date")
+    if snapshot_date > date.today():
+        raise ValueError("as_of_date must not be in the future")
+
+    try:
+        balance_value = Decimal(balance)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("balance must be a finite monetary value") from exc
+    if not balance_value.is_finite():
+        raise ValueError("balance must be a finite monetary value")
+    if balance_value.as_tuple().exponent < -2:
+        raise ValueError("balance must have at most two decimal places")
+    if abs(balance_value) >= Decimal("10000000000000000"):
+        raise ValueError("balance is too large")
+    normalized_balance = _money(balance_value)
+    canonical_date = snapshot_date.isoformat()
+
+    accounts = list(
+        db.scalars(
+            select(Account)
+            .where(Account.household_id == principal.household_id)
+            .order_by(Account.name)
+            .with_for_update()
+        ).all()
+    )
+    matches = [
+        account
+        for account in accounts
+        if account.name.strip().casefold() == normalized_name.casefold()
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "account_name must identify exactly one account; use list_accounts to choose it"
+        )
+    account = matches[0]
+    if not account.is_active:
+        raise ValueError("Cannot record a balance for an inactive account")
+
+    existing = db.scalars(
+        select(BalanceSnapshot)
+        .where(
+            BalanceSnapshot.account_id == account.id,
+            BalanceSnapshot.as_of_date == snapshot_date,
+        )
+        .with_for_update()
+        .limit(1)
+    ).first()
+    existing_balance = _money(existing.balance) if existing is not None else None
+    action = "update" if existing is not None else "create"
+    confirmation_parts = [
+        "CONFIRM",
+        action.upper(),
+        account.name,
+        canonical_date,
+        normalized_balance,
+        account.currency.upper(),
+    ]
+    if existing_balance is not None:
+        confirmation_parts.extend(["REPLACING", existing_balance])
+    required_confirmation = " ".join(confirmation_parts)
+
+    preview = {
+        "status": "confirmation_required",
+        "action": action,
+        "account_name": account.name,
+        "as_of_date": canonical_date,
+        "balance": normalized_balance,
+        "currency": account.currency.upper(),
+        "existing_balance": existing_balance,
+        "required_confirmation": required_confirmation,
+        "instruction": (
+            "Show this preview to the user and ask them to reply with the exact confirmation "
+            "text. Do not call this tool again until the user supplies it verbatim in a "
+            "subsequent message."
+        ),
+    }
+    if confirmation != required_confirmation:
+        return preview
+
+    saved = save_snapshot_batch(
+        db,
+        principal.household_id,
+        as_of_date=snapshot_date,
+        currency=account.currency.upper(),
+        source="manual",
+        confidence_level="confirmed_by_user",
+        snapshots=[BalanceSnapshotValue(account_id=account.id, balance=balance_value)],
+    )
+    return {
+        "status": "saved",
+        "action": action,
+        "account_name": account.name,
+        "as_of_date": canonical_date,
+        "balance": normalized_balance,
+        "currency": account.currency.upper(),
+        "created_count": saved["created_count"],
+        "updated_count": saved["updated_count"],
     }
 
 

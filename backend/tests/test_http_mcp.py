@@ -1,6 +1,8 @@
+from decimal import Decimal
+
 from sqlalchemy import select
 
-from app.db.models import ApiTokenAuditEvent, Household
+from app.db.models import ApiTokenAuditEvent, BalanceSnapshot, Household
 from mcp.types import LATEST_PROTOCOL_VERSION
 
 
@@ -120,6 +122,94 @@ def test_streamable_http_mcp_enforces_projection_tool_scope(unauthenticated_clie
     assert "API token scope does not permit this action" in str(called["result"]["content"])
 
 
+def test_streamable_http_mcp_balance_write_requires_exact_confirmation(
+    unauthenticated_client, db_session
+):
+    household, token = _register_and_create_token(
+        unauthenticated_client,
+        db_session,
+        ["finance:read", "finance:write"],
+    )
+    account_response = unauthenticated_client.post(
+        "/accounts",
+        json={
+            "household_id": str(household.id),
+            "name": "HTTP checking",
+            "account_kind": "asset",
+            "category": "cash",
+            "liquidity_class": "liquid",
+            "currency": "USD",
+        },
+    )
+    assert account_response.status_code == 201
+    unauthenticated_client.cookies.clear()
+    arguments = {
+        "account_name": "HTTP checking",
+        "balance": "987.65",
+        "as_of_date": "2020-02-20",
+    }
+
+    preview = _mcp_request(
+        unauthenticated_client,
+        token,
+        1,
+        "tools/call",
+        {"name": "record_account_balance", "arguments": arguments},
+    )
+    assert preview["result"]["isError"] is False
+    preview_result = preview["result"]["structuredContent"]
+    assert preview_result["status"] == "confirmation_required"
+    assert preview_result["required_confirmation"] == (
+        "CONFIRM CREATE HTTP checking 2020-02-20 987.65 USD"
+    )
+    assert db_session.scalar(select(BalanceSnapshot)) is None
+
+    generic_confirmation = _mcp_request(
+        unauthenticated_client,
+        token,
+        2,
+        "tools/call",
+        {
+            "name": "record_account_balance",
+            "arguments": {**arguments, "confirmation": "yes"},
+        },
+    )
+    assert generic_confirmation["result"]["structuredContent"] == preview_result
+    assert db_session.scalar(select(BalanceSnapshot)) is None
+
+    saved = _mcp_request(
+        unauthenticated_client,
+        token,
+        3,
+        "tools/call",
+        {
+            "name": "record_account_balance",
+            "arguments": {
+                **arguments,
+                "confirmation": preview_result["required_confirmation"],
+            },
+        },
+    )
+    assert saved["result"]["structuredContent"] == {
+        "status": "saved",
+        "action": "create",
+        "account_name": "HTTP checking",
+        "as_of_date": "2020-02-20",
+        "balance": "987.65",
+        "currency": "USD",
+        "created_count": 1,
+        "updated_count": 0,
+    }
+    db_session.expire_all()
+    snapshot = db_session.scalar(select(BalanceSnapshot))
+    assert snapshot.household_id == household.id
+    assert snapshot.balance == Decimal("987.65")
+    latest_audit = db_session.scalars(
+        select(ApiTokenAuditEvent).order_by(ApiTokenAuditEvent.created_at.desc())
+    ).first()
+    assert latest_audit.tool_name == "record_account_balance"
+
+
 def test_streamable_http_mcp_lists_and_calls_household_scoped_summary(
     unauthenticated_client, db_session
 ):
@@ -207,6 +297,7 @@ def test_streamable_http_mcp_lists_and_calls_household_scoped_summary(
         "explain_net_worth_change",
         "check_financial_data_freshness",
         "summarize_projection_comparison",
+        "record_account_balance",
     ]
     assert all(
         "household_id" not in tool["inputSchema"].get("properties", {})

@@ -42,6 +42,7 @@ from app.schemas.account import (
 )
 from app.schemas.household import HouseholdCreate, HouseholdRead
 from app.schemas.user import HouseholdMembershipCreate, HouseholdMembershipRead
+from app.services.balance_snapshots import BalanceSnapshotValue, save_snapshot_batch
 from app.services.projection_scenarios import (
     ProjectionScenarioNotFoundError,
     ensure_baseline_scenario,
@@ -224,9 +225,7 @@ _PROPERTY_ASSUMPTION_FIELDS = tuple(
     column.name for column in ProjectionScenarioPropertyAssumption.__table__.columns
 )
 _PROJECTION_SETTINGS_FIELDS = tuple(column.name for column in ProjectionSettings.__table__.columns)
-_SOCIAL_SECURITY_FIELDS = tuple(
-    column.name for column in SocialSecurityEstimate.__table__.columns
-)
+_SOCIAL_SECURITY_FIELDS = tuple(column.name for column in SocialSecurityEstimate.__table__.columns)
 _REAL_ESTATE_SALE_FIELDS = tuple(column.name for column in RealEstateSale.__table__.columns)
 _LIQUIDATION_STRATEGY_FIELDS = tuple(
     column.name for column in RealEstateLiquidationStrategy.__table__.columns
@@ -671,77 +670,15 @@ def create_snapshot_batch(
     payload: BalanceSnapshotBatchCreate,
     db: Session = Depends(get_db),
 ) -> dict:
-    if db.get(Household, household_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Household not found")
-
-    account_ids = [item.account_id for item in payload.snapshots]
-    duplicate_account_ids = sorted(
-        {str(account_id) for account_id in account_ids if account_ids.count(account_id) > 1}
+    return save_snapshot_batch(
+        db,
+        household_id,
+        as_of_date=payload.as_of_date,
+        currency=payload.currency,
+        source=payload.source,
+        confidence_level=payload.confidence_level,
+        snapshots=[
+            BalanceSnapshotValue(account_id=item.account_id, balance=item.balance)
+            for item in payload.snapshots
+        ],
     )
-    if duplicate_account_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Duplicate accounts in snapshot batch: {', '.join(duplicate_account_ids)}",
-        )
-
-    accounts = {
-        account.id: account
-        for account in db.scalars(
-            select(Account).where(
-                Account.household_id == household_id,
-                Account.id.in_(account_ids),
-            )
-        ).all()
-    }
-    missing_account_ids = [
-        str(account_id) for account_id in account_ids if account_id not in accounts
-    ]
-    if missing_account_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Accounts do not belong to household: {', '.join(missing_account_ids)}",
-        )
-
-    created_count = 0
-    updated_count = 0
-    saved_snapshots: list[BalanceSnapshot] = []
-    for item in payload.snapshots:
-        snapshot = db.scalars(
-            select(BalanceSnapshot)
-            .where(
-                BalanceSnapshot.account_id == item.account_id,
-                BalanceSnapshot.as_of_date == payload.as_of_date,
-            )
-            .limit(1)
-        ).first()
-        if snapshot is None:
-            snapshot = BalanceSnapshot(
-                household_id=household_id,
-                account_id=item.account_id,
-                as_of_date=payload.as_of_date,
-                balance=item.balance,
-                currency=payload.currency,
-                source=payload.source,
-                confidence_level=payload.confidence_level,
-            )
-            db.add(snapshot)
-            created_count += 1
-        else:
-            snapshot.balance = item.balance
-            snapshot.currency = payload.currency
-            snapshot.source = payload.source
-            snapshot.confidence_level = payload.confidence_level
-            updated_count += 1
-        saved_snapshots.append(snapshot)
-
-    db.commit()
-    for snapshot in saved_snapshots:
-        db.refresh(snapshot)
-
-    return {
-        "household_id": household_id,
-        "as_of_date": payload.as_of_date,
-        "created_count": created_count,
-        "updated_count": updated_count,
-        "snapshots": saved_snapshots,
-    }

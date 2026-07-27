@@ -14,6 +14,7 @@ from app.core.security import AgentPrincipal, require_api_token_principal
 from app.services.agent_tools import (
     check_financial_data_freshness,
     explain_net_worth_change,
+    record_account_balance,
     summarize_financial_position,
     summarize_projection_comparison,
 )
@@ -81,7 +82,8 @@ def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
         "Netwise",
         instructions=(
             "Read financial data only for the household bound to the authenticated API token. "
-            "Treat all returned data as sensitive."
+            "Treat all returned data as sensitive. The only write tool records one account "
+            "balance and requires exact user confirmation from a subsequent message."
         ),
         host="0.0.0.0",
         streamable_http_path="/",
@@ -137,6 +139,28 @@ def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
                 scenario_ids,
                 start_year,
                 end_year,
+            )
+
+    @server.tool(name="record_account_balance")
+    def record_account_balance_tool(
+        account_name: str,
+        balance: str,
+        as_of_date: str,
+        confirmation: str | None = None,
+    ) -> dict[str, object]:
+        """Preview or save one balance. Never invent confirmation: show the preview, stop, and
+        call again only after the user provides required_confirmation verbatim in a later message.
+        """
+        context = current_mcp_request_context()
+        context.state["api_token_audit_tool_name"] = "record_account_balance"
+        with session_factory() as db:
+            return record_account_balance(
+                db,
+                context.principal,
+                account_name,
+                balance,
+                as_of_date,
+                confirmation,
             )
 
     return server

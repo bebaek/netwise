@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed.** Netwise currently provides a household-bound stdio MCP adapter that calls the
-REST API with one API token from its environment. This document defines the target architecture
-for serving MCP over authenticated Streamable HTTP from the Netwise backend process.
+**Implemented for the compact semantic tool set and confirmed balance writes.** Netwise provides
+a household-bound stdio adapter and an authenticated, stateless Streamable HTTP endpoint in the
+FastAPI process. Lower-level HTTP tools and additional resource controls can be added without
+changing the tenancy model defined here.
 
 ## Context
 
@@ -25,9 +26,9 @@ operations. It should reuse those guarantees rather than introduce a second tena
 
 ## Decision
 
-Netwise will expose an authenticated Streamable HTTP MCP endpoint from the existing FastAPI
-backend process. The internal backend path will be `/mcp`; deployments that proxy backend routes
-under `/api` will expose it as `/api/mcp`.
+Netwise exposes an authenticated Streamable HTTP MCP endpoint from the existing FastAPI backend
+process. The internal backend path is `/mcp`; deployments that proxy backend routes under `/api`
+expose its canonical mounted path as `/api/mcp/`.
 
 The client supplies a normal Netwise personal API token on the MCP request:
 
