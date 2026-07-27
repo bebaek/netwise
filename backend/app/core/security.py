@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import secrets
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -17,6 +19,44 @@ _dummy_password_hash = _password_hash.hash(secrets.token_urlsafe(32))
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
+@dataclass(frozen=True, slots=True)
+class AgentPrincipal:
+    api_token_id: UUID
+    user_id: UUID
+    household_id: UUID
+    scopes: frozenset[str]
+    token_name: str
+    token_prefix: str
+
+    @classmethod
+    def from_api_token(cls, api_token: ApiToken) -> "AgentPrincipal":
+        return cls(
+            api_token_id=api_token.id,
+            user_id=api_token.user_id,
+            household_id=api_token.household_id,
+            scopes=frozenset(api_token.scopes),
+            token_name=api_token.name,
+            token_prefix=api_token.token_prefix,
+        )
+
+    def audit_context(self) -> dict[str, object]:
+        return {
+            "api_token_id": self.api_token_id,
+            "user_id": self.user_id,
+            "household_id": self.household_id,
+            "token_name": self.token_name,
+            "token_prefix": self.token_prefix,
+        }
+
+
+def require_agent_scopes(principal: AgentPrincipal, *required_scopes: str) -> None:
+    if not set(required_scopes).issubset(principal.scopes):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API token scope does not permit this action",
+        )
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
@@ -24,7 +64,13 @@ def normalize_email(email: str) -> str:
 def validate_email(email: str) -> str:
     normalized = normalize_email(email)
     local, separator, domain = normalized.partition("@")
-    if not separator or not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+    if (
+        not separator
+        or not local
+        or "." not in domain
+        or domain.startswith(".")
+        or domain.endswith(".")
+    ):
         raise ValueError("Enter a valid email address")
     return normalized
 
@@ -111,8 +157,10 @@ def get_optional_current_user(
     return session.user
 
 
-def _api_token_from_request(request: Request, db: Session) -> ApiToken | None:
-    authorization = request.headers.get("Authorization")
+def authenticate_api_token(
+    authorization: str | None,
+    db: Session,
+) -> tuple[ApiToken, AgentPrincipal] | None:
     if authorization is None:
         return None
     scheme, separator, secret = authorization.partition(" ")
@@ -123,9 +171,7 @@ def _api_token_from_request(request: Request, db: Session) -> ApiToken | None:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    api_token = db.scalar(
-        select(ApiToken).where(ApiToken.token_digest == api_token_digest(secret))
-    )
+    api_token = db.scalar(select(ApiToken).where(ApiToken.token_digest == api_token_digest(secret)))
     now = datetime.now(UTC)
     if (
         api_token is None
@@ -137,10 +183,10 @@ def _api_token_from_request(request: Request, db: Session) -> ApiToken | None:
             detail="Invalid or expired API token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return api_token
+    return api_token, AgentPrincipal.from_api_token(api_token)
 
 
-def _authorize_api_token_request(request: Request, api_token: ApiToken) -> None:
+def _authorize_api_token_request(request: Request, principal: AgentPrincipal) -> None:
     path = request.url.path.rstrip("/")
     blocked_path = (
         path.startswith("/auth")
@@ -166,11 +212,40 @@ def _authorize_api_token_request(request: Request, api_token: ApiToken) -> None:
         required_scope = "projections:run"
     elif is_snapshot_write:
         required_scope = "finance:write"
-    if required_scope is None or required_scope not in api_token.scopes:
+    if required_scope is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="API token scope does not permit this action",
         )
+    require_agent_scopes(principal, required_scope)
+
+
+def _set_api_token_request_context(request: Request, principal: AgentPrincipal) -> None:
+    request.state.api_token_audit_context = principal.audit_context()
+    request.state.api_token = principal
+
+
+def _record_api_token_use(db: Session, api_token: ApiToken) -> None:
+    api_token.last_used_at = datetime.now(UTC)
+    db.commit()
+
+
+def require_api_token_principal(
+    request: Request,
+    db: Session = Depends(get_db),
+    _bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> AgentPrincipal:
+    authenticated = authenticate_api_token(request.headers.get("Authorization"), db)
+    if authenticated is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    api_token, principal = authenticated
+    _set_api_token_request_context(request, principal)
+    _record_api_token_use(db, api_token)
+    return principal
 
 
 def require_authenticated_user(
@@ -179,19 +254,12 @@ def require_authenticated_user(
     settings: Settings = Depends(get_settings),
     _bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> User:
-    api_token = _api_token_from_request(request, db)
-    if api_token is not None:
-        request.state.api_token_audit_context = {
-            "api_token_id": api_token.id,
-            "user_id": api_token.user_id,
-            "household_id": api_token.household_id,
-            "token_name": api_token.name,
-            "token_prefix": api_token.token_prefix,
-        }
-        _authorize_api_token_request(request, api_token)
-        request.state.api_token = api_token
-        api_token.last_used_at = datetime.now(UTC)
-        db.commit()
+    authenticated = authenticate_api_token(request.headers.get("Authorization"), db)
+    if authenticated is not None:
+        api_token, principal = authenticated
+        _set_api_token_request_context(request, principal)
+        _authorize_api_token_request(request, principal)
+        _record_api_token_use(db, api_token)
         return api_token.user
 
     request.state.api_token = None
