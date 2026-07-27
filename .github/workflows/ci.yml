@@ -142,6 +142,10 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-backend:main
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
           cache-from: type=gha,scope=netwise-backend
           cache-to: type=gha,mode=max,scope=netwise-backend
       - name: Build and publish frontend
@@ -154,6 +158,10 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-frontend:main
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
           cache-from: type=gha,scope=netwise-frontend
           cache-to: type=gha,mode=max,scope=netwise-frontend
 
