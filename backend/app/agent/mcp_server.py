@@ -1,12 +1,13 @@
 import os
+from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from app.agent.client import NetwiseApiClient
 
 
-def build_server(client: NetwiseApiClient) -> FastMCP:
-    server = FastMCP(
+def build_server(client: NetwiseApiClient) -> MCPServer[Any]:
+    server = MCPServer(
         "Netwise",
         instructions=(
             "Read household financial data and run deterministic scenario comparisons. "

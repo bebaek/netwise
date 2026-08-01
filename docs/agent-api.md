@@ -115,7 +115,9 @@ the agent's secret configuration rather than conversational context.
 ## Use the MCP adapter
 
 The backend includes a local stdio MCP server and an authenticated multitenant Streamable HTTP
-endpoint hosted by FastAPI. See
+endpoint hosted by FastAPI. Both use the MCP Python SDK v2 server API. Modern clients negotiate
+protocol version `2026-07-28` through `server/discover`; the SDK also retains the legacy
+`2025-11-25` initialize handshake for compatibility. See
 [Multitenant HTTP MCP Architecture](multitenant-mcp-architecture.md). The authenticated HTTP
 endpoint exposes these compact semantic tools:
 

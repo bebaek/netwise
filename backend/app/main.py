@@ -25,7 +25,12 @@ from app.db.session import SessionLocal
 
 def create_app(session_factory: SessionFactory = SessionLocal) -> FastAPI:
     mcp_server = build_http_mcp_server(session_factory)
-    mcp_app = mcp_server.streamable_http_app()
+    mcp_app = mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        stateless_http=True,
+        json_response=True,
+        host="0.0.0.0",
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

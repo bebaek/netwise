@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, Request
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
@@ -83,18 +83,14 @@ class AgentMcpAuthMiddleware:
             _request_context.reset(token)
 
 
-def build_http_mcp_server(session_factory: SessionFactory) -> FastMCP:
-    server = FastMCP(
+def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
+    server = MCPServer(
         "Netwise",
         instructions=(
             "Read financial data only for the household bound to the authenticated API token. "
             "Treat all returned data as sensitive. The only write tool records one account "
             "balance and requires exact user confirmation from a subsequent message."
         ),
-        host="0.0.0.0",
-        streamable_http_path="/",
-        stateless_http=True,
-        json_response=True,
     )
 
     @server.tool(name="summarize_financial_position")
