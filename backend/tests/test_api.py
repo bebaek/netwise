@@ -1,6 +1,7 @@
+import json
 import logging
 
-from app.core.logging import HealthcheckAccessLogFilter
+from app.core.logging import HealthcheckAccessLogFilter, JsonFormatter
 from fastapi.testclient import TestClient
 
 
@@ -16,6 +17,31 @@ def test_healthcheck_access_logs_are_suppressed():
     assert access_filter.filter(
         logging.makeLogRecord({"args": ("127.0.0.1", "POST", "/accounts", "1.1", 201)})
     )
+
+
+def test_access_logs_are_json_with_structured_request_fields():
+    formatted = JsonFormatter().format(
+        logging.makeLogRecord(
+            {
+                "name": "uvicorn.access",
+                "levelname": "INFO",
+                "levelno": logging.INFO,
+                "msg": '%s - "%s %s HTTP/%s" %d',
+                "args": ("127.0.0.1:1234", "GET", "/accounts", "1.1", 200),
+            }
+        )
+    )
+
+    event = json.loads(formatted)
+
+    assert event["level"] == "INFO"
+    assert event["logger"] == "uvicorn.access"
+    assert event["client_addr"] == "127.0.0.1:1234"
+    assert event["method"] == "GET"
+    assert event["path"] == "/accounts"
+    assert event["http_version"] == "1.1"
+    assert event["status_code"] == 200
+    assert event["timestamp"].endswith("Z")
 
 
 def test_health(client: TestClient):

@@ -1,4 +1,37 @@
+import json
 import logging
+from datetime import UTC, datetime
+
+
+class JsonFormatter(logging.Formatter):
+    """Render application and Uvicorn records as newline-delimited JSON."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        event: dict[str, object] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+            if len(record.args) >= 5:
+                event.update(
+                    client_addr=record.args[0],
+                    method=record.args[1],
+                    path=record.args[2],
+                    http_version=record.args[3],
+                    status_code=record.args[4],
+                )
+
+        if record.exc_info:
+            event["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            event["stack"] = self.formatStack(record.stack_info)
+
+        return json.dumps(event, default=str, ensure_ascii=False)
 
 
 class HealthcheckAccessLogFilter(logging.Filter):
