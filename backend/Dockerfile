@@ -24,8 +24,9 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 COPY --from=dependencies /opt/venv /opt/venv
 COPY app ./app
+COPY logging.json ./
 COPY alembic.ini ./
 COPY alembic ./alembic
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-config logging.json"]

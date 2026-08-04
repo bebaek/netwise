@@ -80,6 +80,88 @@ def test_streamable_http_mcp_requires_a_valid_bearer_token(unauthenticated_clien
     assert invalid.json()["detail"] == "Invalid or expired API token"
 
 
+def test_streamable_http_mcp_supports_modern_discovery_and_legacy_initialize(
+    unauthenticated_client, db_session
+):
+    _, token = _register_and_create_token(
+        unauthenticated_client, db_session, ["finance:read"]
+    )
+    unauthenticated_client.cookies.clear()
+    modern_metadata = {
+        "io.modelcontextprotocol/protocolVersion": LATEST_PROTOCOL_VERSION,
+        "io.modelcontextprotocol/clientInfo": {"name": "netwise-sdk-test", "version": "1"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    modern_headers = {
+        **_mcp_headers(token),
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION,
+    }
+
+    discovered = unauthenticated_client.post(
+        "/mcp",
+        headers={**modern_headers, "Mcp-Method": "server/discover"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "server/discover",
+            "params": {"_meta": modern_metadata},
+        },
+    )
+    listed = unauthenticated_client.post(
+        "/mcp",
+        headers={**modern_headers, "Mcp-Method": "tools/list"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {"_meta": modern_metadata},
+        },
+    )
+    called = unauthenticated_client.post(
+        "/mcp",
+        headers={
+            **modern_headers,
+            "Mcp-Method": "tools/call",
+            "Mcp-Name": "summarize_financial_position",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "summarize_financial_position",
+                "arguments": {},
+                "_meta": modern_metadata,
+            },
+        },
+    )
+    initialized = _mcp_request(
+        unauthenticated_client,
+        token,
+        4,
+        "initialize",
+        {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "netwise-legacy-test", "version": "1"},
+        },
+    )
+
+    assert discovered.status_code == 200
+    assert discovered.json()["result"]["supportedVersions"] == [LATEST_PROTOCOL_VERSION]
+    assert discovered.json()["result"]["resultType"] == "complete"
+    assert (
+        discovered.json()["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+        == "Netwise"
+    )
+    assert listed.status_code == 200
+    assert listed.json()["result"]["resultType"] == "complete"
+    assert called.status_code == 200
+    assert called.json()["result"]["isError"] is False
+    assert called.json()["result"]["structuredContent"]["account_counts"]["total"] == 0
+    assert initialized["result"]["protocolVersion"] == "2025-11-25"
+
+
 def test_streamable_http_mcp_enforces_tool_scopes(unauthenticated_client, db_session):
     _, token = _register_and_create_token(unauthenticated_client, db_session, ["finance:write"])
     unauthenticated_client.cookies.clear()

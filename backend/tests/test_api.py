@@ -1,4 +1,21 @@
+import logging
+
+from app.core.logging import HealthcheckAccessLogFilter
 from fastapi.testclient import TestClient
+
+
+def test_healthcheck_access_logs_are_suppressed():
+    access_filter = HealthcheckAccessLogFilter()
+
+    assert not access_filter.filter(
+        logging.makeLogRecord({"args": ("127.0.0.1", "GET", "/health/live", "1.1", 200)})
+    )
+    assert not access_filter.filter(
+        logging.makeLogRecord({"args": ("127.0.0.1", "GET", "/health/ready?verbose=1", "1.1", 503)})
+    )
+    assert access_filter.filter(
+        logging.makeLogRecord({"args": ("127.0.0.1", "POST", "/accounts", "1.1", 201)})
+    )
 
 
 def test_health(client: TestClient):
