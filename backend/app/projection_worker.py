@@ -5,6 +5,8 @@ import threading
 import time
 from datetime import timedelta
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.services.projection_jobs import (
@@ -28,12 +30,16 @@ def run_worker(*, once: bool = False) -> None:
     signal.signal(signal.SIGINT, request_stop)
 
     def maintain_jobs() -> None:
-        with SessionLocal() as db:
-            deleted = delete_expired_projection_jobs(db)
-            recovered = recover_stale_projection_jobs(
-                db,
-                older_than=timedelta(hours=settings.projection_worker_stale_hours),
-            )
+        try:
+            with SessionLocal() as db:
+                deleted = delete_expired_projection_jobs(db)
+                recovered = recover_stale_projection_jobs(
+                    db,
+                    older_than=timedelta(hours=settings.projection_worker_stale_hours),
+                )
+        except SQLAlchemyError:
+            logger.warning("Projection job maintenance is waiting for the database", exc_info=True)
+            return
         if deleted:
             logger.info("Deleted %s expired projection job(s)", deleted)
         if recovered:
@@ -46,15 +52,19 @@ def run_worker(*, once: bool = False) -> None:
         if time.monotonic() >= next_maintenance:
             maintain_jobs()
             next_maintenance = time.monotonic() + 3600
-        with SessionLocal() as db:
-            job = claim_projection_job(db)
-        if job is not None:
-            logger.info("Running projection job %s", job.id)
-            execute_projection_job(SessionLocal, job.id)
-            logger.info("Finished projection job %s", job.id)
-        elif once:
-            return
-        else:
+        try:
+            with SessionLocal() as db:
+                job = claim_projection_job(db)
+            if job is not None:
+                logger.info("Running projection job %s", job.id)
+                execute_projection_job(SessionLocal, job.id)
+                logger.info("Finished projection job %s", job.id)
+            elif once:
+                return
+            else:
+                stop.wait(settings.projection_worker_poll_seconds)
+        except SQLAlchemyError:
+            logger.warning("Projection worker is waiting for the database", exc_info=True)
             stop.wait(settings.projection_worker_poll_seconds)
         if once:
             return
