@@ -29,6 +29,16 @@ services:
       postgres:
         condition: service_healthy
 
+  projection-worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.projection_worker"]
+    environment:
+      NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise@postgres:5432/netwise
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend

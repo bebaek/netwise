@@ -76,6 +76,19 @@ services:
       - application
       - database
 
+  projection-worker:
+    <<: *backend-image
+    command: ["python", "-m", "app.projection_worker"]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10m
+    networks:
+      - database
+
   frontend:
     image: netwise-frontend:production
     build:
