@@ -66,7 +66,7 @@ test('shows progress while a projection is running', async ({ page }) => {
   const projectionBlocked = new Promise<void>((resolve) => {
     releaseProjection = resolve;
   });
-  await page.route('**/api/dashboard/*/projection?*', async (route) => {
+  await page.route('**/api/dashboard/*/projection-jobs', async (route) => {
     await projectionBlocked;
     await route.continue();
   });
@@ -78,8 +78,8 @@ test('shows progress while a projection is running', async ({ page }) => {
   const runningButton = page.getByRole('button', { name: 'Running projection…', exact: true });
   await expect(runningButton).toBeDisabled();
   await expect(
-    page.getByRole('status').filter({ hasText: 'Calculating your projection' }),
-  ).toContainText('Calculating your projection');
+    page.getByRole('status').filter({ hasText: 'Your projection is queued' }),
+  ).toContainText('Your projection is queued');
   await expect(page.locator('form[aria-busy="true"]')).toHaveCount(1);
 
   releaseProjection();

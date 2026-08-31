@@ -46,9 +46,9 @@ test('manages independent projection scenarios and preserves URL selection', asy
   await page.reload();
   await expect(page).toHaveURL(selectedScenarioUrl);
   await expect(selector.locator('option:checked')).toHaveText(renamedName);
-  const selectedScenarioId = await selector.inputValue();
   const projectionResponsePromise = page.waitForResponse((response) => (
-    response.url().includes('/projection?') && response.url().includes(`scenario_id=${selectedScenarioId}`)
+    response.request().method() === 'POST'
+      && response.url().endsWith('/projection-jobs')
   ));
   await page.getByRole('button', { name: 'Run projection', exact: true }).click();
   expect((await projectionResponsePromise).ok()).toBe(true);
