@@ -1,0 +1,48 @@
+name: Retarget stacked pull requests
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  retarget-children:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      MERGED_HEAD: ${{ github.event.pull_request.head.ref }}
+      MERGED_BASE: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - name: Retarget child pull requests
+        run: |
+          children="$(
+            gh api --method GET "repos/$REPOSITORY/pulls" \
+              -f state=open \
+              -f base="$MERGED_HEAD" \
+              --paginate \
+              --jq '.[].number'
+          )"
+
+          if [[ -z "$children" ]]; then
+            echo "No open pull requests target $MERGED_HEAD."
+            exit 0
+          fi
+
+          while IFS= read -r child; do
+            [[ -n "$child" ]] || continue
+            gh api --method PATCH "repos/$REPOSITORY/pulls/$child" \
+              -f base="$MERGED_BASE" >/dev/null
+            echo "Retargeted pull request #$child from $MERGED_HEAD to $MERGED_BASE."
+          done <<< "$children"
+
+          {
+            echo "### Retargeted stacked pull requests"
+            echo
+            echo "Changed child pull request bases from \`$MERGED_HEAD\` to \`$MERGED_BASE\`."
+            echo "Branches may still require a manual rebase after a squash merge."
+          } >> "$GITHUB_STEP_SUMMARY"
