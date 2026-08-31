@@ -23,9 +23,9 @@ Current repository targets:
 3. Kubernetes deployment with Helm (planned)
 
 The production Compose path is the supported small-host boundary. It publishes
-only the Nginx frontend, keeps the backend and PostgreSQL unpublished, disables
-public signup and administrative tools, enables secure authentication cookies,
-and uses a dedicated one-shot migration service.
+only the Nginx frontend and keeps the backend, projection worker, and PostgreSQL
+unpublished. It disables public signup and administrative tools, enables secure
+authentication cookies, and uses a dedicated one-shot migration service.
 
 ## Production Compose setup
 
@@ -80,8 +80,10 @@ curl --fail https://finance.example.com/health/live
 curl --fail https://finance.example.com/api/health/ready
 ```
 
-Use `docker compose ... logs backend` and `docker compose ... logs frontend` for
-local diagnostics. Do not paste `.env.production` or rendered Compose output into
+Use `docker compose ... logs backend`,
+`docker compose ... logs projection-worker`, and
+`docker compose ... logs frontend` for local diagnostics. Do not paste
+`.env.production` or rendered Compose output into
 issues because both contain the database password.
 
 ## Runtime services
@@ -90,11 +92,11 @@ Minimum services:
 
 - Web frontend
 - API backend
+- Projection worker
 - PostgreSQL
 
 Likely services after the first version:
 
-- Background worker
 - Redis
 - Object storage compatible service or local file storage for exports and backups
 
@@ -114,6 +116,8 @@ NETWISE_IMPORT_ROOT=/import/fintrack
 NETWISE_AUTH_COOKIE_NAME=netwise_session
 NETWISE_AUTH_COOKIE_SECURE=true
 NETWISE_AUTH_SESSION_DAYS=30
+NETWISE_PROJECTION_WORKER_POLL_SECONDS=2
+NETWISE_PROJECTION_WORKER_STALE_HOURS=6
 ```
 
 ## Single-household mode
@@ -160,8 +164,9 @@ Restore is deliberately destructive and requires an explicit confirmation flag:
 ```
 
 Before changing the database, the restore script verifies the checksum when its
-sidecar is present and validates the archive. It then stops frontend and backend
-services, terminates remaining database sessions, drops and recreates the
+sidecar is present and validates the archive. It then stops frontend, backend,
+and projection-worker services, terminates remaining database sessions, drops
+and recreates the
 `netwise` database from the archive, runs current migrations, and starts the
 production stack with health checks. If restore or migration fails, application
 services remain stopped for inspection.
@@ -186,7 +191,7 @@ a migration never races the old backend:
 1. Create and retain a verified backup with `backup-production.sh`.
 2. Fetch and check out the intended Netwise release.
 3. Build the new images while the current containers continue running.
-4. Stop frontend and backend services.
+4. Stop frontend, backend, and projection-worker services.
 5. Run the one-shot migration job.
 6. Start the stack and wait for health checks.
 7. Verify both public health paths and representative application data.
@@ -194,7 +199,8 @@ a migration never races the old backend:
 ```bash
 ./scripts/backup-production.sh /srv/netwise/backups
 docker compose --env-file .env.production -f compose.production.yml build
-docker compose --env-file .env.production -f compose.production.yml stop frontend backend
+docker compose --env-file .env.production -f compose.production.yml stop \
+  frontend backend projection-worker
 docker compose --env-file .env.production -f compose.production.yml run --rm migrate
 docker compose --env-file .env.production -f compose.production.yml up -d --wait
 curl --fail https://finance.example.com/health/live
