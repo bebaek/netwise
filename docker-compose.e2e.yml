@@ -36,6 +36,17 @@ services:
       timeout: 5s
       retries: 30
 
+  projection-worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.projection_worker"]
+    environment:
+      NETWISE_DATABASE_URL: postgresql+psycopg://netwise:netwise-e2e@postgres:5432/netwise
+      NETWISE_PROJECTION_WORKER_POLL_SECONDS: "0.1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
