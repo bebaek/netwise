@@ -359,7 +359,7 @@ export function ProjectionSection({
       </button>
       {projectionRunning && (
         <p className="projection-run-status" role="status" aria-live="polite">
-          Calculating your projection. Longer date ranges and optimization strategies may take some time.
+          Your projection is queued and will continue running outside this request. Longer date ranges and optimization strategies may take some time.
         </p>
       )}
     </form>

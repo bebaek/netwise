@@ -120,6 +120,8 @@ function App({
   onLogout: () => Promise<void>;
 }) {
   const householdRequestId = useRef(0);
+  const projectionRequestId = useRef(0);
+  const projectionAbortController = useRef<AbortController | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(storedThemePreference);
   const [systemDarkTheme, setSystemDarkTheme] = useState<boolean>(systemPrefersDarkTheme);
   const selectedUserId = authenticatedUser.id;
@@ -129,7 +131,13 @@ function App({
   );
   const [projection, setProjection] = useState<NetWorthProjection | null>(null);
   const [projectionRunning, setProjectionRunning] = useState<boolean>(false);
-  const invalidateProjection = useCallback(() => setProjection(null), []);
+  const invalidateProjection = useCallback(() => {
+    projectionAbortController.current?.abort();
+    projectionAbortController.current = null;
+    projectionRequestId.current += 1;
+    setProjectionRunning(false);
+    setProjection(null);
+  }, []);
   const [showInterpolatedHistory, setShowInterpolatedHistory] = useState<boolean>(false);
   const [showProjectionOnTrajectory, setShowProjectionOnTrajectory] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -215,6 +223,8 @@ function App({
     if (queryDataError) setError(String(queryDataError));
   }, [queryDataError]);
 
+  useEffect(() => () => projectionAbortController.current?.abort(), []);
+
   useEffect(() => {
     const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
     const handleColorSchemeChange = (event: MediaQueryListEvent) => setSystemDarkTheme(event.matches);
@@ -249,6 +259,10 @@ function App({
 
   useEffect(() => {
     if (!selectedHouseholdId) return;
+    projectionAbortController.current?.abort();
+    projectionAbortController.current = null;
+    projectionRequestId.current += 1;
+    setProjectionRunning(false);
     setProjection(null);
   }, [selectedHouseholdId]);
 
@@ -273,7 +287,11 @@ function App({
     event.preventDefault();
     if (!selectedHouseholdId) return;
     setError('');
+    projectionAbortController.current?.abort();
+    const abortController = new AbortController();
+    projectionAbortController.current = abortController;
     setProjectionRunning(true);
+    const requestId = ++projectionRequestId.current;
     const form = new FormData(event.currentTarget);
     try {
       const result = await getNetWorthProjection(
@@ -288,13 +306,19 @@ function App({
           interval: requiredString(form, 'projection_interval') as 'annual' | 'quarterly' | 'monthly',
           scenarioId: requiredString(form, 'scenario_id'),
         },
+        abortController.signal,
       );
-      setProjection(result);
+      if (requestId === projectionRequestId.current) setProjection(result);
     } catch (err: unknown) {
+      if (requestId !== projectionRequestId.current) return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setProjection(null);
       setError(String(err));
     } finally {
-      setProjectionRunning(false);
+      if (requestId === projectionRequestId.current) {
+        projectionAbortController.current = null;
+        setProjectionRunning(false);
+      }
     }
   }
 
