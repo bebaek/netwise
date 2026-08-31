@@ -63,7 +63,8 @@ Redis-backed workers may be added when asynchronous jobs are needed.
 
 ## Development quickstart
 
-The development stack starts a FastAPI backend, PostgreSQL database, and Vite frontend. From the repository root:
+The development stack starts a FastAPI backend, a durable projection worker,
+PostgreSQL database, and Vite frontend. From the repository root:
 
 ```bash
 cp .env.example .env
@@ -96,7 +97,8 @@ curl http://localhost:8001/health/ready
 ### Production Compose quickstart
 
 The production Compose path builds the static Nginx frontend and exposes only
-that frontend. PostgreSQL and the backend remain on internal container networks.
+that frontend. PostgreSQL, the backend, and the projection worker remain on
+internal container networks.
 Create an ignored, owner-readable environment file with a generated database
 password:
 

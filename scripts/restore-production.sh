@@ -75,7 +75,7 @@ on_exit() {
 }
 trap on_exit EXIT INT TERM
 
-compose stop frontend backend >/dev/null
+compose stop frontend backend projection-worker >/dev/null
 restore_started=1
 compose exec --no-TTY postgres psql \
   --set=ON_ERROR_STOP=1 \
