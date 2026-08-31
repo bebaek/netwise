@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     auth_cookie_name: str = "netwise_session"
     auth_cookie_secure: bool = False
     auth_session_days: int = Field(default=30, ge=1, le=365)
+    projection_worker_poll_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    projection_worker_stale_hours: int = Field(default=6, ge=1, le=168)
 
     model_config = SettingsConfigDict(env_prefix="NETWISE_", env_file=".env", extra="ignore")
 

@@ -113,8 +113,11 @@ async def _request_body_values(request: Request) -> dict[str, object]:
 
 
 def _is_read_operation(request: Request) -> bool:
-    return request.method in _READ_METHODS or request.url.path.rstrip("/").endswith(
-        "/projection-comparison"
+    path = request.url.path.rstrip("/")
+    return (
+        request.method in _READ_METHODS
+        or path.endswith("/projection-comparison")
+        or request.method == "POST" and path.endswith("/projection-jobs")
     )
 
 

@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -59,6 +60,14 @@ class AccountEventType(StrEnum):
     account_added = "account_added"
     account_removed = "account_removed"
     manual_projection_adjustment = "manual_projection_adjustment"
+
+
+class ProjectionJobStatus(StrEnum):
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    stale = "stale"
 
 
 class ProjectionBehavior(StrEnum):
@@ -641,6 +650,50 @@ class AnnualTaxRecord(Base):
         UniqueConstraint("household_id", "tax_year", name="uq_annual_tax_records_household_year"),
         Index("ix_annual_tax_records_household_id", "household_id"),
     )
+
+
+class ProjectionJob(Base):
+    __tablename__ = "projection_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed', 'stale')",
+            name="ck_projection_jobs_status",
+        ),
+        Index("ix_projection_jobs_household_status", "household_id", "status"),
+        Index("ix_projection_jobs_expires_at", "expires_at"),
+        Index("ix_projection_jobs_cache_completed", "cache_key", "completed_at"),
+        Index(
+            "uq_projection_jobs_active_cache_key",
+            "cache_key",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    scenario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projection_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
+    cache_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    algorithm_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=ProjectionJobStatus.queued.value
+    )
+    request: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=now_utc
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProjectionScenario(Base):

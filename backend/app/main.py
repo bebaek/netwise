@@ -13,6 +13,7 @@ from app.api.routes import (
     households,
     imports,
     planning,
+    projection_jobs,
     projection_scenarios,
     real_estate,
     users,
@@ -54,6 +55,7 @@ def create_app(session_factory: SessionFactory = SessionLocal) -> FastAPI:
     app.include_router(dashboard.router, dependencies=household_authorized)
     app.include_router(real_estate.router, dependencies=household_authorized)
     app.include_router(planning.router, dependencies=household_authorized)
+    app.include_router(projection_jobs.router, dependencies=household_authorized)
     app.include_router(projection_scenarios.router, dependencies=household_authorized)
     app.mount("/mcp", AgentMcpAuthMiddleware(mcp_app, session_factory), name="mcp")
     return app
