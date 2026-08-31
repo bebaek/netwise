@@ -527,6 +527,20 @@ export type NetWorthProjection = {
   } | null;
 };
 
+export type ProjectionJob = {
+  id: string;
+  household_id: string;
+  scenario_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stale';
+  cached: boolean;
+  result: NetWorthProjection | null;
+  error_code: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  expires_at: string | null;
+};
+
 export type ProjectionComparisonScenario = NetWorthProjection & {
   ending_net_worth: string;
   lowest_net_worth: string;
@@ -1339,7 +1353,25 @@ export function compareNetWorthProjections(
   });
 }
 
-export function getNetWorthProjection(
+async function waitForProjectionPoll(signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Projection polling aborted', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException('Projection polling aborted', 'AbortError'));
+    };
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, 1000);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+export async function getNetWorthProjection(
   householdId: string,
   startYear: number,
   endYear: number,
@@ -1351,16 +1383,34 @@ export function getNetWorthProjection(
     interval?: 'annual' | 'quarterly' | 'monthly';
     scenarioId: string;
   },
+  signal?: AbortSignal,
 ): Promise<NetWorthProjection> {
-  const params = new URLSearchParams({
-    start_year: String(startYear),
-    end_year: String(endYear),
+  const payload = {
+    start_year: startYear,
+    end_year: endYear,
+    scenario_id: options.scenarioId,
+    annual_spending: options.annualSpending,
+    spending_inflation_rate: options.spendingInflationRate,
+    spending_account_id: options.spendingAccountId,
+    tax_account_id: options.taxAccountId,
+    interval: options.interval ?? 'annual',
+  };
+  let job = await request<ProjectionJob>(`/dashboard/${householdId}/projection-jobs`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    signal,
   });
-  if (options.annualSpending) params.set('annual_spending', options.annualSpending);
-  if (options.spendingInflationRate) params.set('spending_inflation_rate', options.spendingInflationRate);
-  if (options.spendingAccountId) params.set('spending_account_id', options.spendingAccountId);
-  if (options.taxAccountId) params.set('tax_account_id', options.taxAccountId);
-  if (options.interval) params.set('interval', options.interval);
-  params.set('scenario_id', options.scenarioId);
-  return request<NetWorthProjection>(`/dashboard/${householdId}/projection?${params.toString()}`);
+
+  while (job.status === 'queued' || job.status === 'running') {
+    await waitForProjectionPoll(signal);
+    job = await request<ProjectionJob>(
+      `/dashboard/${householdId}/projection-jobs/${job.id}`,
+      { signal },
+    );
+  }
+  if (job.status === 'completed' && job.result) return job.result;
+  if (job.status === 'stale') {
+    throw new Error('Projection inputs changed while the projection was running. Run it again.');
+  }
+  throw new Error('The projection worker could not complete this projection.');
 }
