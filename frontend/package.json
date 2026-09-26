@@ -15,7 +15,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-query": "^5.103.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "^6.1.1",
