@@ -15,10 +15,10 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.103.2",
+    "@tanstack/react-query": "^5.104.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.63.0"
+    "@playwright/test": "^1.64.0"
   },
   "overrides": {
     "nanoid": "3.3.18"
