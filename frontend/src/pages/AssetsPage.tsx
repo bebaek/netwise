@@ -758,8 +758,8 @@ export function AssetsPage({
         <input name="name" placeholder="Fidelity 401k" required />
       </label>
       <label>
-        Account kind
-        <select name="account_kind" defaultValue="asset">
+        <span id="add-account-kind-label">Account kind</span>
+        <select name="account_kind" aria-labelledby="add-account-kind-label" defaultValue="asset">
           <option value="asset">Asset</option>
           <option value="liability">Liability</option>
         </select>
@@ -773,8 +773,8 @@ export function AssetsPage({
         <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
       </label>
       <label>
-        Retirement tax treatment
-        <select name="retirement_tax_treatment" defaultValue="">
+        <span id="add-account-retirement-tax-label">Retirement tax treatment</span>
+        <select name="retirement_tax_treatment" aria-labelledby="add-account-retirement-tax-label" defaultValue="">
           <option value="">Not a retirement account</option>
           <option value="traditional">Traditional / tax-deferred</option>
           <option value="roth">Roth / tax-free</option>
