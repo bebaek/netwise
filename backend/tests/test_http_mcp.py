@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.db.models import ApiTokenAuditEvent, BalanceSnapshot, Household
@@ -50,6 +52,35 @@ def _mcp_request(client, token: str, request_id: int, method: str, params: dict)
     return response.json()
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("private database details"),
+        HTTPException(status_code=500, detail="private database details"),
+    ],
+)
+def test_streamable_http_mcp_masks_internal_tool_errors(
+    unauthenticated_client, db_session, monkeypatch, error
+):
+    _, token = _register_and_create_token(unauthenticated_client, db_session, ["finance:read"])
+    unauthenticated_client.cookies.clear()
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("app.agent.http_mcp.summarize_financial_position", fail)
+    called = _mcp_request(
+        unauthenticated_client,
+        token,
+        1,
+        "tools/call",
+        {"name": "summarize_financial_position", "arguments": {}},
+    )
+    assert called["result"]["isError"] is True
+    assert "Error executing tool summarize_financial_position" in str(called["result"]["content"])
+    assert "private database details" not in str(called["result"])
+
+
 def test_streamable_http_mcp_requires_a_valid_bearer_token(unauthenticated_client):
     registered = unauthenticated_client.post(
         "/auth/register",
@@ -83,9 +114,7 @@ def test_streamable_http_mcp_requires_a_valid_bearer_token(unauthenticated_clien
 def test_streamable_http_mcp_supports_modern_discovery_and_legacy_initialize(
     unauthenticated_client, db_session
 ):
-    _, token = _register_and_create_token(
-        unauthenticated_client, db_session, ["finance:read"]
-    )
+    _, token = _register_and_create_token(unauthenticated_client, db_session, ["finance:read"])
     unauthenticated_client.cookies.clear()
     modern_metadata = {
         "io.modelcontextprotocol/protocolVersion": LATEST_PROTOCOL_VERSION,
