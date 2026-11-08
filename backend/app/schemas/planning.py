@@ -10,6 +10,7 @@ from app.db.models import (
     SocialSecurityCalculationMode,
     SocialSecurityEarningsPattern,
 )
+from app.schemas.financial import FinancialInputModel
 
 
 class HouseholdPersonCreate(BaseModel):
@@ -29,7 +30,7 @@ class HouseholdPersonRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SocialSecurityEstimateCreate(BaseModel):
+class SocialSecurityEstimateCreate(FinancialInputModel):
     household_id: UUID
     person_id: UUID
     calculation_mode: SocialSecurityCalculationMode
@@ -78,7 +79,7 @@ class SocialSecurityEstimateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class IncomeSourceCreate(BaseModel):
+class IncomeSourceCreate(FinancialInputModel):
     household_id: UUID
     name: str
     income_type: str = "other"
@@ -110,7 +111,7 @@ class IncomeSourceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProjectionTransferCreate(BaseModel):
+class ProjectionTransferCreate(FinancialInputModel):
     household_id: UUID
     name: str = Field(min_length=1, max_length=200)
     from_account_id: UUID
@@ -138,7 +139,7 @@ class ProjectionTransferRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SpendingItemCreate(BaseModel):
+class SpendingItemCreate(FinancialInputModel):
     household_id: UUID
     name: str = Field(min_length=1, max_length=200)
     category: str = Field(default="other", min_length=1, max_length=64)
@@ -149,7 +150,7 @@ class SpendingItemCreate(BaseModel):
     growth_rate: Decimal | None = Field(default=None, ge=-1, max_digits=8, decimal_places=6)
 
 
-class SpendingItemUpdate(BaseModel):
+class SpendingItemUpdate(FinancialInputModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     category: str | None = Field(default=None, min_length=1, max_length=64)
     annual_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
@@ -174,7 +175,7 @@ class SpendingItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProjectionSettingsUpsert(BaseModel):
+class ProjectionSettingsUpsert(FinancialInputModel):
     annual_spending: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     spending_mode: Literal["manual", "itemized"] = "manual"
     spending_inflation_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6)
@@ -203,7 +204,7 @@ class ProjectionSettingsRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AnnualTaxRecordCreate(BaseModel):
+class AnnualTaxRecordCreate(FinancialInputModel):
     household_id: UUID
     tax_year: int
     gross_income: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)

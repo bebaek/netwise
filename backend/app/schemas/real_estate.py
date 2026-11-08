@@ -5,8 +5,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.financial import FinancialInputModel
 
-class RealEstatePropertyCreate(BaseModel):
+
+class RealEstatePropertyCreate(FinancialInputModel):
     account_id: UUID
     property_type: str = "residence"
     purchase_date: date | None = None
@@ -46,7 +48,7 @@ class RealEstatePropertyCreate(BaseModel):
     rental_deposit_account_id: UUID | None = None
 
 
-class RealEstatePropertyUpdate(BaseModel):
+class RealEstatePropertyUpdate(FinancialInputModel):
     property_type: str | None = None
     purchase_date: date | None = None
     purchase_price: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
@@ -145,7 +147,7 @@ class RealEstateAnalyticsRead(BaseModel):
     limitations: list[str]
 
 
-class RealEstateSaleCreate(BaseModel):
+class RealEstateSaleCreate(FinancialInputModel):
     property_account_id: UUID
     sale_date: date
     gross_sale_price: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
@@ -174,7 +176,7 @@ class RealEstateSaleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RealEstateLiquidationStrategyUpsert(BaseModel):
+class RealEstateLiquidationStrategyUpsert(FinancialInputModel):
     enabled: bool = True
     optimization_mode: Literal["liquidity_shortfall", "maximize_liquid_runway"] = (
         "liquidity_shortfall"
@@ -208,7 +210,7 @@ class RealEstateLiquidationStrategyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class MortgageProfileCreate(BaseModel):
+class MortgageProfileCreate(FinancialInputModel):
     liability_account_id: UUID
     property_account_id: UUID | None = None
     original_principal: Decimal = Field(max_digits=18, decimal_places=2)

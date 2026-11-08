@@ -5,8 +5,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.financial import FinancialInputModel
 
-class ProjectionJobRequest(BaseModel):
+
+class ProjectionJobRequest(FinancialInputModel):
     scenario_id: UUID | None = None
     start_year: int
     end_year: int

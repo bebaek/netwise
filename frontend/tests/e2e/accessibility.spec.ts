@@ -10,6 +10,24 @@ const views = [
   { path: '/settings', heading: 'Settings' },
 ] as const;
 
+test('add account fields have visible associated labels', async ({ page }) => {
+  await openDemoWorkspace(page, '/assets');
+  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add account', exact: true }) });
+
+  for (const name of ['Account name', 'Account kind', 'Category', 'Liquidity class', 'Retirement tax treatment']) {
+    const field = form.getByLabel(name, { exact: true });
+    await expect(field).toBeVisible();
+    await expect(field.locator('..')).toHaveJSProperty('tagName', 'LABEL');
+    await expect(field.locator('..')).toContainText(name);
+  }
+
+  await form.getByLabel('Account name', { exact: true }).fill('Vanguard 529');
+  await form.getByLabel('Category', { exact: true }).fill('education');
+  await form.getByLabel('Liquidity class', { exact: true }).fill('restricted');
+  await expect(form.getByLabel('Account kind', { exact: true })).toHaveValue('asset');
+  await expect(form.getByLabel('Retirement tax treatment', { exact: true })).toHaveValue('');
+});
+
 test('workspace pages meet automated WCAG A and AA checks', async ({ page }) => {
   for (const view of views) {
     await openDemoWorkspace(page, view.path);

@@ -753,19 +753,34 @@ export function AssetsPage({
 <section className="card">
   <h2>Add account</h2>
     <form onSubmit={handleCreateAccount} className="stacked-form">
-      <input name="name" placeholder="Fidelity 401k" required />
-      <select name="account_kind" aria-label="Account kind" defaultValue="asset">
-        <option value="asset">Asset</option>
-        <option value="liability">Liability</option>
-      </select>
-      <input name="category" placeholder="retirement / real_estate / mortgage" required />
-      <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
-      <select name="retirement_tax_treatment" aria-label="Retirement tax treatment" defaultValue="">
-        <option value="">Not a retirement account</option>
-        <option value="traditional">Traditional / tax-deferred</option>
-        <option value="roth">Roth / tax-free</option>
-        <option value="after_tax">After-tax</option>
-      </select>
+      <label>
+        Account name
+        <input name="name" placeholder="Fidelity 401k" required />
+      </label>
+      <label>
+        Account kind
+        <select name="account_kind" defaultValue="asset">
+          <option value="asset">Asset</option>
+          <option value="liability">Liability</option>
+        </select>
+      </label>
+      <label>
+        Category
+        <input name="category" placeholder="retirement / real_estate / mortgage" required />
+      </label>
+      <label>
+        Liquidity class
+        <input name="liquidity_class" placeholder="retirement_liquid / real_estate / liability" required />
+      </label>
+      <label>
+        Retirement tax treatment
+        <select name="retirement_tax_treatment" defaultValue="">
+          <option value="">Not a retirement account</option>
+          <option value="traditional">Traditional / tax-deferred</option>
+          <option value="roth">Roth / tax-free</option>
+          <option value="after_tax">After-tax</option>
+        </select>
+      </label>
       <p className="muted">Configure expected yield and liquidation expense in the selected Planning scenario.</p>
       <button type="submit" disabled={accountMutations.isPending}>Add account</button>
   </form>
