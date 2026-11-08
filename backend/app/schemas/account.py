@@ -11,9 +11,10 @@ from app.db.models import (
     RetirementTaxTreatment,
     SnapshotSource,
 )
+from app.schemas.financial import FinancialInputModel
 
 
-class AccountCreate(BaseModel):
+class AccountCreate(FinancialInputModel):
     household_id: UUID
     name: str
     institution_name: str | None = None
@@ -27,7 +28,7 @@ class AccountCreate(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 
-class AccountUpdate(BaseModel):
+class AccountUpdate(FinancialInputModel):
     name: str | None = None
     institution_name: str | None = None
     account_kind: AccountKind | None = None
@@ -61,7 +62,7 @@ class AccountRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class BalanceSnapshotCreate(BaseModel):
+class BalanceSnapshotCreate(FinancialInputModel):
     as_of_date: date
     balance: Decimal = Field(max_digits=18, decimal_places=2)
     currency: str = Field(default="USD", min_length=3, max_length=3)
@@ -69,7 +70,7 @@ class BalanceSnapshotCreate(BaseModel):
     confidence_level: str | None = None
 
 
-class BalanceSnapshotUpdate(BaseModel):
+class BalanceSnapshotUpdate(FinancialInputModel):
     as_of_date: date | None = None
     balance: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
@@ -97,7 +98,7 @@ class HouseholdBalanceSnapshotRead(BalanceSnapshotRead):
     account_category: str
 
 
-class BalanceSnapshotBatchItemCreate(BaseModel):
+class BalanceSnapshotBatchItemCreate(FinancialInputModel):
     account_id: UUID
     balance: Decimal = Field(max_digits=18, decimal_places=2)
 
@@ -118,7 +119,7 @@ class BalanceSnapshotBatchRead(BaseModel):
     snapshots: list[BalanceSnapshotRead]
 
 
-class AccountEventCreate(BaseModel):
+class AccountEventCreate(FinancialInputModel):
     event_date: date
     amount: Decimal = Field(max_digits=18, decimal_places=2)
     currency: str = Field(default="USD", min_length=3, max_length=3)
@@ -128,7 +129,7 @@ class AccountEventCreate(BaseModel):
     scenario_id: UUID | None = None
 
 
-class AccountEventUpdate(BaseModel):
+class AccountEventUpdate(FinancialInputModel):
     account_id: UUID | None = None
     event_date: date | None = None
     amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)

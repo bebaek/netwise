@@ -1,10 +1,12 @@
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from typing import Any
 
 from fastapi import HTTPException, Request
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
@@ -45,6 +47,21 @@ def current_mcp_request_context() -> AgentMcpRequestContext:
     if context is None:
         raise RuntimeError("MCP tool called outside an authenticated HTTP request")
     return context
+
+
+def _mcp_client_errors[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Expose intentional client errors, leaving unexpected failures masked by the SDK."""
+
+    @wraps(fn)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return fn(*args, **kwargs)
+        except HTTPException as exc:
+            if 400 <= exc.status_code < 500:
+                raise ToolError(str(exc.detail)) from exc
+            raise
+
+    return wrapped
 
 
 class AgentMcpAuthMiddleware:
@@ -94,6 +111,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
     )
 
     @server.tool(name="summarize_financial_position")
+    @_mcp_client_errors
     def summarize_financial_position_tool() -> dict[str, object]:
         """Return compact totals and category allocation without individual account names."""
         context = current_mcp_request_context()
@@ -102,6 +120,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             return summarize_financial_position(db, context.principal)
 
     @server.tool(name="explain_net_worth_change")
+    @_mcp_client_errors
     def explain_net_worth_change_tool(start_date: str, end_date: str) -> dict[str, object]:
         """Explain category-level net-worth changes between two ISO dates."""
         context = current_mcp_request_context()
@@ -110,6 +129,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             return explain_net_worth_change(db, context.principal, start_date, end_date)
 
     @server.tool(name="check_financial_data_freshness")
+    @_mcp_client_errors
     def check_financial_data_freshness_tool(
         as_of_date: str | None = None,
         stale_after_days: int = 45,
@@ -126,6 +146,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             )
 
     @server.tool(name="list_projection_scenarios")
+    @_mcp_client_errors
     def list_projection_scenarios_tool() -> dict[str, object]:
         """List projection scenarios available to the token-bound household."""
         context = current_mcp_request_context()
@@ -134,6 +155,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             return list_projection_scenarios(db, context.principal)
 
     @server.tool(name="summarize_projection_assumptions")
+    @_mcp_client_errors
     def summarize_projection_assumptions_tool(
         scenario: str | None = None,
         sections: list[str] | None = None,
@@ -150,6 +172,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             )
 
     @server.tool(name="get_property_projection_parameters")
+    @_mcp_client_errors
     def get_property_projection_parameters_tool(
         property_name: str,
         scenario: str | None = None,
@@ -166,6 +189,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             )
 
     @server.tool(name="check_projection_readiness")
+    @_mcp_client_errors
     def check_projection_readiness_tool(
         scenario: str | None = None,
     ) -> dict[str, object]:
@@ -176,6 +200,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             return check_projection_readiness(db, context.principal, scenario)
 
     @server.tool(name="summarize_projection_comparison")
+    @_mcp_client_errors
     def summarize_projection_comparison_tool(
         start_year: int,
         end_year: int,
@@ -196,6 +221,7 @@ def build_http_mcp_server(session_factory: SessionFactory) -> MCPServer[Any]:
             )
 
     @server.tool(name="record_account_balance")
+    @_mcp_client_errors
     def record_account_balance_tool(
         account_name: str,
         balance: str,
